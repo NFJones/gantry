@@ -26,6 +26,7 @@ use super::{
 
 const MAGIC_V4: &[u8; 8] = b"GNTCDP04";
 const MAGIC_V5: &[u8; 8] = b"GNTCDP05";
+const MAGIC_V6: &[u8; 8] = b"GNTCDP06";
 const MAX_CAPTURE_ATTEMPTS: usize = 8;
 
 /// One versioned commit-cut snapshot of the composed concurrent-durable runtime.
@@ -36,6 +37,7 @@ const MAX_CAPTURE_ATTEMPTS: usize = 8;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConcurrentDurableCheckpointV4 {
     execution_budget: ExecutionBudgetSnapshot,
+    resource_policy: Option<(Option<u64>, Option<u64>)>,
     foreground: MachineCheckpointV3,
     sessions: LogicalSessionRegistryCheckpointV1,
     state: TaskStateCheckpointV1,
@@ -97,7 +99,41 @@ impl std::ops::Deref for ConcurrentDurableCheckpointV5 {
     }
 }
 
+/// Exact version-six graph decoder retaining enabled empty-registry accounting policy.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConcurrentDurableCheckpointV6(ConcurrentDurableCheckpointV4);
+
+impl ConcurrentDurableCheckpointV6 {
+    /// Decodes only the canonical version-six policy-bearing graph representation.
+    pub fn decode(
+        program: &MachineProgram,
+        bytes: &[u8],
+    ) -> Result<Self, ConcurrentDurableCheckpointError> {
+        ConcurrentDurableCheckpointV4::decode_with_magic(program, bytes, MAGIC_V6).map(Self)
+    }
+}
+
+impl From<ConcurrentDurableCheckpointV6> for ConcurrentDurableCheckpointV4 {
+    fn from(checkpoint: ConcurrentDurableCheckpointV6) -> Self {
+        checkpoint.0
+    }
+}
+
+impl std::ops::Deref for ConcurrentDurableCheckpointV6 {
+    type Target = ConcurrentDurableCheckpointV4;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl ConcurrentDurableCheckpointV4 {
+    /// Reports enabled empty accounting policy separately from absent accounting.
+    #[must_use]
+    pub const fn resource_policy(&self) -> Option<(Option<u64>, Option<u64>)> {
+        self.resource_policy
+    }
+
     /// Captures immutably borrowed machines under the coordinator's state lock.
     pub(crate) fn capture_coordinated(
         foreground: &Machine,
@@ -105,6 +141,7 @@ impl ConcurrentDurableCheckpointV4 {
         tasks: &ConcurrentTaskStateV1,
         sessions: &LogicalSessionRegistryV1,
         budget: &ExecutionBudget,
+        resource_policy: Option<(Option<u64>, Option<u64>)>,
     ) -> Result<Self, ConcurrentDurableCheckpointError> {
         if !budget.same_owner(&foreground.execution_budget())
             || children
@@ -116,6 +153,7 @@ impl ConcurrentDurableCheckpointV4 {
         let before = budget.snapshot();
         let checkpoint = Self {
             execution_budget: before,
+            resource_policy,
             foreground: foreground.checkpoint(),
             sessions: sessions.checkpoint(),
             state: TaskStateCheckpointV1::from_state(tasks),
@@ -185,6 +223,7 @@ impl ConcurrentDurableCheckpointV4 {
             interleave(attempt);
             let checkpoint = Self {
                 execution_budget: budget_before,
+                resource_policy: scheduler.resource_policy,
                 foreground: foreground.checkpoint(),
                 sessions: sessions.checkpoint(),
                 state: TaskStateCheckpointV1::from_state(&scheduler.state),
@@ -386,6 +425,7 @@ impl ConcurrentDurableCheckpointV4 {
             || task.pending_outcome.is_some()
             || self.execution_budget != previous.execution_budget
             || self.sessions != previous.sessions
+            || self.resource_policy != previous.resource_policy
         {
             return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
         }
@@ -542,11 +582,14 @@ impl ConcurrentDurableCheckpointV4 {
     /// Encodes this graph with the oldest exact combined wire representation.
     ///
     /// Graphs containing only machine v3 state retain `GNTCDP04`; a graph
-    /// containing any machine v4 state uses `GNTCDP05`.
+    /// containing any machine v4 state uses `GNTCDP05`. Enabled empty-registry
+    /// accounting policy requires `GNTCDP06`, preserving both optional ceilings.
     #[must_use]
     pub fn canonical_bytes(&self) -> Vec<u8> {
         let mut writer = Writer::default();
-        writer.raw(if self.uses_successor_wire() {
+        writer.raw(if self.resource_policy.is_some() {
+            MAGIC_V6
+        } else if self.uses_successor_wire() {
             MAGIC_V5
         } else {
             MAGIC_V4
@@ -570,6 +613,14 @@ impl ConcurrentDurableCheckpointV4 {
         writer.count(self.runnable.len());
         for task_id in &self.runnable {
             write_identity(&mut writer, *task_id);
+        }
+        if let Some((live, pending)) = self.resource_policy {
+            for limit in [live, pending] {
+                writer.boolean(limit.is_some());
+                if let Some(limit) = limit {
+                    writer.u64(limit);
+                }
+            }
         }
         writer.finish()
     }
@@ -598,6 +649,9 @@ impl ConcurrentDurableCheckpointV4 {
             Some(magic) if magic == MAGIC_V4 => Self::decode(program, bytes),
             Some(magic) if magic == MAGIC_V5 => {
                 ConcurrentDurableCheckpointV5::decode(program, bytes).map(Into::into)
+            }
+            Some(magic) if magic == MAGIC_V6 => {
+                ConcurrentDurableCheckpointV6::decode(program, bytes).map(Into::into)
             }
             _ => Err(ConcurrentDurableCheckpointError::InvalidEncoding),
         }
@@ -638,11 +692,27 @@ impl ConcurrentDurableCheckpointV4 {
         for _ in 0..runnable_count {
             runnable.push_back(read_identity(&mut reader, IdentityKind::Task)?);
         }
+        let resource_policy = if expected_magic == MAGIC_V6 {
+            let live = if reader.boolean()? {
+                Some(reader.u64()?)
+            } else {
+                None
+            };
+            let pending = if reader.boolean()? {
+                Some(reader.u64()?)
+            } else {
+                None
+            };
+            Some((live, pending))
+        } else {
+            None
+        };
         if !reader.is_empty() {
             return Err(ConcurrentDurableCheckpointError::InvalidEncoding);
         }
         let checkpoint = Self {
             execution_budget,
+            resource_policy,
             foreground,
             sessions,
             state,
@@ -686,6 +756,7 @@ impl ConcurrentDurableCheckpointV4 {
             scheduler: ConcurrentSchedulerV1 {
                 state,
                 execution_budget,
+                resource_policy: self.resource_policy,
                 machines,
                 runnable: self.runnable,
             },
@@ -934,6 +1005,7 @@ impl RecoveredConcurrentDurableExecutionV1 {
             &self.scheduler.state,
             &self.sessions,
             &self.foreground.execution_budget(),
+            self.scheduler.resource_policy,
         )
     }
 
@@ -978,11 +1050,16 @@ impl RecoveredConcurrentDurableExecutionV1 {
 
     /// Consumes recovery into independently driven root and child machines.
     ///
-    /// The returned machines retain one private shared budget owner. Production
-    /// task drivers use this graph form rather than polling the legacy scheduler.
-    #[must_use]
-    pub fn into_machine_graph(self) -> (Machine, BTreeMap<ProtocolIdentity, Machine>) {
-        (self.foreground, self.scheduler.machines)
+    /// Policy-bearing recovery returns the complete owner untouched because machines alone
+    /// cannot retain accounting policy. Use `into_driver_admission` for coordinator-backed
+    /// recovery. Policy-free machines retain one private shared execution budget owner.
+    pub fn into_machine_graph(
+        self,
+    ) -> Result<(Machine, BTreeMap<ProtocolIdentity, Machine>), Box<Self>> {
+        if self.scheduler.resource_policy.is_some() {
+            return Err(Box::new(self));
+        }
+        Ok((self.foreground, self.scheduler.machines))
     }
 
     /// Converts validated recovery into replacement-driver admission state.
@@ -1001,11 +1078,16 @@ impl RecoveredConcurrentDurableExecutionV1 {
         let ConcurrentSchedulerV1 {
             state,
             execution_budget,
+            resource_policy,
             machines,
             runnable: _,
         } = scheduler;
-        let coordinator =
-            crate::ExecutionCoordinator::new_with_budget(state, sessions, execution_budget)?;
+        let coordinator = crate::ExecutionCoordinator::new_with_budget_and_resource_policy(
+            state,
+            sessions,
+            execution_budget,
+            resource_policy,
+        )?;
         let unfinished_task_ids = coordinator.prepare_recovered_driver_admission();
         Ok(RecoveredConcurrentDriverAdmissionV1 {
             coordinator,
@@ -3064,6 +3146,7 @@ mod tests {
     fn unchecked_checkpoint(fixture: &Fixture) -> ConcurrentDurableCheckpointV4 {
         ConcurrentDurableCheckpointV4 {
             execution_budget: fixture.budget.snapshot(),
+            resource_policy: fixture.scheduler.resource_policy,
             foreground: fixture.foreground.checkpoint(),
             sessions: fixture.sessions.checkpoint(),
             state: super::TaskStateCheckpointV1::from_state(&fixture.scheduler.state),

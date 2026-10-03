@@ -252,10 +252,26 @@ impl ExecutionCoordinator {
         Self::new_inner(tasks, sessions, Some(execution_budget), None)
     }
 
+    /// Reconstructs a budget-sharing coordinator with exact optional empty-registry policy.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn new_with_budget_and_resource_policy(
+        tasks: ConcurrentTaskStateV1,
+        sessions: LogicalSessionRegistryV1,
+        execution_budget: ExecutionBudget,
+        policy: Option<(Option<u64>, Option<u64>)>,
+    ) -> Result<Self, TaskStateError> {
+        if execution_budget.snapshot().execution != tasks.execution_id() {
+            return Err(TaskStateError::InvalidTaskMachine);
+        }
+        let resources = policy
+            .map(|(live, pending)| crate::ResourceRegistry::with_optional_limits(live, pending));
+        Self::new_inner(tasks, sessions, Some(execution_budget), resources)
+    }
+
     /// Creates a budget-sharing coordinator with explicit finite resource accounting ceilings.
     ///
     /// Both ceilings admit zero. Cloned handles share accounting without enabling host transport
-    /// or persisting registry policy in the existing durable graph wire.
+    /// or reconstructing accepted resource work. Empty graph accounting policy uses v6 carriage.
     pub fn new_with_budget_and_resource_limits(
         tasks: ConcurrentTaskStateV1,
         sessions: LogicalSessionRegistryV1,
@@ -1237,6 +1253,10 @@ impl ExecutionCoordinator {
             &state.tasks,
             &state.sessions,
             budget,
+            state
+                .resources
+                .as_ref()
+                .map(|registry| (registry.live_limit(), registry.pending_limit())),
         )
     }
 

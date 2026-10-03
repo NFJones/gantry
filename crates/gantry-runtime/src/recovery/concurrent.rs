@@ -3014,6 +3014,9 @@ fn validate_transition(
     {
         return Err(DurableEvidenceError::MixedExecution);
     }
+    if current.checkpoint().resource_policy() != previous.checkpoint().resource_policy() {
+        return Err(DurableEvidenceError::InvalidState);
+    }
     validate_budget_successor(
         &previous.checkpoint().execution_budget(),
         &current.checkpoint().execution_budget(),
@@ -6826,9 +6829,15 @@ mod tests {
             .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
         let scheduler = ConcurrentSchedulerV1::new(state, foreground.execution_budget())
             .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
-        let initial_checkpoint =
-            ConcurrentDurableCheckpointV4::capture(&foreground, &scheduler, &sessions)
-                .unwrap_or_else(|error| panic!("initial checkpoint failed: {error:?}"));
+        let initial_checkpoint = ConcurrentDurableCheckpointV4::capture_coordinated(
+            &foreground,
+            &BTreeMap::new(),
+            scheduler.state(),
+            &sessions,
+            &foreground.execution_budget(),
+            Some((Some(0), Some(3))),
+        )
+        .unwrap_or_else(|error| panic!("initial checkpoint failed: {error:?}"));
         let initial = ConcurrentDurableEvidenceV4::new(
             DurableCommitCutV1::Checkpoint,
             root_task,
@@ -6841,9 +6850,15 @@ mod tests {
             }
             other => panic!("operation was not prepared: {other:?}"),
         };
-        let prepared_checkpoint =
-            ConcurrentDurableCheckpointV4::capture(&foreground, &scheduler, &sessions)
-                .unwrap_or_else(|error| panic!("prepared checkpoint failed: {error:?}"));
+        let prepared_checkpoint = ConcurrentDurableCheckpointV4::capture_coordinated(
+            &foreground,
+            &BTreeMap::new(),
+            scheduler.state(),
+            &sessions,
+            &foreground.execution_budget(),
+            Some((Some(0), Some(3))),
+        )
+        .unwrap_or_else(|error| panic!("prepared checkpoint failed: {error:?}"));
         let dispatch_id = fresh(IdentityKind::Dispatch, 43);
         let request_bytes = Arc::<[u8]>::from(&b"{}"[..]);
         let prepared = ConcurrentDurableEvidenceV5::new_operation(
@@ -6931,6 +6946,37 @@ mod tests {
             dispatch_id,
             request_bytes,
         };
+        for policy in [None, Some((None, None)), Some((Some(1), Some(3)))] {
+            let mut bytes = prepared.checkpoint().canonical_bytes();
+            bytes.truncate(bytes.len() - 18);
+            if let Some((live, pending)) = policy {
+                for limit in [live, pending] {
+                    bytes.push(u8::from(limit.is_some()));
+                    if let Some(limit) = limit {
+                        bytes.extend_from_slice(&u64::to_be_bytes(limit));
+                    }
+                }
+            } else {
+                bytes[..8].copy_from_slice(b"GNTCDP04");
+            }
+            let mut changed = prepared.clone();
+            changed.checkpoint = ConcurrentDurableCheckpointV4::decode_compatible(&program, &bytes)
+                .unwrap_or_else(|error| panic!("changed policy is valid encoding: {error:?}"));
+            let mut tampered = full.clone();
+            let mut envelopes = tampered.evidence.to_vec();
+            envelopes[2].canonical_body = Arc::from(changed.canonical_body());
+            tampered.evidence = Arc::from(envelopes);
+            assert!(
+                matches!(
+                    recover_concurrent_authoritative_prefix(
+                        Arc::clone(&program),
+                        &JournalPrefixV1::Full(tampered)
+                    ),
+                    Err(DurableEvidenceError::InvalidState)
+                ),
+                "operation replay must refuse changed or removed accounting policy"
+            );
+        }
         let recovered = recover_concurrent_authoritative_prefix(
             Arc::clone(&program),
             &JournalPrefixV1::Full(full.clone()),

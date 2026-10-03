@@ -59,7 +59,7 @@ owners into finite accounting ceilings; the default `resource_accounting_limits(
 Zero denies resource admission, not ordinary source execution. Concurrent root construction uses
 `new_with_budget_and_resource_limits` to retain the same execution budget. This policy enables
 accounting ownership only, not live-handle transport or host authority; current durable resume
-does not reconstruct it. For example, an embedder can use
+reconstructs enabled empty-registry policy only through the version-six combined graph. For example, an embedder can use
 `configuration.with_resource_accounting_limits(64, 16)` for new execution owners while retaining
 the existing raw-byte-hook refusal for live-resource results.
 
@@ -70,7 +70,13 @@ generation and live-ceiling checks all run before exposing a coordinator. No phy
 adapter bindings, pending policy or pending work are reconstructed. Journal provenance remains
 the caller's recovery responsibility; this entry point does not add resource records to graph cuts.
 
-The current durable graph wire carries no resource reconstruction records or registry policy.
+The current durable graph wire carries no resource reconstruction records. `GNTCDP06` separately
+retains an enabled empty registry's exact optional live and pending ceilings. Absence differs from
+enabled unlimited policy; legacy v4/v5 graph bytes retain absent policy. Capture, staging, replay
+and coordinator-backed driver recovery preserve the policy without reconstructing accepted work.
+`into_machine_graph` now returns a Result and refuses policy-bearing recovery with the complete
+owner unchanged; use `into_driver_admission` to retain policy in its coordinator. Every replayed
+graph transition rejects changed or removed policy, including operation cuts.
 `capture_checkpoint` and `stage_graph` refuse `ResourceStateUnsupported` before cloning machines
 or reserving publication if retained accounts, physical slots or pending admitted work would be
 omitted. An empty configured registry remains eligible. This fail-closed boundary prevents silent

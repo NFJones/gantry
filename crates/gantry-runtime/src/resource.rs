@@ -722,6 +722,16 @@ impl ResourceRegistry {
         self.pending_limit
     }
 
+    /// Rebuilds empty accounting with exact durable admission policy, never accepted work.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn with_optional_limits(live: Option<u64>, pending: Option<u64>) -> Self {
+        Self {
+            live_limit: live,
+            pending_limit: pending,
+            ..Self::new()
+        }
+    }
+
     /// Counts admitted operations whose machine settlement lease remains open.
     ///
     /// A poisoned lease conservatively retains capacity. Accounting finalization, record

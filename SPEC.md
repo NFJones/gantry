@@ -15271,6 +15271,14 @@ graph capture and staging MUST refuse `ResourceStateUnsupported` when retained a
 slots or admitted pending work would be omitted. Refusal MUST precede private machine cloning or
 publication reservation and leave accounting, machines and publication unchanged. An empty configured
 registry alone does not require refusal. This boundary does not implement durable resource recovery.
+For an enabled empty registry, combined graph capture MAY retain the exact optional live-account
+and pending-operation ceilings in `GNTCDP06`. Absent accounting and enabled unlimited accounting
+MUST remain distinct. Capture, staging, replay and coordinator-backed driver recovery MUST preserve
+this policy without creating resource records, physical slots, adapter bindings or accepted work.
+Legacy `GNTCDP04` and `GNTCDP05` bytes remain unchanged and identify absent accounting policy;
+exact-version decoders MUST reject another version. Policy cannot change within a replayed graph.
+Machine-only recovery consumption MUST refuse policy-bearing graphs and return the complete
+recovered owner unchanged; coordinator-backed driver admission retains that policy instead.
 Sequential committed-root installation MUST likewise refuse `ResourceStateUnsupported` before
 changing task, session, budget, event or retained-root projections when resource state would be
 omitted. This refusal does not undo a previously committed journal cut or claim its completeness.

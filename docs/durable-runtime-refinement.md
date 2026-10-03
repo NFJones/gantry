@@ -30,6 +30,13 @@ For the bounded recovered graph, a replacement owner reconstructs both tasks
 coherently before admission, submits and registers the complete runnable set
 behind closed gates, and only then opens those gates for logical publication.
 
+The version-six combined graph wire (`GNTCDP06`) retains enabled empty resource-accounting
+policy as two independently optional ceilings. Legacy v4/v5 graph encodings remain unchanged.
+Coordinated capture and journal-first staging retain this policy, replay preserves it, and
+coordinator-backed driver recovery rebuilds the empty registry with the same limits. This is
+policy carriage only: retained resource records, physical slots and admitted pending work still
+refuse with `ResourceStateUnsupported`. It establishes no durable host reconstruction claim.
+
 `ExecutionCoordinator::stage_graph` provides an exclusive quiescent transaction
 primitive over borrowed root and child machines. Its private copies share one
 isolated budget; ordinary coordinator semantic writers are rejected until

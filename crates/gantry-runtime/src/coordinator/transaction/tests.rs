@@ -184,6 +184,107 @@ fn resource_records_refuse_durable_graph_capture_and_staging_without_mutation() 
     assert!(!lock(&coordinator.inner.state).durable_publication_reserved);
 }
 
+/// Empty accounting remains enabled with exact limits after durable graph recovery.
+#[test]
+fn empty_resource_policy_survives_graph_recovery() {
+    let (coordinator, root, children, program) = fixture_with_program();
+    lock(&coordinator.inner.state).resources = Some(ResourceRegistry::with_limits(0, 3));
+    let checkpoint = coordinator
+        .capture_checkpoint(&root, &children)
+        .unwrap_or_else(|error| panic!("capture: {error:?}"));
+    let bytes = checkpoint.canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTCDP06".as_slice()));
+    assert!(crate::ConcurrentDurableCheckpointV4::decode(&program, &bytes).is_err());
+    assert!(crate::ConcurrentDurableCheckpointV5::decode(&program, &bytes).is_err());
+    assert!(crate::ConcurrentDurableCheckpointV6::decode(&program, &bytes).is_ok());
+    assert!(
+        crate::ConcurrentDurableCheckpointV6::decode(&program, &bytes[..bytes.len() - 1]).is_err()
+    );
+    let decoded = crate::ConcurrentDurableCheckpointV4::decode_compatible(&program, &bytes)
+        .unwrap_or_else(|error| panic!("decode: {error:?}"));
+    let refused = decoded
+        .clone()
+        .recover(Arc::clone(&program))
+        .unwrap_or_else(|error| panic!("recover for machine-only refusal: {error:?}"))
+        .into_machine_graph()
+        .err()
+        .unwrap_or_else(|| panic!("machines alone must not discard accounting policy"));
+    assert_eq!(
+        refused
+            .capture_replayed_checkpoint()
+            .unwrap_or_else(|error| panic!("refused owner retains policy: {error:?}"))
+            .resource_policy(),
+        Some((Some(0), Some(3)))
+    );
+    let recovered = decoded
+        .recover(program)
+        .unwrap_or_else(|error| panic!("recover: {error:?}"))
+        .into_driver_admission()
+        .unwrap_or_else(|error| panic!("admission: {error:?}"));
+    let state = lock(&recovered.coordinator().inner.state);
+    let registry = state
+        .resources
+        .as_ref()
+        .unwrap_or_else(|| panic!("recovery must not silently disable resource accounting"));
+    assert_eq!(registry.live_limit(), Some(0));
+    assert_eq!(registry.pending_limit(), Some(3));
+    assert!(registry.declared_records().is_empty());
+    assert_eq!(registry.pending_operations(), 0);
+}
+
+/// Optional ceilings retain absence, unlimited accounting, and mixed limits distinctly.
+#[test]
+fn optional_resource_policy_round_trips_without_silent_disable() {
+    for policy in [
+        None,
+        Some((None, None)),
+        Some((Some(0), None)),
+        Some((None, Some(u64::MAX))),
+    ] {
+        let (coordinator, root, children, program) = fixture_with_program();
+        lock(&coordinator.inner.state).resources =
+            policy.map(|(live, pending)| ResourceRegistry::with_optional_limits(live, pending));
+        let checkpoint = coordinator
+            .capture_checkpoint(&root, &children)
+            .unwrap_or_else(|error| panic!("capture: {error:?}"));
+        let bytes = checkpoint.canonical_bytes();
+        assert_eq!(checkpoint.resource_policy(), policy);
+        assert_eq!(
+            bytes.get(..8),
+            Some(if policy.is_some() {
+                b"GNTCDP06".as_slice()
+            } else {
+                b"GNTCDP04".as_slice()
+            })
+        );
+        let decoded = crate::ConcurrentDurableCheckpointV4::decode_compatible(&program, &bytes)
+            .unwrap_or_else(|error| panic!("decode: {error:?}"));
+        assert_eq!(decoded.canonical_bytes(), bytes);
+        let recovered = decoded
+            .recover(program)
+            .unwrap_or_else(|error| panic!("recovery: {error:?}"));
+        if policy.is_none() {
+            assert!(recovered.into_machine_graph().is_ok());
+        } else {
+            let retained = recovered
+                .into_machine_graph()
+                .err()
+                .unwrap_or_else(|| panic!("policy-bearing machine extraction refuses"));
+            let admission = retained
+                .into_driver_admission()
+                .unwrap_or_else(|error| panic!("retained admission: {error:?}"));
+            let state = lock(&admission.coordinator().inner.state);
+            assert_eq!(
+                state
+                    .resources
+                    .as_ref()
+                    .map(|registry| { (registry.live_limit(), registry.pending_limit()) }),
+                policy
+            );
+        }
+    }
+}
+
 /// Retains the exact executable artifact for journal recovery assertions.
 fn fixture_with_program() -> (
     ExecutionCoordinator,
@@ -850,6 +951,7 @@ fn successful_commit_installs_machine_and_budget_together() {
 #[test]
 fn recovered_coordinator_bootstraps_durable_graph_baseline() {
     let (coordinator, root, children, program) = fixture_with_program();
+    lock(&coordinator.inner.state).resources = Some(ResourceRegistry::with_limits(0, 3));
     let execution = root.execution_id();
     let task = root.task_id();
     let storage = Arc::new(InMemoryJournalStore::new());
@@ -872,12 +974,11 @@ fn recovered_coordinator_bootstraps_durable_graph_baseline() {
     let recovered = initial
         .recover(program.clone())
         .unwrap_or_else(|error| panic!("checkpoint recovery: {error:?}"));
-    let tasks = recovered.scheduler().state().clone();
-    let sessions = recovered.sessions().clone();
-    let budget = recovered.foreground().execution_budget();
-    let (mut recovered_root, mut recovered_children) = recovered.into_machine_graph();
-    let recovered_coordinator = ExecutionCoordinator::new_with_budget(tasks, sessions, budget)
-        .unwrap_or_else(|error| panic!("recovered coordinator: {error:?}"));
+    let admission = recovered
+        .into_driver_admission()
+        .unwrap_or_else(|error| panic!("recovered admission: {error:?}"));
+    let (recovered_coordinator, mut recovered_root, mut recovered_children, _) =
+        admission.into_parts();
     let mut stage = recovered_coordinator
         .stage_graph(&mut recovered_root, &mut recovered_children)
         .unwrap_or_else(|error| panic!("recovered stage: {error:?}"));
@@ -908,8 +1009,16 @@ fn recovered_coordinator_bootstraps_durable_graph_baseline() {
         journal_id: journal,
     }))
     .unwrap_or_else(|error| panic!("prefix: {error:?}"));
-    crate::recover_concurrent_authoritative_prefix(program, &prefix)
+    let recovered = crate::recover_concurrent_authoritative_prefix(program, &prefix)
         .unwrap_or_else(|error| panic!("strict recovery: {error:?}"));
+    assert_eq!(
+        recovered
+            .execution()
+            .capture_replayed_checkpoint()
+            .unwrap_or_else(|error| panic!("replayed checkpoint: {error:?}"))
+            .resource_policy(),
+        Some((Some(0), Some(3)))
+    );
 }
 
 /// A physical driver race must not enter the next durable semantic predecessor.
