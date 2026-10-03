@@ -10010,6 +10010,27 @@ fn resource_envelope_set_restore_preserves_policy_and_refuses_partial_sets() {
         finished.containment_evidence(),
         original.containment_evidence()
     );
+    for candidate in [&finishing, &finished] {
+        let bytes = gantry::runtime::encode_resource_recovery_envelope(candidate, 65_536)
+            .unwrap_or_else(|error| panic!("candidate envelope: {error:?}"));
+        let decoded = gantry::runtime::decode_resource_recovery_envelope(
+            Arc::clone(&program),
+            &bytes,
+            65_536,
+            owner,
+            machine.task_id(),
+        )
+        .unwrap_or_else(|error| panic!("candidate recovery: {error:?}"));
+        assert_eq!(&decoded, candidate);
+        assert_eq!(
+            candidate.stage_finish(OwnerGeneration::new(3), ResourceFinishTransition::Begin),
+            Err(ResourceError::StaleOwner {
+                presented: OwnerGeneration::new(3),
+                current: owner,
+            }),
+            "stale ownership precedes an otherwise illegal lifetime transition",
+        );
+    }
     assert_eq!(
         finished.stage_finish(owner, ResourceFinishTransition::Complete { settled_at: 21 }),
         Err(ResourceError::IllegalLifetimeTransition)
