@@ -5596,6 +5596,22 @@ fn host_receiver_loan_failure_closes_the_loan_once() {
                 })
                 .is_err()
         );
+        if failure == FailureClass::ResourceFailure {
+            let before_finish = resource.account().durable_record();
+            assert_eq!(
+                resource.finish(OwnerGeneration::new(4), 33, |_| {
+                    panic!("poisoned generation cannot invoke its finalizer")
+                }),
+                Err(HostResourceError::Model(
+                    ResourceError::IllegalLifetimeTransition
+                ))
+            );
+            assert_eq!(resource.account().durable_record(), before_finish);
+            assert_eq!(
+                resource.emergency_release(emergency_cleanup()),
+                Ok(ResourceLifetimeState::EmergencyReleased)
+            );
+        }
     }
 }
 

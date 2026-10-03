@@ -15313,6 +15313,9 @@ and close only the loan root; adapter failure additionally poisons the transport
 Repeated success or failure settlement MUST refuse `LoanSettled` without mutation. Refused
 failure classification retains the guard, loan root, and observed progress. Failure settlement
 does not dispose the host value or settle whole-resource lifetime or pending machine work.
+Explicit transport finish MUST refuse a poisoned operation generation before entering finishing
+or invoking its finalizer, retaining current-owner validation precedence. This refusal leaves
+accounting unchanged; sealed emergency release and contained physical disposal remain available.
 Owner invocation, finish and transfer MUST remain fenced while the transport loan is pending,
 even if its guard is forgotten. Dropping an unsettled guard MUST poison transport and retain
 the pending fence without fabricating settlement. Sealed emergency release remains available.

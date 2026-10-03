@@ -262,6 +262,15 @@ impl<T> OwnedHostResource<T> {
         if self.loan_pending {
             return self.refuse_callback(finalize, HostResourceError::LoanOutstanding);
         }
+        if let Err(error) = self.require_owner(owner) {
+            return self.refuse_callback(finalize, error);
+        }
+        if self.account.ledger().operation_state() == ResourceState::Poisoned {
+            return self.refuse_callback(
+                finalize,
+                HostResourceError::Model(ResourceError::IllegalLifetimeTransition),
+            );
+        }
         if let Err(error) = self.account.begin_finish_for(owner) {
             return self.refuse_callback(finalize, HostResourceError::Model(error));
         }

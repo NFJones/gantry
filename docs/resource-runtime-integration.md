@@ -321,6 +321,9 @@ state. Neither releases accounting lifetime or pending machine work, nor dispose
 Refused classification retains progress and the guard; either terminal loan route refuses later
 settlement with `LoanSettled`. Failure projection remains distinct from ordinary successful
 operation-state projection and cannot fabricate an accepted successful outcome.
+Explicit transport finish refuses a Poisoned operation state with `IllegalLifetimeTransition`
+before entering Finishing or invoking its finalizer, after current-owner validation. Accounting
+remains unchanged and sealed emergency release can still dispose the held value.
 
 `AdmittedResource` publishes `admit`, `subject`, `ledger`, `quota`, `remaining`, `durable_record`,
 `containment`, `settle_containment`, `adapter_instance`, `bind_adapter_instance`,
