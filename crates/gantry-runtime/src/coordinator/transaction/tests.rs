@@ -624,6 +624,105 @@ fn resource_records_survive_version_eight_graph_recovery() {
             owner_prefix
         );
     }
+    // A storage error can follow actual commitment: local ownership stays fenced,
+    // while a new authoritative recovery must adopt the committed owner and charges.
+    let lost_owner_storage = Arc::new(InMemoryJournalStore::new());
+    let lost_owner_journal = JournalId::new("resource-owner-lost-response")
+        .unwrap_or_else(|error| panic!("lost owner journal: {error:?}"));
+    let ownership = ready(lost_owner_storage.acquire_owner(AcquireJournalOwnerV1 {
+        journal_id: lost_owner_journal.clone(),
+        operation: JournalOwnerOperationV1::Start,
+    }))
+    .unwrap_or_else(|error| panic!("lost owner token: {error:?}"));
+    let seed_sink = DurableTransitionSink::new(
+        lost_owner_storage.clone(),
+        lost_owner_journal.clone(),
+        ownership.token.clone(),
+    );
+    let mut seed = DurableCommitCoordinatorV1::new(&seed_sink, execution, root.task_id(), None)
+        .unwrap_or_else(|error| panic!("lost owner seed: {error:?}"));
+    ready(seed.commit_graph_checkpoint(
+        DurableCommitCutV1::Checkpoint,
+        root.task_id(),
+        checkpoint.clone(),
+    ))
+    .unwrap_or_else(|error| panic!("lost owner predecessor: {error:?}"));
+    let predecessor = ready(lost_owner_storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: lost_owner_journal.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("lost owner prefix: {error:?}"));
+    let response_sink = DurableTransitionSink::new(
+        Arc::new(LostFinishResponseStore {
+            storage: lost_owner_storage.clone(),
+        }),
+        lost_owner_journal.clone(),
+        ownership.token,
+    );
+    let mut lost_writer = DurableCommitCoordinatorV1::from_concurrent_prefix(
+        &response_sink,
+        Arc::clone(&program),
+        &predecessor,
+    )
+    .unwrap_or_else(|error| panic!("lost owner writer: {error:?}"));
+    let admission = checkpoint
+        .clone()
+        .recover(Arc::clone(&program))
+        .unwrap_or_else(|error| panic!("lost owner recovery: {error:?}"))
+        .into_driver_admission()
+        .unwrap_or_else(|error| panic!("lost owner admission: {error:?}"));
+    let (lost_owner, mut lost_root, mut lost_children, _) = admission.into_parts();
+    let before_lost = lost_owner.snapshot();
+    let before_machine = lost_root.checkpoint();
+    let frontier = lost_writer.frontier();
+    let mut stage = lost_owner
+        .stage_graph(&mut lost_root, &mut lost_children)
+        .unwrap_or_else(|error| panic!("lost owner stage: {error:?}"));
+    stage
+        .stage_resource_owner_advance(&subject, (owner, successor), &charges)
+        .unwrap_or_else(|error| panic!("lost owner candidate: {error:?}"));
+    assert_eq!(
+        ready(stage.commit(
+            &mut lost_writer,
+            DurableCommitCutV1::ResourceOwnerAdvance,
+            root.task_id(),
+        )),
+        Err(DurableCommitError::Journal(JournalError::new(
+            JournalErrorCode::Internal
+        )))
+    );
+    assert_eq!(lost_writer.frontier(), frontier);
+    assert_eq!(lost_owner.snapshot(), before_lost);
+    assert_eq!(lost_root.checkpoint(), before_machine);
+    assert!(lock(&lost_owner.inner.state).durable_publication_reserved);
+    let authoritative = ready(lost_owner_storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: lost_owner_journal,
+    }))
+    .unwrap_or_else(|error| panic!("authoritative owner prefix: {error:?}"));
+    let replay =
+        crate::recover_concurrent_authoritative_prefix(Arc::clone(&program), &authoritative)
+            .unwrap_or_else(|error| panic!("lost owner replay: {error:?}"));
+    assert_eq!(
+        replay.latest_cut(),
+        DurableCommitCutV1::ResourceOwnerAdvance
+    );
+    assert_eq!(
+        replay.latest_sequence(),
+        frontier.unwrap_or_else(|| panic!("frontier")).1 + 1
+    );
+    assert_eq!(
+        replay.execution().scheduler().resource_records(),
+        advanced.resource_records()
+    );
+    let recovered_writer = DurableCommitCoordinatorV1::from_concurrent_prefix(
+        &seed_sink,
+        Arc::clone(&program),
+        &authoritative,
+    )
+    .unwrap_or_else(|error| panic!("authoritative owner writer: {error:?}"));
+    assert_eq!(
+        recovered_writer.frontier(),
+        Some((replay.latest_evidence_id(), replay.latest_sequence()))
+    );
     owner_writer = DurableCommitCoordinatorV1::from_concurrent_prefix(
         &owner_sink,
         Arc::clone(&program),
