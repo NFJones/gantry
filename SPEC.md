@@ -15169,6 +15169,10 @@ Excess admission MUST refuse `RetainedResourceLimitReached` without changing acc
 physical inputs or pending-capacity bookkeeping. Duplicate, kind, carrier, live and pending
 refusals retain precedence. Existing constructors leave the retained ceiling absent.
 `new_with_budget_and_accounting_limits` MAY expose this policy through the shared coordinator.
+`reconstruct_with_retained_limit` MAY apply an independent retained ceiling to the complete
+reconstruction set, counting every record including terminal lifetimes. Duplicate, kind,
+carrier, owner-generation and live-capacity checks MUST precede the retained-capacity check;
+excess records MUST refuse without publishing a partial registry or fabricating pending work.
 Enabled empty-registry retained-account policy MUST use `GNTCDP07` carriage rather than
 silently omitting the ceiling; legacy empty-registry policy carriage remains available.
 

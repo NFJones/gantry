@@ -1004,6 +1004,27 @@ impl ResourceRegistry {
         live_limit: Option<u64>,
         recovered: impl IntoIterator<Item = RecoveredResourceRecord>,
     ) -> Result<Self, ResourceRegistryRefusal> {
+        Self::reconstruct_bounded(live_limit, None, recovered)
+    }
+
+    /// Reconstructs accounting under an independent retained-record ceiling.
+    ///
+    /// Every record counts, including terminal lifetimes. Existing evidence and live
+    /// capacity refusals retain precedence; no partial registry or pending work is published.
+    pub fn reconstruct_with_retained_limit(
+        live_limit: Option<u64>,
+        retained_limit: u64,
+        recovered: impl IntoIterator<Item = RecoveredResourceRecord>,
+    ) -> Result<Self, ResourceRegistryRefusal> {
+        Self::reconstruct_bounded(live_limit, Some(retained_limit), recovered)
+    }
+
+    /// Validates the complete reconstruction set with optional independent capacity bounds.
+    fn reconstruct_bounded(
+        live_limit: Option<u64>,
+        retained_limit: Option<u64>,
+        recovered: impl IntoIterator<Item = RecoveredResourceRecord>,
+    ) -> Result<Self, ResourceRegistryRefusal> {
         let mut accounts: BTreeMap<ResourceRegistryKey, AdmittedResource> = BTreeMap::new();
         let mut live = 0_u64;
         for presented in recovered {
@@ -1037,6 +1058,11 @@ impl ResourceRegistry {
                 }
                 live = live.saturating_add(1);
             }
+            if let Some(limit) = retained_limit
+                && u64::try_from(accounts.len()).map_or(true, |count| count >= limit)
+            {
+                return Err(ResourceRegistryRefusal::RetainedResourceLimitReached { limit });
+            }
             accounts.insert(key, account);
         }
         Ok(Self {
@@ -1044,7 +1070,7 @@ impl ResourceRegistry {
             physical: BTreeMap::new(),
             live_limit,
             pending_limit: None,
-            retained_limit: None,
+            retained_limit,
             pending_admissions: Vec::new(),
             adapter_faults: PoisonLedger::new(),
         })

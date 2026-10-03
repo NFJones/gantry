@@ -85,6 +85,11 @@ owner. Budget execution mismatch refuses with `InvalidTaskMachine` before record
 the same complete-set accounting checks follow. Budget retention neither authenticates journal
 provenance nor reconstructs physical slots, adapters or pending work.
 
+`ResourceRegistry::reconstruct_with_retained_limit` additionally bounds every reconstructed
+account, including terminal records. Existing evidence and live-capacity refusals retain
+precedence; the retained ceiling is checked before insertion. Recovery publishes the complete
+set or refuses it, never a partial registry, and still creates no pending work or physical slots.
+
 The current durable graph wire carries no resource reconstruction records. `GNTCDP06` separately
 retains an enabled empty registry's exact optional live and pending ceilings. Absence differs from
 enabled unlimited policy; legacy v4/v5 graph bytes retain absent policy. Capture, staging, replay

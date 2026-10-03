@@ -9523,6 +9523,45 @@ fn reconstruction_refuses_an_ordinary_carrier_for_the_whole_set() {
     assert_eq!(recovered.live_resources(), 2);
 }
 
+/// Bounded reconstruction counts terminal records and retains stronger evidence refusals.
+#[test]
+fn reconstruction_enforces_retained_capacity_before_publication() {
+    let first = presented(
+        active_subject(),
+        ResourceCarrier::ReconstructionRecord,
+        settled_record(),
+    );
+    let second = presented(
+        declared_subject(SECOND_FIXTURE_DECLARATION),
+        ResourceCarrier::ReconstructionRecord,
+        settled_record(),
+    );
+    let recovered = ResourceRegistry::reconstruct_with_retained_limit(
+        Some(0),
+        2,
+        vec![first.clone(), second.clone()],
+    )
+    .unwrap_or_else(|error| panic!("bounded terminal recovery: {error:?}"));
+    assert_eq!(recovered.retained_limit(), Some(2));
+    assert_eq!(recovered.retained_resources(), 2);
+    assert_eq!(recovered.live_resources(), 0);
+    assert_eq!(recovered.pending_operations(), 0);
+    assert_eq!(
+        ResourceRegistry::reconstruct_with_retained_limit(Some(0), 1, vec![first.clone(), second])
+            .err(),
+        Some(ResourceRegistryRefusal::RetainedResourceLimitReached { limit: 1 })
+    );
+    assert_eq!(
+        ResourceRegistry::reconstruct_with_retained_limit(Some(0), 0, vec![first.clone()]).err(),
+        Some(ResourceRegistryRefusal::RetainedResourceLimitReached { limit: 0 })
+    );
+    assert_eq!(
+        ResourceRegistry::reconstruct_with_retained_limit(Some(0), 1, vec![first.clone(), first])
+            .err(),
+        Some(ResourceRegistryRefusal::SecondAdmission)
+    );
+}
+
 /// Reconstruction honors the declared live-resource limit over the accounts that are still live: a
 /// settled record keeps every declared fact without holding a place, so a settled and a live record
 /// coexist under a limit of one, while two live records refuse the whole set.
