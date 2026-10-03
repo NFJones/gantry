@@ -235,7 +235,9 @@ or combined-graph integration; physical slots and accepted work are not restored
 optional effect/outcome winner. Such records use `GNTRRE02`; records without this projection keep
 their `GNTRRE01` bytes. Reconstruction validates the winner through the Section 23 model and
 preserves its historical owner even after accounting ownership advances. A retained winner still
-refuses second settlement. Future historical owners, unknown tags, impossible winners and trailing
+refuses second settlement. Direct registry reconstruction also rejects future historical owners
+with `Containment(StaleGeneration)` before restoring containment or publishing any registry.
+Future historical owners, unknown tags, impossible winners and trailing
 containment bytes refuse. Ordinary declared capture remains accounting-only and opens fresh
 containment during reconstruction. Neither path restores adapters or accepted machine work.
 

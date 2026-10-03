@@ -1519,6 +1519,14 @@ impl ResourceRegistry {
             }
             #[cfg(feature = "durable")]
             if let Some((owner, winner)) = presented.containment_evidence {
+                if owner != current && !current.succeeds(owner) {
+                    return Err(ResourceRegistryRefusal::Containment(
+                        ContainmentError::StaleGeneration {
+                            presented: owner,
+                            held: current,
+                        },
+                    ));
+                }
                 let mut containment = ContainmentSettlement::open(owner);
                 if let Some((effect, outcome)) = winner {
                     containment

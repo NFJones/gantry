@@ -15510,7 +15510,9 @@ its optional accepted effect/outcome winner. Reconstruction MUST preserve that o
 of current accounting ownership and validate the winner through the Section 23 settlement model;
 an accepted winner MUST continue refusing a second settlement. `GNTRRE02` carries this explicit
 projection, including an unsettled state, under the same independent admission bounds. Historical
-containment ownership MUST NOT exceed current accounting ownership. Unknown tags, impossible
+containment ownership MUST NOT exceed current accounting ownership. Direct registry reconstruction
+MUST enforce this fence before restoring containment or publishing the complete set, refusing future
+history with `Containment(StaleGeneration)`. Unknown tags, impossible
 effect/outcome pairs and trailing containment bytes MUST refuse. Records without explicit
 containment evidence retain `GNTRRE01` bytes and legacy accounting-only reconstruction semantics;
 ordinary declared capture still opens fresh containment on reconstruction. This projection creates

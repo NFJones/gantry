@@ -2,6 +2,65 @@
 
 use super::*;
 
+/// Direct reconstruction must retain the same historical-owner fence as envelope decoding.
+#[cfg(feature = "durable")]
+#[test]
+fn reconstruction_refuses_future_containment_owners() {
+    let path =
+        CanonicalPath::new("crate::resource").unwrap_or_else(|error| panic!("path: {error}"));
+    let execution = gantry_core::identity::ProtocolIdentity::from_fresh_material(
+        gantry_core::portable::IdentityKind::Execution,
+        [71; 32],
+    )
+    .unwrap_or_else(|error| panic!("execution: {error}"));
+    let subject = ResourceSubjectBinding::derive(
+        &path,
+        path.clone(),
+        StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("site: {error}")),
+        0,
+        Some(OperationKind::LiveResource),
+        Arc::new(Mutex::new(crate::machine::ResourceOperationLease::open())),
+        (execution, crate::root_task_identity(execution)),
+    );
+    let owner = OwnerGeneration::new(4);
+    let ledger = ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
+        .unwrap_or_else(|error| panic!("ledger: {error:?}"));
+    for winner in [
+        None,
+        Some((
+            gantry_ir::EffectState::NotStarted,
+            ExternalOutcome::Accepted,
+        )),
+    ] {
+        let mut record = RecoveredResourceRecord::new(
+            subject.clone(),
+            ResourceCarrier::ReconstructionRecord,
+            owner,
+            ledger.durable_record(),
+        );
+        record.containment_evidence = Some((OwnerGeneration::new(5), winner));
+        assert_eq!(
+            ResourceRegistry::reconstruct(Some(1), [record.clone()]).err(),
+            Some(ResourceRegistryRefusal::Containment(
+                ContainmentError::StaleGeneration {
+                    presented: OwnerGeneration::new(5),
+                    held: owner,
+                }
+            )),
+            "future historical ownership must refuse before registry publication"
+        );
+        for historical in [OwnerGeneration::new(3), owner] {
+            record.containment_evidence = Some((historical, winner));
+            let rebuilt = ResourceRegistry::reconstruct(Some(1), [record.clone()])
+                .unwrap_or_else(|error| panic!("historical reconstruction: {error:?}"));
+            assert_eq!(
+                rebuilt.declared_records_with_containment(),
+                vec![record.clone()]
+            );
+        }
+    }
+}
+
 /// Reaping may discard settled storage, never accepted pending or unreadable lease ownership.
 #[test]
 fn reaping_prunes_closed_leases_and_retains_pending_or_unreadable_work() {
