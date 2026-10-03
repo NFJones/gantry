@@ -1099,7 +1099,10 @@ impl DurableOwnedExecution {
             self.journal_id.clone(),
             self.ownership_token.clone(),
         );
-        let mut commits = if cut == DurableCommitCutV1::ResourceFinish {
+        let mut commits = if matches!(
+            cut,
+            DurableCommitCutV1::ResourceFinish | DurableCommitCutV1::ResourceOwnerAdvance
+        ) {
             let prefix = self
                 .storage
                 .read_prefix(ReadJournalPrefixV1 {
@@ -4326,6 +4329,36 @@ mod tests {
                 ));
                 predecessor = successor;
             }
+            if lifetime == ResourceLifetimeState::Active {
+                let successor_owner = OwnerGeneration::new(5);
+                accounting
+                    .advance_resource_owner(&subject, owner, successor_owner)
+                    .unwrap_or_else(|error| panic!("fixture owner advance: {error:?}"));
+                let advancement = gantry_runtime::ResourceOwnerEvidenceV1::new(
+                    Arc::clone(&program),
+                    predecessor,
+                    checkpoint(),
+                    0,
+                    (owner, successor_owner),
+                    &[],
+                )
+                .unwrap_or_else(|error| panic!("terminal owner evidence: {error:?}"));
+                let previous_id = evidence
+                    .last()
+                    .unwrap_or_else(|| panic!("owner predecessor"))
+                    .evidence_id;
+                let sequence = evidence.len() as u64 + 1;
+                evidence.push(envelope(
+                    &journal,
+                    sequence,
+                    ProtocolIdentity::from_storage_material([51 + sequence as u8; 32]),
+                    gantry_runtime::RESOURCE_OWNER_EVIDENCE_KIND_V1,
+                    advancement
+                        .encode(4_194_304)
+                        .unwrap_or_else(|error| panic!("owner encoding: {error:?}")),
+                    &[previous_id],
+                ));
+            }
             let committed_through = evidence.len() as u64;
             let prefix = JournalPrefixV1::Full(FullJournalPrefixV1 {
                 journal_id: journal.clone(),
@@ -4479,7 +4512,7 @@ mod tests {
             assert_eq!(
                 recovered.latest_cut(),
                 if lifetime == ResourceLifetimeState::Active {
-                    DurableCommitCutV1::TerminalCompletion
+                    DurableCommitCutV1::ResourceOwnerAdvance
                 } else {
                     DurableCommitCutV1::ResourceFinish
                 }

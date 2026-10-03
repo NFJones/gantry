@@ -15,7 +15,7 @@ pub use resource_finish::{
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 mod resource_owner;
 #[cfg(all(feature = "concurrent", feature = "durable"))]
-pub use resource_owner::ResourceOwnerEvidenceV1;
+pub use resource_owner::{RESOURCE_OWNER_EVIDENCE_KIND_V1, ResourceOwnerEvidenceV1};
 mod execution_start;
 
 #[cfg(all(feature = "concurrent", feature = "durable"))]
@@ -93,6 +93,8 @@ pub enum DurableCommitCutV1 {
     TerminalCompletion,
     /// One owner-qualified logical resource finish became durable without machine advancement.
     ResourceFinish,
+    /// One same-cleanup-task resource owner advancement became durable without machine progress.
+    ResourceOwnerAdvance,
 }
 
 impl DurableCommitCutV1 {
@@ -112,6 +114,7 @@ impl DurableCommitCutV1 {
             Self::ForegroundCompletion => "foreground-completion",
             Self::TerminalCompletion => "terminal-completion",
             Self::ResourceFinish => "resource-finish",
+            Self::ResourceOwnerAdvance => "resource-owner-advance",
         }
     }
 
@@ -139,6 +142,7 @@ impl DurableCommitCutV1 {
             "foreground-completion" => Some(Self::ForegroundCompletion),
             "terminal-completion" => Some(Self::TerminalCompletion),
             "resource-finish" => Some(Self::ResourceFinish),
+            "resource-owner-advance" => Some(Self::ResourceOwnerAdvance),
             _ => None,
         }
     }
@@ -1316,7 +1320,10 @@ impl DurableLogicalEvidenceV3 {
             || task_id.kind() != IdentityKind::Task
             || checkpoint.execution_id() != execution_id
             || budget.execution != execution_id
-            || cut == DurableCommitCutV1::ResourceFinish
+            || matches!(
+                cut,
+                DurableCommitCutV1::ResourceFinish | DurableCommitCutV1::ResourceOwnerAdvance
+            )
             || sessions
                 .as_ref()
                 .is_some_and(|sessions| sessions.execution_id() != execution_id)

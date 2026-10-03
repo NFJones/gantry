@@ -144,13 +144,21 @@ and reusing existing ownership transfer fences. Active/open accounting, strict s
 closed machine work and settled historical containment precede atomic Move charging; missing
 containment stays unsettled. Success preserves issuing/history facts, roots and cleanup task.
 Refusal leaves the source unchanged. This is not physical transfer or journal publication authority;
-no durable ownership mutation cut is enabled and existing graph-image fences remain intact.
+durable publication requires the exact ownership cut below, not ordinary graph-image replacement.
 
 `ResourceOwnerEvidenceV1` reproduces one same-cleanup-task advancement between executable-validated
 complete graphs. Its `GNTRWA01` carrier retains the authored Move vector under a 128-member limit
 and a caller-supplied complete byte ceiling; closed tags, canonical framing and exact successor
 comparison reject unrelated changes. Output admission precedes checkpoint copying, not temporary
-checkpoint allocation. This is validation only, not a journal kind or admitted ownership cut.
+checkpoint allocation. Constructing evidence alone grants no journal authority.
+
+`stage_resource_owner_advance` privately stages exactly one same-cleanup-task advancement for the
+`ResourceOwnerAdvance` cut and `gantry.resource-owner-evidence/v1` journal kind. Its 4 MiB carrier
+requires the actual authoritative predecessor and an empty protected-payload list. Writer baselines
+and logical accounting install only after a validated receipt; pre-submission drop rolls back while
+indeterminate submission remains fenced. Full-prefix and selector-eight histories replay the exact
+transition; legacy compaction refuses rather than dropping it. This supplies no physical or cleanup-task
+transfer, accepted-work recovery, or change to fixed terminal outcomes.
 
 `stage_finish(owner, ResourceFinishTransition::Begin)` builds a finishing candidate; `Complete`
 records a declared logical settlement instant using the same ledger rules. Both leave the source

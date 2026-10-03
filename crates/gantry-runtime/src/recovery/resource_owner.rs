@@ -1,4 +1,4 @@
-//! Exact nonpublishing resource owner-advance evidence over complete durable graphs.
+//! Exact resource owner-advance evidence and journal-first admission over complete durable graphs.
 //!
 //! One same-cleanup-task candidate may change its current generation and explicit Move use.
 //! Every other graph and historical fact remains identical. This carrier grants no journal
@@ -14,8 +14,12 @@ use crate::machine::checkpoint_codec::{Reader, Writer};
 use super::DurableEvidenceError;
 
 const MAGIC: &[u8; 8] = b"GNTRWA01";
+/// Exact journal kind for same-cleanup-task logical ownership advancement.
+pub const RESOURCE_OWNER_EVIDENCE_KIND_V1: &str = "gantry.resource-owner-evidence/v1";
+/// Independent complete journal-body ceiling, including both checkpoint graphs.
+pub const MAXIMUM_RESOURCE_OWNER_EVIDENCE_BYTES: u64 = 4_194_304;
 
-/// One exact owner advancement, independently bounded and not admitted as a journal cut.
+/// One exact owner advancement; construction alone supplies no journal publication authority.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResourceOwnerEvidenceV1 {
     previous: ConcurrentDurableCheckpointV4,
@@ -84,6 +88,12 @@ impl ResourceOwnerEvidenceV1 {
     #[must_use]
     pub const fn current(&self) -> &ConcurrentDurableCheckpointV4 {
         &self.current
+    }
+
+    /// Returns the unchanged cleanup task selected by the validated resource record.
+    #[must_use]
+    pub fn task_id(&self) -> gantry_core::identity::ProtocolIdentity {
+        self.current.resource_records()[self.record_index].task_owner()
     }
 
     /// Returns the authored vector without reordering or deduplicating members.
@@ -197,5 +207,76 @@ impl ResourceOwnerEvidenceV1 {
             return Err(DurableEvidenceError::Encoding);
         }
         Ok(evidence)
+    }
+}
+
+impl super::DurableCommitCoordinatorV1<'_> {
+    /// Journals exact owner advancement against the held authoritative complete graph.
+    /// Unknown or stale predecessors refuse before storage; only validated receipts advance
+    /// baselines. This writer installs no live registry and performs no physical transfer.
+    pub async fn commit_resource_owner_advance(
+        &mut self,
+        evidence: ResourceOwnerEvidenceV1,
+    ) -> Result<super::DurableEvidenceCommitV1, super::DurableCommitError> {
+        self.commit_resource_owner_advance_with_submission(evidence, || {})
+            .await
+    }
+
+    /// Exposes the submission coordinate to the journal-first private publication owner.
+    pub(crate) async fn commit_resource_owner_advance_with_submission(
+        &mut self,
+        evidence: ResourceOwnerEvidenceV1,
+        submitted: impl FnOnce(),
+    ) -> Result<super::DurableEvidenceCommitV1, super::DurableCommitError> {
+        use super::{DurableCommitCutV1, DurableCommitError};
+        use gantry_host::journal::{
+            BatchLocalEvidenceId, JournalEvidenceReferenceV1, UnfinalizedEvidenceV1,
+        };
+        if self.graph_checkpoint_baseline.as_deref() != Some(evidence.previous())
+            || self.predecessor.is_none()
+            || self.graph_cancellation.is_some()
+            || self.graph_task_cancellation
+            || self.execution_id != evidence.current().execution_id()
+            || self.task_id != evidence.current().root_task_id()
+        {
+            return Err(DurableCommitError::InvalidState);
+        }
+        let number = self
+            .next_local_id
+            .checked_add(1)
+            .ok_or(DurableCommitError::InvalidState)?;
+        let local = BatchLocalEvidenceId::new(format!("cut-{number}"))
+            .map_err(|_| DurableCommitError::InvalidState)?;
+        let references = self
+            .predecessor
+            .map(|(id, _)| JournalEvidenceReferenceV1::Existing(id))
+            .into_iter()
+            .collect::<Vec<_>>();
+        let body = UnfinalizedEvidenceV1::new(
+            local.clone(),
+            RESOURCE_OWNER_EVIDENCE_KIND_V1,
+            evidence
+                .encode(MAXIMUM_RESOURCE_OWNER_EVIDENCE_BYTES)
+                .map_err(DurableCommitError::Evidence)?,
+            references,
+            Arc::from([]),
+        )
+        .map_err(|_| DurableCommitError::InvalidState)?;
+        let receipt = self
+            .commit_body_with_submission(
+                DurableCommitCutV1::ResourceOwnerAdvance,
+                number,
+                local,
+                body,
+                submitted,
+            )
+            .await?;
+        self.graph_resource_baseline = Some(evidence.current().resource_records().to_vec());
+        self.graph_resource_policy = Some(super::GraphResourcePolicy {
+            policy: evidence.current().resource_policy(),
+            retained: evidence.current().retained_resource_limit(),
+        });
+        self.graph_checkpoint_baseline = Some(Box::new(evidence.current().clone()));
+        Ok(receipt)
     }
 }

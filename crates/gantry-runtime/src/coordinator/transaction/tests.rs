@@ -460,6 +460,164 @@ fn resource_records_survive_version_eight_graph_recovery() {
     }
     assert_eq!(coordinator.snapshot(), before);
     let mut previous = checkpoint.clone();
+    // Owner advancement uses a separate authoritative journal, never local captured history.
+    let owner_storage = Arc::new(InMemoryJournalStore::new());
+    let owner_journal = JournalId::new("resource-owner-advance")
+        .unwrap_or_else(|error| panic!("owner journal: {error:?}"));
+    let owner_token = ready(owner_storage.acquire_owner(AcquireJournalOwnerV1 {
+        journal_id: owner_journal.clone(),
+        operation: JournalOwnerOperationV1::Start,
+    }))
+    .unwrap_or_else(|error| panic!("owner token: {error:?}"));
+    let owner_counted = Arc::new(CountedCommitStore {
+        storage: Arc::clone(&owner_storage),
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let owner_sink = DurableTransitionSink::new(
+        owner_counted.clone(),
+        owner_journal.clone(),
+        owner_token.token,
+    );
+    let mut owner_writer =
+        DurableCommitCoordinatorV1::new(&owner_sink, execution, root.task_id(), None)
+            .unwrap_or_else(|error| panic!("owner writer: {error:?}"));
+    ready(owner_writer.commit_graph_checkpoint(
+        DurableCommitCutV1::Checkpoint,
+        root.task_id(),
+        checkpoint.clone(),
+    ))
+    .unwrap_or_else(|error| panic!("owner base: {error:?}"));
+    let owner_prefix = ready(owner_storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: owner_journal.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("owner prefix: {error:?}"));
+    let owner_admission = checkpoint
+        .clone()
+        .recover(Arc::clone(&program))
+        .unwrap_or_else(|error| panic!("owner recovery: {error:?}"))
+        .into_driver_admission()
+        .unwrap_or_else(|error| panic!("owner admission: {error:?}"));
+    let (owner_coordinator, mut owner_root, mut owner_children, _) = owner_admission.into_parts();
+    let owner_before = owner_coordinator.snapshot();
+    let owner_machine_before = owner_root.checkpoint();
+    let mut owner_stage = owner_coordinator
+        .stage_graph(&mut owner_root, &mut owner_children)
+        .unwrap_or_else(|error| panic!("owner stage: {error:?}"));
+    owner_stage
+        .stage_resource_owner_advance(&subject, (owner, successor), &charges)
+        .unwrap_or_else(|error| panic!("owner candidate: {error:?}"));
+    drop(owner_stage);
+    assert_eq!(owner_coordinator.snapshot(), owner_before);
+    assert_eq!(owner_root.checkpoint(), owner_machine_before);
+    assert!(!lock(&owner_coordinator.inner.state).durable_publication_reserved);
+    for validated in [false, true] {
+        let mut writer = if validated {
+            DurableCommitCoordinatorV1::from_concurrent_prefix(
+                &owner_sink,
+                Arc::clone(&program),
+                &owner_prefix,
+            )
+        } else {
+            DurableCommitCoordinatorV1::new(
+                &owner_sink,
+                execution,
+                root.task_id(),
+                owner_writer.frontier(),
+            )
+        }
+        .unwrap_or_else(|error| panic!("refusal writer: {error:?}"));
+        let mut stage = owner_coordinator
+            .stage_graph(&mut owner_root, &mut owner_children)
+            .unwrap_or_else(|error| panic!("refusal stage: {error:?}"));
+        stage
+            .stage_resource_owner_advance(&subject, (owner, successor), &charges)
+            .unwrap_or_else(|error| panic!("refusal candidate: {error:?}"));
+        let calls = owner_counted
+            .calls
+            .load(std::sync::atomic::Ordering::Acquire);
+        assert_eq!(
+            ready(stage.commit(
+                &mut writer,
+                if validated {
+                    DurableCommitCutV1::Checkpoint
+                } else {
+                    DurableCommitCutV1::ResourceOwnerAdvance
+                },
+                root.task_id()
+            )),
+            Err(DurableCommitError::InvalidState)
+        );
+        assert_eq!(
+            owner_counted
+                .calls
+                .load(std::sync::atomic::Ordering::Acquire),
+            calls
+        );
+        assert_eq!(owner_coordinator.snapshot(), owner_before);
+        assert!(!lock(&owner_coordinator.inner.state).durable_publication_reserved);
+    }
+    owner_writer = DurableCommitCoordinatorV1::from_concurrent_prefix(
+        &owner_sink,
+        Arc::clone(&program),
+        &owner_prefix,
+    )
+    .unwrap_or_else(|error| panic!("authoritative owner writer: {error:?}"));
+    let mut stage = owner_coordinator
+        .stage_graph(&mut owner_root, &mut owner_children)
+        .unwrap_or_else(|error| panic!("publish owner stage: {error:?}"));
+    stage
+        .stage_resource_owner_advance(&subject, (owner, successor), &charges)
+        .unwrap_or_else(|error| panic!("publish owner candidate: {error:?}"));
+    assert!(
+        stage
+            .stage_resource_finish(&subject, successor, crate::ResourceFinishTransition::Begin)
+            .is_err()
+    );
+    let receipt = ready(stage.commit(
+        &mut owner_writer,
+        DurableCommitCutV1::ResourceOwnerAdvance,
+        root.task_id(),
+    ))
+    .unwrap_or_else(|error| panic!("owner commit: {error:?}"));
+    assert_eq!(receipt.cut, DurableCommitCutV1::ResourceOwnerAdvance);
+    let owner_after = owner_coordinator.snapshot();
+    assert_eq!(owner_after.publication(), owner_before.publication() + 1);
+    let owner_capture = owner_coordinator
+        .capture_checkpoint(&owner_root, &owner_children)
+        .unwrap_or_else(|error| panic!("published owner capture: {error:?}"));
+    assert_eq!(
+        owner_capture.resource_records(),
+        advanced.resource_records()
+    );
+    assert_eq!(owner_root.checkpoint(), owner_machine_before);
+    let owner_committed = ready(owner_storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: owner_journal.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("owner committed prefix: {error:?}"));
+    let owner_replay =
+        crate::recover_concurrent_authoritative_prefix(Arc::clone(&program), &owner_committed)
+            .unwrap_or_else(|error| panic!("owner replay: {error:?}"));
+    assert_eq!(
+        owner_replay.latest_cut(),
+        DurableCommitCutV1::ResourceOwnerAdvance
+    );
+    assert_eq!(
+        owner_replay.execution().scheduler().resource_records(),
+        advanced.resource_records()
+    );
+    let calls = owner_counted
+        .calls
+        .load(std::sync::atomic::Ordering::Acquire);
+    assert_eq!(
+        ready(owner_writer.commit_resource_owner_advance(owner_evidence.clone())),
+        Err(DurableCommitError::InvalidState)
+    );
+    assert_eq!(
+        owner_counted
+            .calls
+            .load(std::sync::atomic::Ordering::Acquire),
+        calls
+    );
     for transition in [
         crate::ResourceFinishTransition::Begin,
         crate::ResourceFinishTransition::Complete { settled_at: 20 },

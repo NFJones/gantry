@@ -15394,7 +15394,7 @@ strict successor generation, absent loan roots, closed machine work and settled 
 MUST precede atomic move charging. Missing containment MUST remain unsettled. Success changes only
 current owner and explicit quota use, preserving issuing evidence, cleanup task, roots and historical
 containment. Refusal MUST preserve the source. This candidate grants no physical transfer, journal
-publication or durable ownership mutation cut; existing graph-image fences remain required.
+publication by itself; durable publication requires the separately declared exact ownership cut.
 
 `ResourceOwnerEvidenceV1` MAY validate exactly one same-cleanup-task owner advancement between
 complete executable-validated graphs. Applying the owner-qualified candidate and explicit Move
@@ -15404,6 +15404,17 @@ authored vector to 128 members before deduplication, admit the caller's complete
 input parsing and output checkpoint copying, and reject unknown quota tags, malformed framing,
 trailing bytes and noncanonical encodings. This validator grants no journal publication authority;
 ordinary graph writers and replay MUST continue refusing unadmitted ownership changes.
+
+The journal kind `gantry.resource-owner-evidence/v1` MAY carry `GNTRWA01` under an independent
+4,194,304-byte ceiling and the distinct `ResourceOwnerAdvance` cut. The writer MUST require the
+complete authoritative predecessor before storage; unknown, stale or locally drifted predecessors
+MUST refuse without submission. Protected-payload lists MUST be empty. `stage_resource_owner_advance`
+MAY privately stage one exact advancement, with no finish, operation, event or submission-resolution
+combination. Only a validated receipt MAY advance writer baselines and install reconstructed logical
+accounting. Pre-submission refusal or drop MUST roll back; indeterminate submission MUST retain
+publication fencing. Full-prefix and selector-eight snapshot replay MUST validate exact predecessor
+correspondence. Legacy compaction MUST refuse ownership histories rather than omit them. No cleanup-task
+transfer, physical transfer or accepted-work recovery is supplied, and terminal outcomes remain fixed.
 
 `RecoveredResourceRecord::stage_finish` MAY build a logical begin/complete finish candidate.
 It MUST validate the presented current owner before applying the existing ledger transition,

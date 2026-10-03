@@ -44,6 +44,11 @@ pub struct DurableGraphTransaction<'a> {
         crate::ResourceFinishTransition,
         Vec<gantry_ir::Charge>,
     )>,
+    resource_owner: Option<(
+        usize,
+        (gantry_ir::OwnerGeneration, gantry_ir::OwnerGeneration),
+        Vec<gantry_ir::Charge>,
+    )>,
     commit_started: bool,
     installed: bool,
     events: Vec<(
@@ -154,6 +159,7 @@ impl ExecutionCoordinator {
             resource_records,
             original_checkpoint: Box::new(original_checkpoint),
             resource_finish: None,
+            resource_owner: None,
             commit_started: false,
             installed: false,
             events: Vec::new(),
@@ -196,7 +202,11 @@ impl DurableGraphTransaction<'_> {
                 TaskStateError::ResourceStateUnsupported,
             ));
         }
-        if self.resource_finish.is_some() || self.operation.is_some() || !self.events.is_empty() {
+        if self.resource_finish.is_some()
+            || self.resource_owner.is_some()
+            || self.operation.is_some()
+            || !self.events.is_empty()
+        {
             return Err(CoordinatorResourceRefusal::Task(
                 TaskStateError::ResourceStateUnsupported,
             ));
@@ -218,6 +228,70 @@ impl DurableGraphTransaction<'_> {
         self.resource_records[index] = candidate;
         self.resource_finish = Some((index, owner, transition, charges.to_vec()));
         Ok(())
+    }
+
+    /// Privately stages exact same-cleanup-task advancement without publishing accounting.
+    /// Existing transfer fences and the authored-vector bound precede candidate replacement.
+    /// Commit must use ResourceOwnerAdvance with no other semantic mutation or event.
+    pub fn stage_resource_owner_advance(
+        &mut self,
+        subject: &crate::ResourceSubjectBinding,
+        generations: (gantry_ir::OwnerGeneration, gantry_ir::OwnerGeneration),
+        charges: &[gantry_ir::Charge],
+    ) -> Result<(), CoordinatorResourceRefusal> {
+        if charges.len() > crate::ResourceOwnerEvidenceV1::MAXIMUM_CHARGES
+            || self.resource_finish.is_some()
+            || self.resource_owner.is_some()
+            || self.operation.is_some()
+            || !self.events.is_empty()
+        {
+            return Err(CoordinatorResourceRefusal::Task(
+                TaskStateError::ResourceStateUnsupported,
+            ));
+        }
+        let index = self
+            .resource_records
+            .iter()
+            .position(|record| record.subject() == subject)
+            .ok_or(CoordinatorResourceRefusal::Registry(
+                crate::ResourceRegistryRefusal::UnknownSubject,
+            ))?;
+        let candidate = self.resource_records[index]
+            .stage_owner_advance(generations.0, generations.1, charges)
+            .map_err(CoordinatorResourceRefusal::Registry)?;
+        self.resource_records[index] = candidate;
+        self.resource_owner = Some((index, generations, charges.to_vec()));
+        Ok(())
+    }
+
+    /// Validates the complete private accounting set before any journal submission.
+    fn reconstruct_staged_resources(&self) -> Result<crate::ResourceRegistry, DurableCommitError> {
+        let (live, pending) = self
+            .resource_policy
+            .ok_or(DurableCommitError::InvalidState)?;
+        let encoded = self
+            .resource_records
+            .iter()
+            .map(|record| {
+                crate::encode_resource_recovery_envelope(
+                    record,
+                    crate::task::MAXIMUM_RESOURCE_SECTION_BYTES,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| DurableCommitError::InvalidState)?;
+        let inputs = encoded
+            .iter()
+            .zip(&self.resource_records)
+            .map(|(bytes, record)| (bytes.as_slice(), record.owner(), record.task_owner()))
+            .collect::<Vec<_>>();
+        crate::ResourceRegistry::reconstruct_recovery_envelopes(
+            self.staged_foreground.program_arc(),
+            &inputs,
+            crate::task::MAXIMUM_RESOURCE_SECTION_BYTES,
+            (live, pending, self.retained_resource_limit),
+        )
+        .map_err(|_| DurableCommitError::InvalidState)
     }
 
     /// Freezes the causal event and delivery policy before journal submission.
@@ -430,41 +504,41 @@ impl DurableGraphTransaction<'_> {
                 &charges,
             )
             .map_err(DurableCommitError::Evidence)?;
-            let (live, pending) = self
-                .resource_policy
-                .ok_or(DurableCommitError::InvalidState)?;
-            let encoded = self
-                .resource_records
-                .iter()
-                .map(|record| {
-                    crate::encode_resource_recovery_envelope(
-                        record,
-                        crate::task::MAXIMUM_RESOURCE_SECTION_BYTES,
-                    )
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|_| DurableCommitError::InvalidState)?;
-            let inputs = encoded
-                .iter()
-                .zip(&self.resource_records)
-                .map(|(bytes, record)| (bytes.as_slice(), record.owner(), record.task_owner()))
-                .collect::<Vec<_>>();
-            staged_resources = Some(
-                crate::ResourceRegistry::reconstruct_recovery_envelopes(
-                    self.staged_foreground.program_arc(),
-                    &inputs,
-                    crate::task::MAXIMUM_RESOURCE_SECTION_BYTES,
-                    (live, pending, self.retained_resource_limit),
-                )
-                .map_err(|_| DurableCommitError::InvalidState)?,
-            );
+            staged_resources = Some(self.reconstruct_staged_resources()?);
             commits
                 .commit_resource_finish_with_submission(evidence, || {
                     self.commit_started = true;
                 })
                 .await?
+        } else if let Some((index, generations, charges)) = self.resource_owner.take() {
+            if cut != DurableCommitCutV1::ResourceOwnerAdvance
+                || self.operation.is_some()
+                || !self.events.is_empty()
+                || submission_resolution.is_some()
+                || self.resource_records[index].task_owner() != affected_task
+            {
+                return Err(DurableCommitError::InvalidState);
+            }
+            let evidence = crate::ResourceOwnerEvidenceV1::new(
+                self.staged_foreground.program_arc(),
+                (*self.original_checkpoint).clone(),
+                checkpoint,
+                index,
+                generations,
+                &charges,
+            )
+            .map_err(DurableCommitError::Evidence)?;
+            staged_resources = Some(self.reconstruct_staged_resources()?);
+            commits
+                .commit_resource_owner_advance_with_submission(evidence, || {
+                    self.commit_started = true;
+                })
+                .await?
         } else {
-            if cut == DurableCommitCutV1::ResourceFinish {
+            if matches!(
+                cut,
+                DurableCommitCutV1::ResourceFinish | DurableCommitCutV1::ResourceOwnerAdvance
+            ) {
                 return Err(DurableCommitError::InvalidState);
             }
             commits

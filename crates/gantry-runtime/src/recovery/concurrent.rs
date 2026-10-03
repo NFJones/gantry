@@ -92,7 +92,8 @@ impl ConcurrentDurableEvidenceV4 {
             | DurableCommitCutV1::OperationOutcome
             | DurableCommitCutV1::OperationResult
             | DurableCommitCutV1::RetryWaiting
-            | DurableCommitCutV1::ResourceFinish => false,
+            | DurableCommitCutV1::ResourceFinish
+            | DurableCommitCutV1::ResourceOwnerAdvance => false,
         };
         if !valid_cut {
             return Err(DurableEvidenceError::InvalidState);
@@ -653,6 +654,7 @@ enum ConcurrentDurableEvidenceBody {
     V4(Box<ConcurrentDurableEvidenceV4>),
     V5(Box<ConcurrentDurableEvidenceV5>),
     Finish(Box<super::ResourceFinishEvidenceV1>),
+    Owner(Box<super::ResourceOwnerEvidenceV1>),
 }
 
 impl ConcurrentDurableEvidenceBody {
@@ -661,6 +663,7 @@ impl ConcurrentDurableEvidenceBody {
             Self::V4(evidence) => evidence.cut(),
             Self::V5(evidence) => evidence.cut(),
             Self::Finish(_) => DurableCommitCutV1::ResourceFinish,
+            Self::Owner(_) => DurableCommitCutV1::ResourceOwnerAdvance,
         }
     }
 
@@ -669,6 +672,7 @@ impl ConcurrentDurableEvidenceBody {
             Self::V4(evidence) => evidence.task_id(),
             Self::V5(evidence) => evidence.task_id(),
             Self::Finish(evidence) => evidence.task_id(),
+            Self::Owner(evidence) => evidence.task_id(),
         }
     }
 
@@ -681,6 +685,7 @@ impl ConcurrentDurableEvidenceBody {
             Self::V4(evidence) => evidence.checkpoint(),
             Self::V5(evidence) => evidence.checkpoint(),
             Self::Finish(evidence) => evidence.current(),
+            Self::Owner(evidence) => evidence.current(),
         }
     }
 }
@@ -1448,6 +1453,9 @@ impl ConcurrentDurableRecoverySnapshotV1 {
                     .encode(super::resource_finish::MAXIMUM_RESOURCE_FINISH_EVIDENCE_BYTES)
                     .unwrap_or_else(|_| unreachable!("finish snapshots are not constructible")),
             ),
+            ConcurrentDurableEvidenceBody::Owner(_) => {
+                unreachable!("legacy snapshots cannot retain resource ownership cuts")
+            }
         };
         push_json_string(&mut output, &super::encode_hex(&graph_body));
         output.push_str(",\"graph_evidence_id\":");
@@ -2837,11 +2845,23 @@ pub fn recover_concurrent_authoritative_prefix(
                 | CONCURRENT_DURABLE_EVIDENCE_KIND_V5
                 | super::RESOURCE_FINISH_EVIDENCE_KIND_V1
                 | super::RESOURCE_FINISH_EVIDENCE_KIND_V2
+                | super::RESOURCE_OWNER_EVIDENCE_KIND_V1
         ) {
             let evidence = if envelope.kind.as_ref() == CONCURRENT_DURABLE_EVIDENCE_KIND_V4 {
                 let evidence =
                     ConcurrentDurableEvidenceV4::decode(&program, &envelope.canonical_body)?;
                 ConcurrentDurableEvidenceBody::V4(Box::new(evidence))
+            } else if envelope.kind.as_ref() == super::RESOURCE_OWNER_EVIDENCE_KIND_V1 {
+                if !envelope.protected_payloads.is_empty() {
+                    return Err(DurableEvidenceError::Encoding);
+                }
+                ConcurrentDurableEvidenceBody::Owner(Box::new(
+                    super::ResourceOwnerEvidenceV1::decode(
+                        Arc::clone(&program),
+                        &envelope.canonical_body,
+                        super::resource_owner::MAXIMUM_RESOURCE_OWNER_EVIDENCE_BYTES,
+                    )?,
+                ))
             } else if matches!(
                 envelope.kind.as_ref(),
                 super::RESOURCE_FINISH_EVIDENCE_KIND_V1 | super::RESOURCE_FINISH_EVIDENCE_KIND_V2
@@ -3144,6 +3164,13 @@ fn validate_transition(
             Err(DurableEvidenceError::InvalidState)
         };
     }
+    if let ConcurrentDurableEvidenceBody::Owner(evidence) = current {
+        return if evidence.previous() == previous.checkpoint() {
+            Ok(())
+        } else {
+            Err(DurableEvidenceError::InvalidState)
+        };
+    }
     if current.checkpoint().resource_policy() != previous.checkpoint().resource_policy()
         || current.checkpoint().retained_resource_limit()
             != previous.checkpoint().retained_resource_limit()
@@ -3197,7 +3224,9 @@ fn validate_transition(
             ConcurrentDurableEvidenceBody::V5(_) => {
                 validate_execution_cancellation_transition(program, previous, current)?
             }
-            ConcurrentDurableEvidenceBody::Finish(_) => false,
+            ConcurrentDurableEvidenceBody::Finish(_) | ConcurrentDurableEvidenceBody::Owner(_) => {
+                false
+            }
         },
         DurableCommitCutV1::TaskSettlement => {
             previous_tasks == current_tasks
@@ -3233,7 +3262,7 @@ fn validate_transition(
         | DurableCommitCutV1::OperationOutcome
         | DurableCommitCutV1::OperationResult
         | DurableCommitCutV1::RetryWaiting => previous_tasks == current_tasks,
-        DurableCommitCutV1::ResourceFinish => false,
+        DurableCommitCutV1::ResourceFinish | DurableCommitCutV1::ResourceOwnerAdvance => false,
     };
     valid
         .then_some(())
@@ -4027,7 +4056,7 @@ fn validate_task_ownership_transition(
             evidence.record() == ConcurrentDurableEvidenceRecordV5::Ownership
                 && evidence.ownership() == Some(&ownership)
         }
-        ConcurrentDurableEvidenceBody::Finish(_) => false,
+        ConcurrentDurableEvidenceBody::Finish(_) | ConcurrentDurableEvidenceBody::Owner(_) => false,
     })
 }
 
