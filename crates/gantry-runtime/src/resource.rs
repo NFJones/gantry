@@ -633,6 +633,11 @@ pub struct RecoveredResourceRecord {
     record: DurableResourceRecord,
     #[cfg(feature = "durable")]
     issuing_evidence: Option<(Arc<[u8]>, crate::ExecutionBudgetSnapshot)>,
+    #[cfg(feature = "durable")]
+    containment_evidence: Option<(
+        OwnerGeneration,
+        Option<(gantry_ir::EffectState, ExternalOutcome)>,
+    )>,
 }
 
 impl RecoveredResourceRecord {
@@ -652,6 +657,8 @@ impl RecoveredResourceRecord {
             record,
             #[cfg(feature = "durable")]
             issuing_evidence: None,
+            #[cfg(feature = "durable")]
+            containment_evidence: None,
         }
     }
 
@@ -707,6 +714,18 @@ impl RecoveredResourceRecord {
     #[must_use]
     pub const fn task_owner(&self) -> gantry_core::identity::ProtocolIdentity {
         self.task_owner
+    }
+
+    /// Returns historical containment ownership and its winner when explicitly captured.
+    #[cfg(feature = "durable")]
+    #[must_use]
+    pub const fn containment_evidence(
+        &self,
+    ) -> Option<(
+        OwnerGeneration,
+        Option<(gantry_ir::EffectState, ExternalOutcome)>,
+    )> {
+        self.containment_evidence
     }
 
     /// Returns the subject this record is presented for.
@@ -1176,6 +1195,16 @@ impl ResourceRegistry {
                     },
                 ));
             }
+            #[cfg(feature = "durable")]
+            if let Some((owner, winner)) = presented.containment_evidence {
+                let mut containment = ContainmentSettlement::open(owner);
+                if let Some((effect, outcome)) = winner {
+                    containment
+                        .settle(owner, Completion::observed(outcome, effect))
+                        .map_err(ResourceRegistryRefusal::Containment)?;
+                }
+                account.containment = containment;
+            }
             if matches!(
                 account.ledger().lifetime(),
                 ResourceLifetimeState::Active | ResourceLifetimeState::Finishing
@@ -1251,6 +1280,28 @@ impl ResourceRegistry {
     #[must_use]
     pub fn account(&self, subject: &ResourceSubjectBinding) -> Option<&AdmittedResource> {
         self.accounts.get(&subject.registry_key())
+    }
+
+    /// Captures accounting with exact historical containment ownership and its accepted winner.
+    ///
+    /// Ordinary `declared_records` remains accounting-only. This projection restores no adapter,
+    /// physical ownership or pending work, and does not relax durable graph admission.
+    #[cfg(feature = "durable")]
+    #[must_use]
+    pub fn declared_records_with_containment(&self) -> Vec<RecoveredResourceRecord> {
+        let mut records = self.declared_records();
+        for record in &mut records {
+            let account = self
+                .accounts
+                .get(&record.subject.registry_key())
+                .unwrap_or_else(|| unreachable!("declared capture selects a retained account"));
+            let containment = account.containment();
+            record.containment_evidence = Some((
+                containment.owner(),
+                containment.effect_state().zip(containment.outcome()),
+            ));
+        }
+        records
     }
 
     /// Selects exact ownership first, retaining foreign-provenance refusal for a portable alias.

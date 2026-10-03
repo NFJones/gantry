@@ -15340,6 +15340,17 @@ bytes, missing issuing evidence or noncanonical encodings MUST refuse without pu
 facts. This envelope grants no journal authentication, physical ownership or accepted-work recovery
 and does not relax combined-graph resource-state refusal.
 
+`declared_records_with_containment` MAY explicitly capture historical containment ownership and
+its optional accepted effect/outcome winner. Reconstruction MUST preserve that owner independently
+of current accounting ownership and validate the winner through the Section 23 settlement model;
+an accepted winner MUST continue refusing a second settlement. `GNTRRE02` carries this explicit
+projection, including an unsettled state, under the same independent admission bounds. Historical
+containment ownership MUST NOT exceed current accounting ownership. Unknown tags, impossible
+effect/outcome pairs and trailing containment bytes MUST refuse. Records without explicit
+containment evidence retain `GNTRRE01` bytes and legacy accounting-only reconstruction semantics;
+ordinary declared capture still opens fresh containment on reconstruction. This projection creates
+no adapter bindings, physical ownership or pending work and does not qualify journal provenance.
+
 `admit_pending_operation_with_issuing_evidence` MAY retain validated issuing evidence during
 live accounting admission under an explicit envelope byte ceiling. Evidence validation and byte
 admission MUST precede registry insertion; ordinary authoritative machine-lease and quota checks

@@ -8,7 +8,10 @@ use std::sync::Arc;
 
 use gantry_core::identity::ProtocolIdentity;
 use gantry_core::portable::IdentityKind;
-use gantry_ir::{MachineProgram, OwnerGeneration, ResourceCarrier};
+use gantry_ir::{
+    Completion, ContainmentSettlement, EffectState, ExternalOutcome, MachineProgram,
+    OwnerGeneration, ResourceCarrier,
+};
 
 use super::{
     RecoveredResourceRecord, ResourceOriginRecoveryError, ResourceRecordCodecError,
@@ -17,6 +20,7 @@ use super::{
 use crate::machine::checkpoint_codec::{Reader, Writer};
 
 const MAGIC: &[u8; 8] = b"GNTRRE01";
+const MAGIC_V2: &[u8; 8] = b"GNTRRE02";
 
 /// Refusal while admitting an independently bounded resource reconstruction envelope.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -49,10 +53,33 @@ pub fn encode_resource_recovery_envelope(
     let budget = budget.canonical_bytes();
     let cleanup = record.task_owner().to_string();
     let facts = encode_resource_reconstruction_record(record.record());
+    let containment = record.containment_evidence().map(|(owner, winner)| {
+        let mut writer = Writer::default();
+        writer.u64(owner.value());
+        writer.boolean(winner.is_some());
+        if let Some((effect, outcome)) = winner {
+            writer.u8(match effect {
+                EffectState::NotStarted => 0,
+                EffectState::DefiniteRejection => 1,
+                EffectState::Ambiguous => 2,
+            });
+            writer.u8(match outcome {
+                ExternalOutcome::Accepted => 0,
+                ExternalOutcome::Rejected => 1,
+                ExternalOutcome::Ambiguous => 2,
+            });
+        }
+        writer.finish()
+    });
     let length = [checkpoint.len(), budget.len(), cleanup.len(), facts.len()]
         .into_iter()
         .try_fold(MAGIC.len(), |length, member| {
             length.checked_add(8)?.checked_add(member)
+        })
+        .and_then(|length| {
+            containment.as_ref().map_or(Some(length), |facts| {
+                length.checked_add(8)?.checked_add(facts.len())
+            })
         })
         .and_then(|length| u64::try_from(length).ok())
         .ok_or(ResourceRecoveryEnvelopeError::ByteLimit)?;
@@ -60,11 +87,18 @@ pub fn encode_resource_recovery_envelope(
         return Err(ResourceRecoveryEnvelopeError::ByteLimit);
     }
     let mut writer = Writer::default();
-    writer.raw(MAGIC);
+    writer.raw(if containment.is_some() {
+        MAGIC_V2
+    } else {
+        MAGIC
+    });
     writer.bytes(checkpoint);
     writer.bytes(&budget);
     writer.bytes(cleanup.as_bytes());
     writer.bytes(&facts);
+    if let Some(containment) = containment {
+        writer.bytes(&containment);
+    }
     Ok(writer.finish())
 }
 
@@ -84,11 +118,10 @@ pub fn decode_resource_recovery_envelope(
         return Err(ResourceRecoveryEnvelopeError::ByteLimit);
     }
     let mut reader = Reader::new(bytes);
-    if reader
+    let magic = reader
         .raw(MAGIC.len())
-        .map_err(|_| ResourceRecoveryEnvelopeError::Encoding)?
-        != MAGIC
-    {
+        .map_err(|_| ResourceRecoveryEnvelopeError::Encoding)?;
+    if magic != MAGIC && magic != MAGIC_V2 {
         return Err(ResourceRecoveryEnvelopeError::Encoding);
     }
     let checkpoint = reader
@@ -103,6 +136,15 @@ pub fn decode_resource_recovery_envelope(
     let facts = reader
         .bytes()
         .map_err(|_| ResourceRecoveryEnvelopeError::Encoding)?;
+    let containment = if magic == MAGIC_V2 {
+        Some(
+            reader
+                .bytes()
+                .map_err(|_| ResourceRecoveryEnvelopeError::Encoding)?,
+        )
+    } else {
+        None
+    };
     if !reader.is_empty() {
         return Err(ResourceRecoveryEnvelopeError::Encoding);
     }
@@ -131,6 +173,50 @@ pub fn decode_resource_recovery_envelope(
     )
     .map_err(ResourceRecoveryEnvelopeError::Origin)?;
     record.task_owner = cleanup;
+    if let Some(bytes) = containment {
+        let mut reader = Reader::new(bytes);
+        let historical_owner = OwnerGeneration::new(
+            reader
+                .u64()
+                .map_err(|_| ResourceRecoveryEnvelopeError::Encoding)?,
+        );
+        if historical_owner != owner && !owner.succeeds(historical_owner) {
+            return Err(ResourceRecoveryEnvelopeError::Encoding);
+        }
+        let winner = if reader
+            .boolean()
+            .map_err(|_| ResourceRecoveryEnvelopeError::Encoding)?
+        {
+            let effect = match reader
+                .u8()
+                .map_err(|_| ResourceRecoveryEnvelopeError::Encoding)?
+            {
+                0 => EffectState::NotStarted,
+                1 => EffectState::DefiniteRejection,
+                2 => EffectState::Ambiguous,
+                _ => return Err(ResourceRecoveryEnvelopeError::Encoding),
+            };
+            let outcome = match reader
+                .u8()
+                .map_err(|_| ResourceRecoveryEnvelopeError::Encoding)?
+            {
+                0 => ExternalOutcome::Accepted,
+                1 => ExternalOutcome::Rejected,
+                2 => ExternalOutcome::Ambiguous,
+                _ => return Err(ResourceRecoveryEnvelopeError::Encoding),
+            };
+            ContainmentSettlement::open(historical_owner)
+                .settle(historical_owner, Completion::observed(outcome, effect))
+                .map_err(|_| ResourceRecoveryEnvelopeError::Encoding)?;
+            Some((effect, outcome))
+        } else {
+            None
+        };
+        if !reader.is_empty() {
+            return Err(ResourceRecoveryEnvelopeError::Encoding);
+        }
+        record.containment_evidence = Some((historical_owner, winner));
+    }
     if encode_resource_recovery_envelope(&record, maximum_bytes)? != bytes {
         return Err(ResourceRecoveryEnvelopeError::Encoding);
     }

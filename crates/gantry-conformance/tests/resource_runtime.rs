@@ -10838,6 +10838,136 @@ fn runtime_containment_settlement_settles_one_operation_once() {
     );
 }
 
+/// Explicit containment capture preserves historical winners; ordinary capture remains accounting-only.
+#[test]
+fn explicit_resource_capture_preserves_containment_winners() {
+    use gantry::runtime::{decode_resource_recovery_envelope, encode_resource_recovery_envelope};
+    for (outcome, effect) in [
+        (ExternalOutcome::Accepted, EffectState::NotStarted),
+        (ExternalOutcome::Rejected, EffectState::DefiniteRejection),
+        (ExternalOutcome::Ambiguous, EffectState::Ambiguous),
+    ] {
+        let (program, mut machine, subject) =
+            machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+        let subject = subject.unwrap_or_else(|| panic!("subject"));
+        let owner = OwnerGeneration::new(4);
+        let record =
+            ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
+                .unwrap_or_else(|error| panic!("ledger: {error:?}"));
+        let mut registry = ResourceRegistry::with_limits(1, 1);
+        registry
+            .admit_pending_operation_with_issuing_evidence(
+                &machine,
+                ResourceCarrier::ReconstructionRecord,
+                record.durable_record(),
+                65_536,
+            )
+            .unwrap_or_else(|error| panic!("admit: {error:?}"));
+        registry
+            .settle_containment(&subject, owner, Completion::observed(outcome, effect))
+            .unwrap_or_else(|error| panic!("containment: {error:?}"));
+        let operation = machine
+            .checkpoint()
+            .pending_operation()
+            .unwrap_or_else(|| panic!("pending"))
+            .identity;
+        machine
+            .fail_operation(
+                operation,
+                gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+            )
+            .unwrap_or_else(|error| panic!("machine settlement: {error:?}"));
+        registry
+            .advance_owner(&subject, owner, OwnerGeneration::new(5))
+            .unwrap_or_else(|error| panic!("owner advancement: {error:?}"));
+        let captured = registry.declared_records_with_containment();
+        assert_eq!(
+            captured[0].containment_evidence(),
+            Some((owner, Some((effect, outcome))))
+        );
+        let bytes = encode_resource_recovery_envelope(&captured[0], 65_536)
+            .unwrap_or_else(|error| panic!("encode: {error:?}"));
+        assert_eq!(&bytes[..8], b"GNTRRE02");
+        let decoded = decode_resource_recovery_envelope(
+            Arc::clone(&program),
+            &bytes,
+            65_536,
+            OwnerGeneration::new(5),
+            machine.task_id(),
+        )
+        .unwrap_or_else(|error| panic!("decode: {error:?}"));
+        assert_eq!(decoded, captured[0]);
+        // The closed containment member is owner (8), winner flag (1), effect (1), outcome (1).
+        let mut future_owner = bytes.clone();
+        let start = future_owner.len() - 11;
+        future_owner[start..start + 8].copy_from_slice(&6_u64.to_be_bytes());
+        let mut impossible_winner = bytes.clone();
+        let end = impossible_winner.len();
+        impossible_winner[end - 2] = 2; // Ambiguous effect cannot settle Accepted.
+        impossible_winner[end - 1] = 0;
+        let mut unknown_outcome = bytes.clone();
+        unknown_outcome[end - 1] = 255;
+        let mut wrong_version = bytes.clone();
+        wrong_version[..8].copy_from_slice(b"GNTRRE01");
+        for invalid in [
+            future_owner,
+            impossible_winner,
+            unknown_outcome,
+            wrong_version,
+        ] {
+            assert_eq!(
+                decode_resource_recovery_envelope(
+                    Arc::clone(&program),
+                    &invalid,
+                    65_536,
+                    OwnerGeneration::new(5),
+                    machine.task_id(),
+                )
+                .err(),
+                Some(gantry::runtime::ResourceRecoveryEnvelopeError::Encoding),
+            );
+        }
+        let mut rebuilt = ResourceRegistry::reconstruct(Some(1), vec![decoded])
+            .unwrap_or_else(|error| panic!("reconstruct: {error:?}"));
+        let containment = rebuilt
+            .account(&subject)
+            .unwrap_or_else(|| panic!("account"))
+            .containment();
+        assert_eq!(containment.owner(), owner);
+        assert_eq!(containment.effect_state(), Some(effect));
+        assert_eq!(containment.outcome(), Some(outcome));
+        let before = rebuilt.declared_records_with_containment();
+        assert_eq!(
+            rebuilt.settle_containment(
+                &subject,
+                OwnerGeneration::new(5),
+                Completion::observed(ExternalOutcome::Rejected, EffectState::DefiniteRejection)
+            ),
+            Err(ResourceRegistryRefusal::Containment(
+                ContainmentError::SecondSettlement { settled: outcome }
+            ))
+        );
+        assert_eq!(rebuilt.declared_records_with_containment(), before);
+        let legacy = ResourceRegistry::reconstruct(Some(1), registry.declared_records())
+            .unwrap_or_else(|error| panic!("legacy reconstruction: {error:?}"));
+        assert!(
+            !legacy
+                .account(&subject)
+                .unwrap_or_else(|| panic!("legacy account"))
+                .containment()
+                .is_settled()
+        );
+        assert_eq!(
+            legacy
+                .account(&subject)
+                .unwrap_or_else(|| panic!("legacy account"))
+                .containment()
+                .owner(),
+            OwnerGeneration::new(5)
+        );
+    }
+}
+
 /// The containment settlement is runtime state of one admitted account value, not a declared durable
 /// fact: a subject rebuilt from its declared capture, and the same subject readmitted after physical
 /// reclamation, each hold a fresh unsettled settlement, so the runtime publishes no cross-recovery

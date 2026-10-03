@@ -128,6 +128,14 @@ trailing or alternate encodings. Legacy records without issuing evidence cannot 
 This is declared reconstruction carriage, not ordinary value serialization, journal authentication,
 or combined-graph integration; physical slots and accepted work are not restored.
 
+`declared_records_with_containment()` explicitly adds historical containment ownership and its
+optional effect/outcome winner. Such records use `GNTRRE02`; records without this projection keep
+their `GNTRRE01` bytes. Reconstruction validates the winner through the Section 23 model and
+preserves its historical owner even after accounting ownership advances. A retained winner still
+refuses second settlement. Future historical owners, unknown tags, impossible winners and trailing
+containment bytes refuse. Ordinary declared capture remains accounting-only and opens fresh
+containment during reconstruction. Neither path restores adapters or accepted machine work.
+
 `admit_pending_operation_with_issuing_evidence` opts live accounting admission into retaining
 validated issuing facts under an explicit envelope byte ceiling. Evidence and byte admission run
 before insertion; ordinary machine-lease and quota checks still decide acquisition. The admitted
@@ -525,9 +533,11 @@ retained records nor snapshot size; whole-execution resource integration remains
   subject, and `GNT-28.10-resource-accounting-non-claims` is not widened here.
 - The containment settlement is runtime state of one account value under
   `GNT-23.4-operation-ownership-and-single-settlement`, so one contained operation settles once for
-  the lifetime of that value. A subject rebuilt from its declared capture, or reclaimed and
-  readmitted, holds a fresh unsettled settlement; the runtime publishes no cross-recovery
-  single-settlement claim.
+  the lifetime of that value. A subject rebuilt from ordinary accounting-only declared capture,
+  or reclaimed and readmitted, holds a fresh unsettled settlement; that accounting-only path
+  publishes no cross-recovery single-settlement claim. Explicit containment capture
+  instead preserves historical ownership and the accepted winner, including its second-settlement
+  refusal; it is not by itself authenticated journal recovery.
 - The bound adapter instance and the poison reason ledger are runtime state under
   `GNT-23.5-failed-instance-poisoning-and-isolation`. A registry rebuilt from declared
   reconstruction records holds neither, and the runtime publishes no recovery claim for either.
