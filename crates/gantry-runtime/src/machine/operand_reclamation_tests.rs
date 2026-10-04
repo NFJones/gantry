@@ -8,6 +8,89 @@ use std::sync::{Arc, Weak};
 
 use super::*;
 
+/// Unreadable settlement authority must not publish a result or release accepted work.
+#[test]
+fn unreadable_operation_lease_refuses_settlement_without_mutation() {
+    let root = CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("root: {error:?}"));
+    let program = Arc::new(
+        MachineProgram::new(vec![gantry_ir::Workflow {
+            path: root.clone(),
+            parameters: Vec::new(),
+            result: TypeDescriptor::UNIT,
+            effects: gantry_ir::EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: StructuralPosition::new(vec![0])
+                        .unwrap_or_else(|error| panic!("site: {error:?}")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Operation,
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![1])
+                        .unwrap_or_else(|error| panic!("site: {error:?}")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Return,
+                },
+            ],
+        }])
+        .unwrap_or_else(|error| panic!("program: {error:?}")),
+    );
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x9e; 32])
+        .unwrap_or_else(|error| panic!("execution: {error:?}"));
+    let limits = MachineLimits::new(8, 1, 1, 1, 8, gantry_core::value::DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| panic!("limits"));
+    let mut machine = Machine::new(program, &root, Vec::new(), execution, limits)
+        .unwrap_or_else(|error| panic!("machine: {error:?}"));
+    let operation = match machine.step() {
+        MachineStep::Transition(MachineLabel::OperationPrepared(operation)) => operation.identity,
+        other => panic!("operation: {other:?}"),
+    };
+    let lease = Arc::clone(
+        &machine
+            .pending_operation
+            .as_ref()
+            .unwrap_or_else(|| panic!("pending operation"))
+            .resource_admission_open,
+    );
+    assert!(
+        std::panic::catch_unwind(|| {
+            let _guard = lease.lock().unwrap_or_else(|_| panic!("fixture lease"));
+            panic!("poison settlement authority");
+        })
+        .is_err()
+    );
+    let values = machine.values.clone();
+    let places = machine.values_places.clone();
+    let frames = machine.frames.clone();
+    let budget = machine.execution_budget.snapshot();
+    #[cfg(feature = "durable")]
+    let checkpoint = machine.checkpoint().canonical_bytes();
+    assert_eq!(
+        machine.complete_operation(operation, LogicalValue::unit()),
+        Err(OperationCompletionError::NotWaiting)
+    );
+    assert_eq!(
+        machine.fail_operation_with_code(operation, RuntimeCode::InternalInvariant),
+        Err(OperationCompletionError::NotWaiting)
+    );
+    assert_eq!(machine.values, values);
+    assert_eq!(machine.values_places, places);
+    assert_eq!(machine.frames, frames);
+    assert_eq!(machine.execution_budget.snapshot(), budget);
+    assert_eq!(machine.status(), MachineStatus::WaitingOperation);
+    assert!(machine.outcome().is_none());
+    assert!(machine.pending_operation.is_some());
+    assert!(
+        lease
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .pending,
+        "refusal must not close accepted work even on poisoned authority"
+    );
+    #[cfg(feature = "durable")]
+    assert_eq!(machine.checkpoint().canonical_bytes(), checkpoint);
+}
+
 /// One scoped observer for a uniquely owned consumed place origin.
 struct Probe {
     root: Weak<str>,
