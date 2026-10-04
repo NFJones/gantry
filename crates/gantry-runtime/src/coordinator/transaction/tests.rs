@@ -4864,6 +4864,51 @@ fn multiple_machines_publish_one_budget_and_checkpoint_cut() {
         Err(TaskStateError::InvalidTaskMachine),
         "rebinding must not erase independently charged child work",
     );
+    let changed_body = ExecutableTaskBody::new(
+        suspension.body.clone(),
+        TypeDescriptor::UNIT,
+        Vec::new(),
+        ExecutableTaskContext::v1(),
+        vec![
+            Instruction {
+                site: StructuralPosition::new(vec![0, 0])
+                    .unwrap_or_else(|error| panic!("changed site: {error:?}")),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Operation,
+            },
+            Instruction {
+                site: StructuralPosition::new(vec![0, 1])
+                    .unwrap_or_else(|error| panic!("changed site: {error:?}")),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::TaskComplete,
+            },
+        ],
+    )
+    .unwrap_or_else(|error| panic!("changed body: {error:?}"));
+    let changed_program = Arc::new(
+        MachineProgram::with_task_bodies(
+            program
+                .callable_identities()
+                .iter()
+                .cloned()
+                .zip(program.workflows().iter().cloned())
+                .collect(),
+            vec![changed_body],
+        )
+        .unwrap_or_else(|error| panic!("changed program: {error:?}")),
+    );
+    assert_ne!(changed_program, program);
+    let changed_child = Machine::recover_from_checkpoint(
+        changed_program,
+        machine.checkpoint(),
+        machine.execution_budget(),
+    )
+    .unwrap_or_else(|error| panic!("independently valid changed child: {error:?}"));
+    assert_eq!(
+        stage.install_child_machine(child.task_id, changed_child),
+        Err(TaskStateError::InvalidTaskMachine),
+        "installation must reject executable substitution before creating staged ownership",
+    );
     stage
         .install_child_machine(child.task_id, machine)
         .unwrap_or_else(|error| panic!("child installation: {error:?}"));

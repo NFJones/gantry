@@ -1115,6 +1115,10 @@ portable outcomes, identity, or durable compatibility.
    its complete budget snapshot to match that private budget before rebinding. Installation
    MUST NOT discard independently charged progress. Refusal MUST insert no child machine
    or admission guard, leaving a legitimate submission retry available.
+   Child installation MUST also require identical executable content with the staged
+   foreground before cloning or creating admission guards. Matching task coordinates
+   and counters MUST NOT authorize substituted instructions; identical independent
+   program copies remain eligible. This validates consistency, not artifact authenticity.
    Graph capture MUST also require identical executable program content across foreground
    and child machines before constructing a checkpoint. Matching body identities and budgets
    MUST NOT authorize different instructions; independent copies of identical programs remain

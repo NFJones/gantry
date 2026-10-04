@@ -54,6 +54,10 @@ committed budget projection remains separately checked as the predecessor fronti
 New child installation checks the complete counter snapshot against the private budget before
 rebinding. Independently charged progress cannot be erased by installation; refusal inserts no
 child or admission guard, and an unchanged legitimate submission can still be installed.
+Installation also compares executable content with the staged foreground before cloning or
+creating admission guards. Matching coordinates and counters cannot authorize different
+instructions; independently allocated identical programs remain eligible. This is consistency
+validation rather than artifact authentication.
 Capture also requires identical executable content in foreground and child machines before
 checkpoint construction. Shared immutable programs take a fast path; independent identical
 copies remain eligible. Matching body names or budgets cannot authorize changed instructions.

@@ -450,6 +450,9 @@ impl DurableGraphTransaction<'_> {
         if machine.budget_checkpoint() != self.budget.snapshot() {
             return Err(TaskStateError::InvalidTaskMachine);
         }
+        if !machine.same_program(&self.staged_foreground) {
+            return Err(TaskStateError::InvalidTaskMachine);
+        }
         let (machine, guard) = machine
             .clone_with_staged_budget(self.budget.clone())
             .map_err(|_| TaskStateError::InvalidTaskMachine)?;
