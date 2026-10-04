@@ -1925,6 +1925,97 @@ fn long_string_equality_yields_before_atomic_publication_and_cancellation() {
     }
 }
 
+/// Cached numeric conversion preserves transparent Option metrics and result-transition admission.
+#[test]
+fn float_conversion_preserves_publication_refusal_precedence() {
+    let option_float = TypeDescriptor::option(TypeDescriptor::FLOAT)
+        .unwrap_or_else(|error| panic!("option: {error:?}"));
+    let tight =
+        ValueLimits::new(1, 1, 100_000, 1).unwrap_or_else(|| panic!("positive value limits"));
+    for (suffix, transitions, value_limits, expected_code) in [
+        (
+            "",
+            1,
+            tight,
+            Some(RuntimeCode::DeterministicTransitionBudget),
+        ),
+        (
+            "",
+            1,
+            DEFAULT_VALUE_LIMITS,
+            Some(RuntimeCode::DeterministicTransitionBudget),
+        ),
+        (
+            "x",
+            1,
+            tight,
+            Some(RuntimeCode::DeterministicTransitionBudget),
+        ),
+        ("x", 2, tight, None),
+        ("", 2, tight, None),
+    ] {
+        let root = workflow(
+            "crate::main",
+            vec![],
+            option_float.clone(),
+            EffectSet::default(),
+            vec![
+                instruction(
+                    0,
+                    TypeDescriptor::STRING,
+                    InstructionKind::Push(
+                        LogicalValue::string(
+                            format!("1.{}{suffix}", "0".repeat(20_000)),
+                            DEFAULT_VALUE_LIMITS,
+                        )
+                        .unwrap_or_else(|error| panic!("token: {error:?}")),
+                    ),
+                ),
+                instruction(
+                    1,
+                    option_float.clone(),
+                    InstructionKind::Primitive(Primitive::StringParseFloat),
+                ),
+                instruction(2, option_float.clone(), InstructionKind::Return),
+            ],
+        );
+        let limits = MachineLimits::new(transitions, 1, 1, 1, 8, value_limits)
+            .unwrap_or_else(|| panic!("positive machine limits"));
+        let mut machine = new_machine(program(vec![root]), "crate::main", vec![], limits);
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+        let before = machine.execution_budget().snapshot();
+        assert_eq!(machine.step(), MachineStep::YieldRequired);
+        assert_eq!(machine.execution_budget().snapshot(), before);
+        assert!(machine.resume_after_yield());
+        let outcome = drive(&mut machine);
+        if let Some(code) = expected_code {
+            assert!(
+                matches!(&outcome, MachineOutcome::Failed(failure) if failure.code == code),
+                "suffix={suffix:?}, transitions={transitions}, expected={code:?}, actual={outcome:?}"
+            );
+            assert_eq!(machine.execution_budget().snapshot(), before);
+        } else {
+            let expected = if suffix.is_empty() {
+                LogicalValue::some(
+                    LogicalValue::float(
+                        gantry_core::numeric::GantryFloat::new(1.0)
+                            .unwrap_or_else(|| panic!("finite fixture")),
+                    ),
+                    value_limits,
+                )
+                .unwrap_or_else(|error| panic!("transparent Option: {error:?}"))
+            } else {
+                LogicalValue::none()
+            };
+            assert_eq!(outcome, MachineOutcome::Succeeded(expected));
+            assert_eq!(
+                machine.execution_budget().snapshot().revision,
+                before.revision + 1
+            );
+        }
+    }
+}
+
 /// Long JSON number grammar admission yields without publishing or charging a partial parse.
 #[test]
 fn long_float_token_admission_yields_before_publication_and_cancellation() {
