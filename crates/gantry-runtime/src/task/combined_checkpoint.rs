@@ -1004,17 +1004,18 @@ impl ConcurrentDurableCheckpointV4 {
     /// Resolves retained source bodies against their task creation's containing workflow.
     /// Matching lexical sites alone cannot identify bodies in different closed callables.
     /// Retained creation captures must match the executable's names, types and mutability.
-    /// Legacy workflow children have no body fact and retain their existing validation.
+    /// Absent settled machines require an unambiguous workflow/site contract; legacy cases
+    /// with no matching source body retain their existing validation.
     fn validate_task_body_workflows(
         &self,
         program: &MachineProgram,
     ) -> Result<(), ConcurrentDurableCheckpointError> {
         for task in &self.state.tasks {
-            if let Some(callable) = self
+            let retained_callable = self
                 .machines
                 .get(&task.task_id)
-                .and_then(MachineCheckpointV3::task_body_enclosing_callable)
-            {
+                .and_then(MachineCheckpointV3::task_body_enclosing_callable);
+            let body = if let Some(callable) = retained_callable {
                 if program
                     .callable(callable)
                     .is_none_or(|workflow| workflow.path != task.workflow)
@@ -1023,20 +1024,37 @@ impl ConcurrentDurableCheckpointV4 {
                 }
                 let identity =
                     gantry_ir::TaskBodyIdentity::new(callable.clone(), task.spawn_site.clone());
-                let body = program
-                    .task_body(&identity)
-                    .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
-                if body.result_type() != &task.result_type
+                Some(
+                    program
+                        .task_body(&identity)
+                        .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?,
+                )
+            } else if !self.machines.contains_key(&task.task_id) {
+                let mut candidates = program.task_bodies().iter().filter(|body| {
+                    body.identity().spawn_site() == &task.spawn_site
+                        && program
+                            .callable(body.identity().enclosing_callable())
+                            .is_some_and(|workflow| workflow.path == task.workflow)
+                });
+                let candidate = candidates.next();
+                if candidates.next().is_some() {
+                    return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+                }
+                candidate
+            } else {
+                None
+            };
+            if let Some(body) = body
+                && (body.result_type() != &task.result_type
                     || body.captures().len() != task.captures.len()
                     || body.captures().iter().any(|expected| {
                         task.captures.get(expected.name()).is_none_or(|capture| {
                             capture.ty() != expected.ty()
                                 || capture.is_mutable() != expected.is_mutable()
                         })
-                    })
-                {
-                    return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
-                }
+                    }))
+            {
+                return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
             }
         }
         Ok(())
@@ -3079,7 +3097,7 @@ mod tests {
                 .recover(Arc::clone(&fixture.program))
                 .is_ok()
         );
-        let mut altered = checkpoint;
+        let mut altered = checkpoint.clone();
         checkpoint_task_mut(&mut altered, created[0].task_id).result_type = TypeDescriptor::STRING;
         assert_eq!(
             ConcurrentDurableCheckpointV4::decode_compatible(
@@ -3088,6 +3106,52 @@ mod tests {
             )
             .err(),
             Some(ConcurrentDurableCheckpointError::InvalidCheckpoint)
+        );
+        fixture
+            .scheduler
+            .state
+            .settle(
+                created[0].task_id,
+                MachineOutcome::Failed(crate::MachineFailure {
+                    code: RuntimeCode::InternalInvariant,
+                    workflow: path("crate::main"),
+                    site: position(0),
+                    join_failure: None,
+                }),
+            )
+            .unwrap_or_else(|error| panic!("failed child settlement: {error:?}"));
+        fixture
+            .scheduler
+            .state
+            .mark_driver_physically_settled(created[0].task_id)
+            .unwrap_or_else(|error| panic!("driver settlement: {error:?}"));
+        fixture.scheduler.machines.remove(&created[0].task_id);
+        fixture
+            .scheduler
+            .runnable
+            .retain(|task| *task != created[0].task_id);
+        let settled = ConcurrentDurableCheckpointV4::capture(
+            &fixture.foreground,
+            &fixture.scheduler,
+            &fixture.sessions,
+        )
+        .unwrap_or_else(|error| panic!("settled graph: {error:?}"));
+        assert!(
+            settled
+                .clone()
+                .recover(Arc::clone(&fixture.program))
+                .is_ok()
+        );
+        let mut altered = settled;
+        checkpoint_task_mut(&mut altered, created[0].task_id).result_type = TypeDescriptor::STRING;
+        assert_eq!(
+            ConcurrentDurableCheckpointV4::decode_compatible(
+                &fixture.program,
+                &altered.canonical_bytes(),
+            )
+            .err(),
+            Some(ConcurrentDurableCheckpointError::InvalidCheckpoint),
+            "driver removal cannot discard executable result correspondence"
         );
     }
 

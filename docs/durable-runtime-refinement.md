@@ -57,6 +57,9 @@ individually valid. Mutable child-local values are not compared with original ca
 this is contract correspondence, not a prohibition on admitted child mutation.
 Creation result types also match the retained executable body, including detached children
 without a lexical handle. Removing a handle does not authorize changing the child's result contract.
+Settled children without retained machines resolve source-body contracts from their immutable
+workflow/site coordinates. A unique match retains result and capture checks; ambiguous closed-body
+matches refuse instead of guessing. No-match legacy cases preserve their existing checks.
 
 The version-six combined graph wire (`GNTCDP06`) retains enabled empty resource-accounting
 policy as two independently optional ceilings. Legacy v4/v5 graph encodings remain unchanged.

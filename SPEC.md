@@ -1090,6 +1090,10 @@ portable outcomes, identity, or durable compatibility.
    Their immutable creation result type MUST also equal the executable body's result type,
    including detached children without a remaining lexical handle. Handle removal MUST NOT
    permit result-contract substitution at capture, decode or recovery admission.
+   When a settled child's machine is absent, executable source-body contracts MUST resolve
+   unambiguously from its retained workflow and spawn site before result/capture validation.
+   Multiple closed-body matches MUST refuse rather than guess. Legacy creation facts with no
+   matching source body retain existing checks; machine removal MUST NOT erase a known contract.
 <a id="GNT-3.7"></a>
 
 7. An implementation claiming the durable-runtime profile MUST make Gantry
