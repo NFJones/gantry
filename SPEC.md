@@ -12493,7 +12493,9 @@ forever, such as a zero generation bound with a zero instant bound, MUST be refu
 rather than published. Compaction MUST preserve the logical operation identity, the
 resource generation, the owner generation, and the durable settlement, so every
 identity needed to redispatch and to reconstruct the record after a restart survives
-compaction. A restart MUST NOT reconstruct an operation identity without the
+compaction. Compaction MUST preserve retired and rejected-stale-owner states and their
+owner fences; changed retention bounds MUST NOT turn either into dispatch proof.
+A restart MUST NOT reconstruct an operation identity without the
 settlement that gives it meaning, MUST NOT attach a settlement to a record that
 rejected a stale owner, and MUST refuse a settlement that names another identity.
 Canonical settlement text MUST retain the observed external outcome independently of

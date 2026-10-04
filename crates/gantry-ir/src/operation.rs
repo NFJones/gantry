@@ -2523,11 +2523,17 @@ impl DedupRecord {
     /// Compaction preserves the logical operation identity, the resource generation,
     /// the owner generation, and the durable settlement, so every identity needed to
     /// redispatch survives it and a compacted record still answers its own operation
-    /// and generation.
+    /// and generation. Retired and rejected-stale-owner records retain their refusal
+    /// states: changing retention bounds must not revive dispatch proof or remove fencing.
     #[must_use]
     pub fn compact(&self, bounds: DedupRetentionBounds) -> Self {
         Self {
-            state: DedupRecordState::Compacted,
+            state: match self.state {
+                DedupRecordState::Authoritative | DedupRecordState::Compacted => {
+                    DedupRecordState::Compacted
+                }
+                DedupRecordState::Retired | DedupRecordState::RejectedStaleOwner => self.state,
+            },
             bounds,
             ..self.clone()
         }

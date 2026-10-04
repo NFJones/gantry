@@ -712,6 +712,8 @@ so accepted and rejected unstarted work cannot collapse into identical evidence 
 historical settlement owner. Equal or regressed retirement fences refuse; authoritative and
 compacted records still require the exact settlement owner. The caller authenticates retained
 retirement facts; restoration supplies no journal authentication or dispatch authority.
+`DedupRecord::compact` preserves retired and rejected-stale-owner refusal states and owner
+fences. Updating retention bounds cannot revive dispatch proof or fabricate missing settlement.
 Registry failure settlement and adapter-failure poisoning likewise require the accompanying binding. Evidence still selects
 its own exact account; the binding must name that operation/generation and match its issuing
 execution/task. `EvidenceSubjectMismatch` and `ForeignSubject` refuse before mutation, while

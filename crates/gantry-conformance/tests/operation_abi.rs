@@ -1822,6 +1822,33 @@ fn compaction_preserves_every_identity_needed_to_redispatch_and_restart_reconstr
     assert!(!rejected.retains(owner, 40));
     assert!(!DedupRecordState::RejectedStaleOwner.carries_settlement());
     assert!(!DedupRecordState::Retired.carries_proof());
+    for fenced in [&retired_restored, &rejected] {
+        let compacted = fenced.compact(bounds(2, 80));
+        assert_eq!(
+            compacted.state(),
+            fenced.state(),
+            "compaction cannot restore dispatch proof"
+        );
+        assert_eq!(compacted.owner(), fenced.owner());
+        assert_eq!(compacted.settlement(), fenced.settlement());
+        assert_eq!(compacted.fences(owner), fenced.fences(owner));
+        assert_eq!(
+            admit_dispatch(
+                &current,
+                DurableOperationCut::Dispatched,
+                OperationCancellation::NotRequested,
+                Some(&compacted),
+                owner
+            ),
+            admit_dispatch(
+                &current,
+                DurableOperationCut::Dispatched,
+                OperationCancellation::NotRequested,
+                Some(fenced),
+                owner
+            ),
+        );
+    }
     assert!(
         DedupRecord::restore(
             current.operation(),
