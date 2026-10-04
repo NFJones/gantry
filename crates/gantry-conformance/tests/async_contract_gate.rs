@@ -309,12 +309,47 @@ fn full_async_contract_validation_refuses_stale_revision() {
 fn source_spawn_closure_rejects_structural_content_anchor_and_digest_mutations() {
     let root = workspace_root();
     let contract: ContractGate = read_json(&root.join(CONTRACT_PATH));
-    let source: SourceSpawnManifest = read_json(&root.join(SOURCE_SPAWN_PATH));
-    let gate: AsyncEvidenceGateInventory = read_json(&root.join(ASYNC_EVIDENCE_GATE_PATH));
-    let inventory: ConformanceInventory = read_json(&root.join(INVENTORY_PATH));
+    let mut source: SourceSpawnManifest = read_json(&root.join(SOURCE_SPAWN_PATH));
+    let mut gate: AsyncEvidenceGateInventory = read_json(&root.join(ASYNC_EVIDENCE_GATE_PATH));
+    let mut inventory: ConformanceInventory = read_json(&root.join(INVENTORY_PATH));
     let specification_sha256 = sha256(&read(&root.join("SPEC.md")).unwrap_or_else(|error| {
         panic!("could not read specification for source-spawn regression: {error}")
     }));
+
+    // These in-memory controls exercise integrity checks, not qualification of stored evidence.
+    // Full contract validation above continues to authenticate the unchanged checked-in records.
+    source.specification_sha256 = specification_sha256.clone();
+    source.source_test.sha256 = sha256(
+        &read(&root.join(SOURCE_SPAWN_TEST_PATH))
+            .unwrap_or_else(|error| panic!("source-test control: {error}")),
+    );
+    gate.specification_sha256 = specification_sha256.clone();
+    inventory.specification_sha256 = specification_sha256.clone();
+    let source_digest = sha256(
+        &read(&root.join(SOURCE_SPAWN_PATH))
+            .unwrap_or_else(|error| panic!("source-manifest control: {error}")),
+    );
+    let gate_digest = sha256(
+        &read(&root.join(ASYNC_EVIDENCE_GATE_PATH))
+            .unwrap_or_else(|error| panic!("evidence-gate control: {error}")),
+    );
+    for entry in &mut gate.artifacts {
+        if entry.path == SOURCE_SPAWN_PATH {
+            entry.sha256 = source_digest.clone();
+        }
+    }
+    for entry in &mut inventory.manifests {
+        if entry.path == SOURCE_SPAWN_PATH {
+            entry.sha256 = source_digest.clone();
+        } else if entry.path == ASYNC_EVIDENCE_GATE_PATH {
+            entry.sha256 = gate_digest.clone();
+        }
+    }
+    for entry in &mut inventory.gates {
+        if entry.path == ASYNC_EVIDENCE_GATE_PATH {
+            entry.sha256 = gate_digest.clone();
+        }
+    }
 
     assert_eq!(
         validate_source_spawn_closure(
