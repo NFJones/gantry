@@ -1125,6 +1125,24 @@ impl PartialEq for PendingOperation {
 impl Eq for PendingOperation {}
 
 impl PendingOperation {
+    /// Claims one terminal disposition under the shared admission lease.
+    /// Validation precedes this step; the guard is released before value disposal or failure cleanup.
+    /// Isolated durable projections have independent leases until receipt-first promotion.
+    fn claim_settlement(&self) -> Result<(), OperationCompletionError> {
+        let mut lease = self
+            .resource_admission_open
+            .lock()
+            .map_err(|_| OperationCompletionError::NotWaiting)?;
+        if lease.cancellation_requested {
+            return Err(OperationCompletionError::Cancelled);
+        }
+        if !lease.pending {
+            return Err(OperationCompletionError::NotWaiting);
+        }
+        lease.pending = false;
+        Ok(())
+    }
+
     fn close_resource_admission(&self) {
         if let Ok(mut admission_open) = self.resource_admission_open.lock() {
             admission_open.pending = false;
@@ -3096,6 +3114,7 @@ impl Machine {
         if operands > self.values.len() {
             return Err(OperationCompletionError::NotWaiting);
         }
+        pending.claim_settlement()?;
         self.truncate_staged(self.values.len() - operands);
         self.push_staged(value, None);
         if let Some(pending) = self.pending_operation.take() {
@@ -3175,6 +3194,7 @@ impl Machine {
         }
         let workflow = pending.occurrence.workflow.clone();
         let site = pending.occurrence.site.clone();
+        pending.claim_settlement()?;
         match self.fail_at(code, workflow, site) {
             MachineStep::Transition(label) => Ok(label),
             _ => unreachable!("operation failure emits one transition"),

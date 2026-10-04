@@ -15483,6 +15483,12 @@ once, without consuming another pending place. New leases remain subject to the 
 That ceiling counts admitted machine settlement leases, not active accounting lifetimes. An
 accepted machine completion, failure, or settled cancellation closes its lease and releases its
 pending place; a refused completion or a cancellation request alone does not.
+Successful result completion and explicit operation failure through shared machine aliases MUST
+claim the pending lease once, after ordinary result validation and before local terminal publication.
+Already-settled or unreadable leases MUST refuse with `NotWaiting`; shared cancellation MUST refuse
+with `Cancelled`, without consuming pending work. The lease guard MUST release before value disposal
+or failure cleanup. Isolated durable projections retain independent claims until committed promotion;
+this process-local fence establishes no cross-recovery settlement or journal authentication.
 Storage reclamation MAY prune conclusively closed lease references even without another admission.
 It MUST retain pending or unreadable leases and MUST NOT close accepted work itself. The reaped
 account count remains independent of lease-reference reclamation.

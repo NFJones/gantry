@@ -67,6 +67,11 @@ this is a fail-closed limitation rather than adapter-policy recovery.
 Every successful live admission retains its settlement lease. Pending places follow admitted machine
 settlement leases: accepted completion, failure, and settled cancellation release them; refused
 completion and a cancellation request alone retain them.
+Successful result completion and explicit operation failure claim this shared pending lease once
+after result validation. Shared aliases refuse closed/unreadable leases with `NotWaiting` and shared
+cancellation with `Cancelled`, without publishing another result or failure. The guard releases
+before value disposal and failure cleanup. Isolated durable stages claim only their private lease
+until committed promotion; this supplies no cross-recovery uniqueness or journal authentication.
 Readmitting reclaimed accounting through the same retained lease counts that work once, including
 at a full pending ceiling. Genuinely new leases still require an available pending place.
 Machine-local cancellation separately closes new admission through current and saved subjects

@@ -1492,6 +1492,108 @@ fn operation_results_are_consumed_once_and_budgeted_once() {
     ));
 }
 
+/// Machine aliases share one settlement lease; only the first terminal result may publish.
+#[test]
+fn shared_operation_aliases_refuse_second_settlement_without_mutation() {
+    for failed in [false, true] {
+        let root = workflow(
+            "crate::main",
+            Vec::new(),
+            TypeDescriptor::UNIT,
+            EffectSet::default(),
+            vec![
+                instruction(0, TypeDescriptor::UNIT, InstructionKind::Operation),
+                instruction(1, TypeDescriptor::UNIT, InstructionKind::Return),
+            ],
+        );
+        let mut machine = new_machine(
+            program(vec![root]),
+            "crate::main",
+            Vec::new(),
+            limits(8, 1, 1, 1, 8),
+        );
+        let operation = match machine.step() {
+            MachineStep::Transition(MachineLabel::OperationPrepared(operation)) => operation,
+            other => panic!("operation: {other:?}"),
+        };
+        let mut alias = machine.clone();
+        assert_eq!(
+            alias.complete_operation(operation.identity, LogicalValue::boolean(true)),
+            Err(OperationCompletionError::TypeMismatch),
+            "invalid results cannot consume the shared settlement claim"
+        );
+        if failed {
+            machine
+                .fail_operation_with_code(operation.identity, RuntimeCode::InternalInvariant)
+                .unwrap_or_else(|error| panic!("first failure: {error:?}"));
+        } else {
+            machine
+                .complete_operation(operation.identity, LogicalValue::unit())
+                .unwrap_or_else(|error| panic!("first result: {error:?}"));
+        }
+        let budget = alias.execution_budget().snapshot();
+        #[cfg(feature = "durable")]
+        let before = alias.checkpoint().canonical_bytes();
+        assert_eq!(
+            alias.complete_operation(operation.identity, LogicalValue::unit()),
+            Err(OperationCompletionError::NotWaiting),
+            "settled shared work cannot publish twice"
+        );
+        assert_eq!(
+            alias.fail_operation_with_code(operation.identity, RuntimeCode::InternalInvariant),
+            Err(OperationCompletionError::NotWaiting)
+        );
+        assert_eq!(alias.execution_budget().snapshot(), budget);
+        assert_eq!(alias.status(), MachineStatus::WaitingOperation);
+        assert!(alias.outcome().is_none());
+        #[cfg(feature = "durable")]
+        assert_eq!(alias.checkpoint().canonical_bytes(), before);
+    }
+}
+
+/// Cancellation of shared authority prevents alias completion without settling pending work.
+#[test]
+fn shared_operation_alias_completion_refuses_authoritative_cancellation() {
+    let root = workflow(
+        "crate::main",
+        Vec::new(),
+        TypeDescriptor::UNIT,
+        EffectSet::default(),
+        vec![
+            instruction(0, TypeDescriptor::UNIT, InstructionKind::Operation),
+            instruction(1, TypeDescriptor::UNIT, InstructionKind::Return),
+        ],
+    );
+    let mut machine = new_machine(
+        program(vec![root]),
+        "crate::main",
+        Vec::new(),
+        limits(8, 1, 1, 1, 8),
+    );
+    let operation = match machine.step() {
+        MachineStep::Transition(MachineLabel::OperationPrepared(operation)) => operation,
+        other => panic!("operation: {other:?}"),
+    };
+    let mut alias = machine.clone();
+    assert!(machine.cancel("shared cancellation").is_some());
+    let before = alias.execution_budget().snapshot();
+    #[cfg(feature = "durable")]
+    let checkpoint = alias.checkpoint().canonical_bytes();
+    assert_eq!(
+        alias.complete_operation(operation.identity, LogicalValue::unit()),
+        Err(OperationCompletionError::Cancelled)
+    );
+    assert_eq!(
+        alias.fail_operation_with_code(operation.identity, RuntimeCode::InternalInvariant),
+        Err(OperationCompletionError::Cancelled)
+    );
+    assert_eq!(alias.execution_budget().snapshot(), before);
+    assert_eq!(alias.status(), MachineStatus::WaitingOperation);
+    assert!(alias.outcome().is_none());
+    #[cfg(feature = "durable")]
+    assert_eq!(alias.checkpoint().canonical_bytes(), checkpoint);
+}
+
 #[test]
 fn operation_results_enforce_nested_types_and_captured_value_limits() {
     let expected = TypeDescriptor::list(TypeDescriptor::INT);
