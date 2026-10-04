@@ -1339,9 +1339,15 @@ impl RecoveredConcurrentDurableExecutionV1 {
     }
 
     /// Consumes recovery into the existing machine, scheduler, and session owners.
-    #[must_use]
-    pub fn into_parts(self) -> (Machine, ConcurrentSchedulerV1, LogicalSessionRegistryV1) {
-        (self.foreground, self.scheduler, self.sessions)
+    /// Revalidates correspondence after mutable access and returns the complete owner on
+    /// refusal. Successful decomposition preserves accounting in the scheduler component.
+    pub fn into_parts(
+        self,
+    ) -> Result<(Machine, ConcurrentSchedulerV1, LogicalSessionRegistryV1), Box<Self>> {
+        if self.capture_replayed_checkpoint().is_err() {
+            return Err(Box::new(self));
+        }
+        Ok((self.foreground, self.scheduler, self.sessions))
     }
 
     /// Consumes recovery into independently driven root and child machines.
@@ -2610,6 +2616,33 @@ mod tests {
             .err()
             .unwrap_or_else(|| panic!("invalid graph must retain its recovery owner"));
         assert!(refused.scheduler().machines.contains_key(&child.task_id()));
+        let mut recovered = checkpoint
+            .clone()
+            .recover(Arc::clone(&program))
+            .unwrap_or_else(|error| panic!("component recovery: {error:?}"));
+        let replacement_machine = Machine::recover_from_checkpoint(
+            Arc::clone(&program),
+            replacement.clone(),
+            recovered.foreground().execution_budget(),
+        )
+        .unwrap_or_else(|error| panic!("component replacement: {error:?}"));
+        *recovered
+            .scheduler_mut()
+            .machine_mut(child.task_id())
+            .unwrap_or_else(|| panic!("component child")) = replacement_machine;
+        let refused = recovered
+            .into_parts()
+            .err()
+            .unwrap_or_else(|| panic!("invalid components must retain their recovery owner"));
+        assert!(refused.scheduler().machines.contains_key(&child.task_id()));
+        let valid = checkpoint
+            .clone()
+            .recover(Arc::clone(&program))
+            .unwrap_or_else(|error| panic!("component positive recovery: {error:?}"));
+        let (foreground, scheduler, sessions) = valid
+            .into_parts()
+            .unwrap_or_else(|_| panic!("valid components must remain extractable"));
+        assert!(ConcurrentDurableCheckpointV4::capture(&foreground, &scheduler, &sessions).is_ok());
         let mut substituted = checkpoint;
         substituted.machines.insert(child.task_id(), replacement);
         assert_eq!(

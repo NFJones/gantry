@@ -1073,6 +1073,9 @@ portable outcomes, identity, or durable compatibility.
    Machine-only extraction MUST likewise revalidate policy-free graphs after mutable access.
    Invalid correspondence MUST return the complete recovered owner rather than expose
    substituted machines; accounting-policy-bearing extraction remains refused.
+   Component decomposition MUST also revalidate before moving the machine, scheduler
+   and session owners. Invalid correspondence MUST return the complete recovered owner;
+   successful decomposition retains accounting policy and records in the scheduler.
 <a id="GNT-3.7"></a>
 
 7. An implementation claiming the durable-runtime profile MUST make Gantry

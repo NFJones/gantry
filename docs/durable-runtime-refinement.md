@@ -41,6 +41,9 @@ access, even with no resource records. Prior decoding cannot authorize a substit
 invalid correspondence refuses before exposing coordinator-backed replacement ownership.
 Machine-only extraction also revalidates policy-free graphs, returning the complete recovered
 owner on invalid correspondence. Its existing accounting-policy refusal remains unchanged.
+Recovered graph `into_parts` now returns `Result` and performs the same revalidation before
+component decomposition. Refusal retains the complete owner; valid components remain extractable,
+with accounting policy and records preserved in the scheduler rather than silently discarded.
 
 The version-six combined graph wire (`GNTCDP06`) retains enabled empty resource-accounting
 policy as two independently optional ceilings. Legacy v4/v5 graph encodings remain unchanged.
