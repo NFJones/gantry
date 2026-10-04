@@ -1060,6 +1060,11 @@ portable outcomes, identity, or durable compatibility.
    configured interpreter resource limit MUST surface as a structured
    deterministic-evaluation runtime error, never a panic or silent process
    termination.
+   Concurrent durable graph admission MUST require a retained source task body's
+   lexical spawn site to equal its immutable task creation site's fact. Matching
+   task identity, path and budget MUST NOT authorize substitution of another spawn
+   body. Legacy workflow-based child machines without a task-body fact remain
+   subject to their existing correspondence checks; this grants no artifact authentication.
 <a id="GNT-3.7"></a>
 
 7. An implementation claiming the durable-runtime profile MUST make Gantry

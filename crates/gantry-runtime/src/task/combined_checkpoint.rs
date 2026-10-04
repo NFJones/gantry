@@ -1114,6 +1114,9 @@ impl ConcurrentDurableCheckpointV4 {
                 || machine.task_id() != *task_id
                 || machine.task_path() != task.task_path()
                 || machine.is_execution_foreground()
+                || machine
+                    .task_body_spawn_site()
+                    .is_some_and(|site| site != task.spawn_site())
                 || state.task_cancellation_reason(*task_id) != machine.cancellation_reason()
             {
                 return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
@@ -2374,6 +2377,60 @@ mod tests {
             ConcurrentDurableCheckpointV4::decode_compatible(
                 &fixture.program,
                 &cancellation_mismatch.canonical_bytes(),
+            ),
+            Err(ConcurrentDurableCheckpointError::InvalidCheckpoint)
+        );
+    }
+
+    /// A runnable child must retain the body selected by its immutable creation record.
+    #[test]
+    fn child_checkpoint_refuses_substituted_spawn_body() {
+        let (fixture, created) = pending_task_control_fixture(TaskControlSiteKind::Join, None);
+        let checkpoint = ConcurrentDurableCheckpointV4::capture(
+            &fixture.foreground,
+            &fixture.scheduler,
+            &fixture.sessions,
+        )
+        .unwrap_or_else(|error| panic!("positive graph: {error:?}"));
+        assert!(
+            checkpoint
+                .clone()
+                .recover(Arc::clone(&fixture.program))
+                .is_ok()
+        );
+        let child = fixture
+            .scheduler
+            .state()
+            .task(created[0].task_id)
+            .unwrap_or_else(|| panic!("first child"));
+        let foreign_body = TaskBodyIdentity::new(
+            CanonicalCallableIdentity::free(&path("crate::main"), &[]),
+            position(1),
+        );
+        let replacement = Machine::new_concurrent_task_body_with_context(
+            Arc::clone(&fixture.program),
+            &foreign_body,
+            &[],
+            fixture.execution,
+            child.task_id(),
+            Arc::from(child.task_path()),
+            machine_limits(),
+            fixture.budget.clone(),
+            None,
+            Some(child.base_session_id()),
+        )
+        .unwrap_or_else(|error| panic!("independently valid replacement: {error:?}"));
+        let replacement = replacement.checkpoint();
+        assert!(
+            crate::MachineCheckpointV3::decode(&fixture.program, &replacement.canonical_bytes())
+                .is_ok()
+        );
+        let mut substituted = checkpoint;
+        substituted.machines.insert(child.task_id(), replacement);
+        assert_eq!(
+            ConcurrentDurableCheckpointV4::decode_compatible(
+                &fixture.program,
+                &substituted.canonical_bytes()
             ),
             Err(ConcurrentDurableCheckpointError::InvalidCheckpoint)
         );

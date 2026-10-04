@@ -1253,6 +1253,13 @@ impl MachineCheckpointV3 {
         self.limits
     }
 
+    /// Returns the lexical spawn site retained by a source task body, when present.
+    /// Graph admission compares this immutable fact with the task creation record.
+    #[cfg(feature = "concurrent")]
+    pub(crate) fn task_body_spawn_site(&self) -> Option<&StructuralPosition> {
+        self.task_body.as_ref().map(TaskBodyIdentity::spawn_site)
+    }
+
     /// Returns whether this checkpoint owns execution foreground/terminal labels.
     #[cfg(feature = "concurrent")]
     #[must_use]

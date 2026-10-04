@@ -30,6 +30,12 @@ For the bounded recovered graph, a replacement owner reconstructs both tasks
 coherently before admission, submits and registers the complete runnable set
 behind closed gates, and only then opens those gates for logical publication.
 
+Graph admission also compares each retained source task body's lexical spawn site with
+its immutable task creation record. An independently valid machine for another spawn
+site cannot substitute merely by keeping the same task identity, path and budget.
+Legacy workflow children without a task-body fact keep their existing checks. This is
+structural correspondence, not authentication of caller-supplied checkpoint evidence.
+
 The version-six combined graph wire (`GNTCDP06`) retains enabled empty resource-accounting
 policy as two independently optional ceilings. Legacy v4/v5 graph encodings remain unchanged.
 Coordinated capture and journal-first staging retain this policy, replay preserves it, and
