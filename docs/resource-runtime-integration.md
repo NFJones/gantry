@@ -883,6 +883,9 @@ frame construction and destruction remain synchronous without a latency guarante
 Spawn capture validation and detached copying run outside shared execution counters, including
 cleanup of a partially prepared capture vector on refusal. Preparation retains its existing
 uncharged suspension and task-local occurrence semantics and publishes no partial spawn.
+Occurrence allocation uses checked advancement: an exhausted counter refuses with
+`InternalInvariant` without changing the counter, caller position or budget, rather than
+saturating and reusing a child identity. Ordinary capture validation keeps its precedence.
 Copying, allocation and destruction remain synchronous without a cooperative latency guarantee.
 
 Join, joinall and detach preparation also run outside shared counters, including handle

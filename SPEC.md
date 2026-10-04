@@ -1039,6 +1039,10 @@ portable outcomes, identity, or durable compatibility.
    Spawn capture validation, detached copying and partial-capture refusal cleanup MUST run
    outside the shared execution-budget mutex. Preparation retains its existing uncharged
    suspension and task-local occurrence behavior; refusal MUST publish no partial spawn.
+   Spawn occurrence allocation MUST refuse an exhausted counter with `InternalInvariant`
+   rather than saturating or reusing a child identity. Refusal MUST preserve the counter,
+   caller position and shared budget and publish no pending spawn; the last incrementable
+   ordinal remains eligible after ordinary capture validation.
    This does not make copying cooperative or bound allocation and destruction latency.
    Join, joinall and detach preparation MUST likewise validate and consume task-local handles
    outside shared execution counters. Their existing uncharged suspension, handle ordering and

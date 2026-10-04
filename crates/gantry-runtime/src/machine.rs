@@ -5156,7 +5156,10 @@ impl Machine {
         }
         let key = self.counter_key("spawn", &workflow, &site);
         let occurrence = self.counters.get(&key).copied().unwrap_or(0);
-        self.counters.insert(key, occurrence.saturating_add(1));
+        let Some(next_occurrence) = occurrence.checked_add(1) else {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        };
+        self.counters.insert(key, next_occurrence);
         let spawn = MachineSpawnSuspension {
             workflow,
             site,

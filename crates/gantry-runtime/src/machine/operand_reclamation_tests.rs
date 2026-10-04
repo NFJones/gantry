@@ -279,7 +279,12 @@ impl Drop for MachineTaskCapture {
 fn spawn_capture_preparation_and_refusal_cleanup_run_outside_budget_lock() {
     use gantry_ir::{ExecutableTaskBody, ExecutableTaskCapture, ExecutableTaskContext};
 
-    for missing_capture in [false, true] {
+    for (missing_capture, ordinal) in [
+        (false, None),
+        (true, None),
+        (false, Some(u64::MAX - 1)),
+        (false, Some(u64::MAX)),
+    ] {
         let root =
             CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("root: {error}"));
         let caller = CanonicalCallableIdentity::free(&root, &[]);
@@ -368,6 +373,10 @@ fn spawn_capture_preparation_and_refusal_cleanup_run_outside_budget_lock() {
                 },
             );
         }
+        let spawn_key = machine.counter_key("spawn", &root, &site);
+        if let Some(ordinal) = ordinal {
+            machine.counters.insert(spawn_key.clone(), ordinal);
+        }
         let before = machine.execution_budget.snapshot();
         let frames = machine.frames.clone();
         let counters = machine.counters.clone();
@@ -382,7 +391,7 @@ fn spawn_capture_preparation_and_refusal_cleanup_run_outside_budget_lock() {
         });
         assert_eq!(machine.execution_budget.snapshot(), before);
         assert_eq!(machine.frames, frames);
-        if missing_capture {
+        if missing_capture || ordinal == Some(u64::MAX) {
             assert_eq!(observations, vec![Some(before.revision)]);
             assert!(
                 matches!(step, MachineStep::Transition(MachineLabel::Failure(failure))
@@ -394,7 +403,11 @@ fn spawn_capture_preparation_and_refusal_cleanup_run_outside_budget_lock() {
             let MachineStep::Transition(MachineLabel::TaskControlSuspended(spawn)) = step else {
                 panic!("spawn did not suspend");
             };
-            assert_eq!(spawn.occurrence, 0);
+            assert_eq!(spawn.occurrence, ordinal.unwrap_or(0));
+            assert_eq!(
+                machine.counters.get(&spawn_key),
+                Some(&(ordinal.unwrap_or(0) + 1))
+            );
             assert_eq!(spawn.captures.len(), 2);
             assert_eq!(spawn.captures[0].task_capture().value(), &value);
             assert_eq!(machine.pending_spawn(), Some(&spawn));
