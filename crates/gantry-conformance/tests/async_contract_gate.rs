@@ -191,24 +191,61 @@ fn async_contract_gate_rejects_stale_incomplete_duplicate_or_overclaimed_records
     let root = workspace_root();
     let contract: ContractGate = read_json(&root.join(CONTRACT_PATH));
 
+    // These local controls exercise structure, not renewed qualification of checked-in evidence.
+    assert_eq!(validate_contract_identity(&contract), Ok(()));
+    let mut artifacts = contract.contract_artifacts.clone();
+    for artifact in &mut artifacts {
+        artifact.sha256 = sha256(
+            &read(&root.join(&artifact.path))
+                .unwrap_or_else(|error| panic!("artifact control: {error}")),
+        );
+    }
+    let artifact_paths = validate_artifacts(&root, &artifacts)
+        .unwrap_or_else(|error| panic!("artifact positive control: {error}"));
+    let review: RequirementReview = read_json(&root.join(REVIEW_PATH));
+    let requirement_ids = review
+        .requirements
+        .iter()
+        .map(|entry| entry.id.clone())
+        .collect();
+    let evidence_owners = contract
+        .requirement_assignments
+        .iter()
+        .flat_map(|entry| entry.evidence_owners.iter().cloned())
+        .collect();
+    assert_eq!(
+        validate_decisions(
+            &contract.decisions,
+            &requirement_ids,
+            &artifact_paths,
+            &evidence_owners
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        validate_assignments(&contract.requirement_assignments, &review, &evidence_owners),
+        Ok(())
+    );
+
     let mut stale = contract.clone();
+    stale.contract_artifacts = artifacts;
     stale.contract_artifacts[0].sha256 = "0".repeat(64);
     assert!(matches!(
-        validate_contract(&root, &stale),
+        validate_artifacts(&root, &stale.contract_artifacts),
         Err(message) if message.contains("artifact digest differs")
     ));
 
     let mut missing_decision = contract.clone();
     missing_decision.decisions.pop();
     assert!(matches!(
-        validate_contract(&root, &missing_decision),
+        validate_decisions(&missing_decision.decisions, &requirement_ids, &artifact_paths, &evidence_owners),
         Err(message) if message.contains("fourteen resolved decisions")
     ));
 
     let mut unresolved = contract.clone();
     unresolved.decisions[0].status = "open".to_owned();
     assert!(matches!(
-        validate_contract(&root, &unresolved),
+        validate_decisions(&unresolved.decisions, &requirement_ids, &artifact_paths, &evidence_owners),
         Err(message) if message.contains("unresolved decision")
     ));
 
@@ -217,14 +254,19 @@ fn async_contract_gate_rejects_stale_incomplete_duplicate_or_overclaimed_records
         .requirement_assignments
         .push(duplicate.requirement_assignments[0].clone());
     assert!(matches!(
-        validate_contract(&root, &duplicate),
+        validate_assignments(&duplicate.requirement_assignments, &review, &evidence_owners),
         Err(message) if message.contains("duplicate requirement assignment")
     ));
 
     let mut incomplete = contract.clone();
-    incomplete.requirement_assignments[0].profiles.pop();
+    assert!(
+        incomplete.requirement_assignments[0]
+            .profiles
+            .pop()
+            .is_some()
+    );
     assert!(matches!(
-        validate_contract(&root, &incomplete),
+        validate_assignments(&incomplete.requirement_assignments, &review, &evidence_owners),
         Err(message) if message.contains("requirement assignment matrix differs")
     ));
 
@@ -238,16 +280,29 @@ fn async_contract_gate_rejects_stale_incomplete_duplicate_or_overclaimed_records
             .clone(),
     });
     assert!(matches!(
-        validate_contract(&root, &unrelated_covered),
+        validate_assignments(&unrelated_covered.requirement_assignments, &review, &evidence_owners),
         Err(message) if message.contains("requirement assignment matrix differs")
     ));
 
     let mut overclaimed = contract;
     overclaimed.profile_claims = "blocked".to_owned();
     assert!(matches!(
-        validate_contract(&root, &overclaimed),
+        validate_contract_identity(&overclaimed),
         Err(message) if message.contains("profile claims")
     ));
+}
+
+/// Structural isolation must preserve full contract revision admission.
+#[test]
+fn full_async_contract_validation_refuses_stale_revision() {
+    let root = workspace_root();
+    let mut contract: ContractGate = read_json(&root.join(CONTRACT_PATH));
+    assert_eq!(validate_contract_identity(&contract), Ok(()));
+    contract.specification_sha256 = "invalid-revision".to_owned();
+    assert_eq!(
+        validate_contract(&root, &contract),
+        Err("contract gate uses another specification revision".to_owned())
+    );
 }
 
 #[test]
@@ -457,7 +512,8 @@ fn source_spawn_closure_rejects_structural_content_anchor_and_digest_mutations()
     );
 }
 
-fn validate_contract(root: &Path, contract: &ContractGate) -> Result<(), String> {
+/// Validates the contract's closed identity and claim inventory before currency admission.
+fn validate_contract_identity(contract: &ContractGate) -> Result<(), String> {
     if contract.format != "gantry.async-execution-contract-gate/v1"
         || contract.issue != "GNT-ASYNC-GATE-000"
         || contract.status != "verified"
@@ -475,7 +531,11 @@ fn validate_contract(root: &Path, contract: &ContractGate) -> Result<(), String>
     {
         return Err("contract gate profile set is incomplete or unordered".to_owned());
     }
+    Ok(())
+}
 
+fn validate_contract(root: &Path, contract: &ContractGate) -> Result<(), String> {
+    validate_contract_identity(contract)?;
     let specification = read(&root.join("SPEC.md"))?;
     let specification_sha256 = sha256(&specification);
     if contract.specification_sha256 != specification_sha256 {
