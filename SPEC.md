@@ -944,6 +944,11 @@ portable outcomes, identity, or durable compatibility.
    cancellation immediately before and after the yield.
    Direct String equality, inequality, prefix and suffix matching MUST compare at most 4096 UTF-8 octets before
    returning a scheduling-only yield when more comparison work remains. Such work MUST
+   also apply to substring containment: prefix-table construction and matching MUST perform
+   at most 4096 comparison/fallback work units per call, counting fallback without input advance.
+   Private search scratch MAY retain at most one prefix entry per pattern octet; it is recomputable,
+   not a logical checkpoint fact or a total-allocation/latency guarantee. Substring search MUST
+   preserve exact UTF-8 matching and avoid repeated-prefix quadratic rescanning. All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.
    Recomputable comparison scratch is not a logical checkpoint fact; recovery MAY restart

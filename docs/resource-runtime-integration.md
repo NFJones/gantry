@@ -786,6 +786,15 @@ from retained operands. Replay grants a finite separate yield allowance from adm
 This covers direct String operands only, not nested aggregate equality, other primitives or complete
 semantic-work metering. The comparison does not hold the execution-budget lock across its chunks.
 
+Substring containment builds its prefix table and searches incrementally, performing at most
+4096 comparison/fallback work units per call. Fallback counts even when input does not advance,
+so repeated-prefix patterns do not cause quadratic rescanning or monopolize comparison work.
+Scratch retains at most one prefix entry per pattern octet and is discarded on terminal settlement;
+recovery restarts pure work from unchanged operands. Boolean publication still charges exactly
+one transition, with cancellation observed at existing driver yields. Replay accounts for the
+finite linear search work separately. Prefix-table allocation and cloning are not bounded-latency
+or total-allocation guarantees, and this supplies no complete semantic-work metering contract.
+
 Concatenation, replacement and list joining check each next output piece's Unicode-scalar contribution before
 appending it to private construction state. Over-limit pieces are not allocated or appended;
 only the complete logical value is published. Replacement stays nonoverlapping and never rescans

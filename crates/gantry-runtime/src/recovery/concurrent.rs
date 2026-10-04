@@ -4507,78 +4507,85 @@ mod tests {
     /// Scheduling-only comparison yields do not consume the semantic replay-step allowance.
     #[test]
     fn long_string_comparison_replay_reaches_operation_with_semantic_step_bound() {
-        let text = LogicalValue::string("é".repeat(10_000), DEFAULT_VALUE_LIMITS)
-            .unwrap_or_else(|error| panic!("text: {error:?}"));
-        let program = Arc::new(
-            MachineProgram::new(vec![Workflow {
-                path: path("crate::main"),
-                parameters: Vec::new(),
-                result: TypeDescriptor::BOOL,
-                effects: EffectSet::default(),
-                instructions: vec![
-                    Instruction {
-                        site: position(0),
-                        ty: TypeDescriptor::STRING,
-                        kind: InstructionKind::Push(text.clone()),
-                    },
-                    Instruction {
-                        site: position(1),
-                        ty: TypeDescriptor::STRING,
-                        kind: InstructionKind::Push(text),
-                    },
-                    Instruction {
-                        site: position(2),
-                        ty: TypeDescriptor::BOOL,
-                        kind: InstructionKind::Primitive(gantry_ir::Primitive::Equal),
-                    },
-                    Instruction {
-                        site: position(3),
-                        ty: TypeDescriptor::BOOL,
-                        kind: InstructionKind::Operation,
-                    },
-                    Instruction {
-                        site: position(4),
-                        ty: TypeDescriptor::BOOL,
-                        kind: InstructionKind::Return,
-                    },
-                ],
-            }])
-            .unwrap_or_else(|error| panic!("program: {error:?}")),
-        );
-        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [91; 32])
-            .unwrap_or_else(|error| panic!("execution: {error}"));
-        let machine = Machine::new(
-            Arc::clone(&program),
-            &path("crate::main"),
-            Vec::new(),
-            execution,
-            machine_limits(),
-        )
-        .unwrap_or_else(|error| panic!("machine: {error:?}"));
-        let task = machine.task_id();
-        let tasks = ConcurrentTaskStateV1::new(execution, task, 4)
-            .unwrap_or_else(|error| panic!("tasks: {error:?}"));
-        let scheduler = ConcurrentSchedulerV1::new(tasks, machine.execution_budget())
-            .unwrap_or_else(|error| panic!("scheduler: {error:?}"));
-        let session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [92; 32])
-            .unwrap_or_else(|error| panic!("session: {error}"));
-        let sessions = LogicalSessionRegistryV1::new(
-            execution,
-            session,
-            SessionCreationModeV1::GantryRoot,
-            CanonicalTranscriptV1::empty(),
-        )
-        .unwrap_or_else(|error| panic!("sessions: {error:?}"));
-        let checkpoint = ConcurrentDurableCheckpointV4::capture(&machine, &scheduler, &sessions)
-            .unwrap_or_else(|error| panic!("capture: {error:?}"));
-        let mut recovered = checkpoint
-            .recover(program)
-            .unwrap_or_else(|error| panic!("recovery: {error:?}"));
-        assert!(matches!(
-            super::advance_to_checkpoint_boundary(&mut recovered, task, 3)
-                .unwrap_or_else(|error| panic!("replay: {error:?}")),
-            Some(super::CheckpointMachineBoundary::Operation(_))
-        ));
+        for primitive in [
+            gantry_ir::Primitive::Equal,
+            gantry_ir::Primitive::StringContains,
+        ] {
+            let text = LogicalValue::string("é".repeat(10_000), DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|error| panic!("text: {error:?}"));
+            let program = Arc::new(
+                MachineProgram::new(vec![Workflow {
+                    path: path("crate::main"),
+                    parameters: Vec::new(),
+                    result: TypeDescriptor::BOOL,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        Instruction {
+                            site: position(0),
+                            ty: TypeDescriptor::STRING,
+                            kind: InstructionKind::Push(text.clone()),
+                        },
+                        Instruction {
+                            site: position(1),
+                            ty: TypeDescriptor::STRING,
+                            kind: InstructionKind::Push(text),
+                        },
+                        Instruction {
+                            site: position(2),
+                            ty: TypeDescriptor::BOOL,
+                            kind: InstructionKind::Primitive(primitive),
+                        },
+                        Instruction {
+                            site: position(3),
+                            ty: TypeDescriptor::BOOL,
+                            kind: InstructionKind::Operation,
+                        },
+                        Instruction {
+                            site: position(4),
+                            ty: TypeDescriptor::BOOL,
+                            kind: InstructionKind::Return,
+                        },
+                    ],
+                }])
+                .unwrap_or_else(|error| panic!("program: {error:?}")),
+            );
+            let execution =
+                ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [91; 32])
+                    .unwrap_or_else(|error| panic!("execution: {error}"));
+            let machine = Machine::new(
+                Arc::clone(&program),
+                &path("crate::main"),
+                Vec::new(),
+                execution,
+                machine_limits(),
+            )
+            .unwrap_or_else(|error| panic!("machine: {error:?}"));
+            let task = machine.task_id();
+            let tasks = ConcurrentTaskStateV1::new(execution, task, 4)
+                .unwrap_or_else(|error| panic!("tasks: {error:?}"));
+            let scheduler = ConcurrentSchedulerV1::new(tasks, machine.execution_budget())
+                .unwrap_or_else(|error| panic!("scheduler: {error:?}"));
+            let session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [92; 32])
+                .unwrap_or_else(|error| panic!("session: {error}"));
+            let sessions = LogicalSessionRegistryV1::new(
+                execution,
+                session,
+                SessionCreationModeV1::GantryRoot,
+                CanonicalTranscriptV1::empty(),
+            )
+            .unwrap_or_else(|error| panic!("sessions: {error:?}"));
+            let checkpoint =
+                ConcurrentDurableCheckpointV4::capture(&machine, &scheduler, &sessions)
+                    .unwrap_or_else(|error| panic!("capture: {error:?}"));
+            let mut recovered = checkpoint
+                .recover(program)
+                .unwrap_or_else(|error| panic!("recovery: {error:?}"));
+            assert!(matches!(
+                super::advance_to_checkpoint_boundary(&mut recovered, task, 3)
+                    .unwrap_or_else(|error| panic!("replay: {error:?}")),
+                Some(super::CheckpointMachineBoundary::Operation(_))
+            ));
+        }
     }
 
     /// Attempted live-resource failure replay retains the exact handle-free error cut.

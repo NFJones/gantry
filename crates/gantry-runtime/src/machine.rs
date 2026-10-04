@@ -24,8 +24,10 @@ use gantry_ir::{ExecutableTaskHandle, TaskBodyIdentity};
 
 use crate::resource::ResourceSubjectBinding;
 use crate::session::SessionCreationModeV1;
+mod string_search;
 #[cfg(feature = "concurrent")]
 use crate::task::{DynamicTaskHandleIdentity, JoinResolutionV1, TaskCaptureV1, TaskJoinFailureV1};
+use string_search::StringSearchWork;
 
 #[cfg(feature = "durable")]
 pub(crate) mod checkpoint_codec;
@@ -1814,6 +1816,8 @@ pub struct Machine {
     resource_admission_tracker: Option<Arc<Mutex<ResourceAdmissionTracker>>>,
     /// Recomputable scratch; operands and PC remain unchanged until comparison commits.
     string_equality_work: Option<StringEqualityWork>,
+    /// Recomputable bounded substring-search progress over unchanged operands.
+    string_search_work: Option<StringSearchWork>,
     #[cfg(feature = "concurrent")]
     pending_task_control: Option<PendingTaskControl>,
     pending_labels: VecDeque<MachineLabel>,
@@ -2105,6 +2109,7 @@ impl Machine {
             pending_operation: None,
             resource_admission_tracker: None,
             string_equality_work: None,
+            string_search_work: None,
             pending_task_control: None,
             pending_labels: VecDeque::new(),
             cancellation: None,
@@ -2214,6 +2219,7 @@ impl Machine {
             pending_operation: None,
             resource_admission_tracker: None,
             string_equality_work: None,
+            string_search_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: None,
             pending_labels: VecDeque::new(),
@@ -2621,6 +2627,7 @@ impl Machine {
             }),
             resource_admission_tracker: None,
             string_equality_work: None,
+            string_search_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: checkpoint.pending_task_control,
             pending_labels: checkpoint.pending_labels,
@@ -3107,6 +3114,13 @@ impl Machine {
             {
                 return MachineStep::YieldRequired;
             }
+            if matches!(
+                instruction.kind,
+                InstructionKind::Primitive(Primitive::StringContains)
+            ) && self.prepare_string_search()
+            {
+                return MachineStep::YieldRequired;
+            }
             return self.execute(instruction, workflow);
         }
     }
@@ -3581,7 +3595,14 @@ impl Machine {
     ) -> Result<(), RuntimeCode> {
         let arity = primitive.arity();
         let operands = self.peek_operands(arity)?;
-        let result = if matches!(
+        let result = if primitive == Primitive::StringContains
+            && let Some(found) = self
+                .string_search_work
+                .as_ref()
+                .and_then(|work| work.result)
+        {
+            LogicalValue::boolean(found)
+        } else if matches!(
             primitive,
             Primitive::Equal
                 | Primitive::NotEqual
@@ -3602,6 +3623,7 @@ impl Machine {
         };
         self.charge_transition(budget_state)?;
         self.string_equality_work = None;
+        self.string_search_work = None;
         self.truncate_operands(arity);
         self.push_staged(result, None);
         self.advance_pc();
@@ -3649,8 +3671,38 @@ impl Machine {
         pending
     }
 
+    /// Advances bounded private substring-search work without holding the budget lock.
+    /// Restart discards this pure scratch and reconstructs it from unchanged logical operands.
+    fn prepare_string_search(&mut self) -> bool {
+        let Ok(operands) = self.peek_operands(2) else {
+            return false;
+        };
+        let (Some(_), Some(_)) = (operands[0].as_string(), operands[1].as_string()) else {
+            return false;
+        };
+        let (source, pattern) = (operands[0].clone(), operands[1].clone());
+        let pending = self
+            .string_search_work
+            .get_or_insert_with(StringSearchWork::default)
+            .advance(
+                source
+                    .as_string()
+                    .unwrap_or_else(|| unreachable!("validated String"))
+                    .as_bytes(),
+                pattern
+                    .as_string()
+                    .unwrap_or_else(|| unreachable!("validated String"))
+                    .as_bytes(),
+                STRING_EQUALITY_WORK_QUANTUM,
+            );
+        if pending {
+            self.status = MachineStatus::YieldRequired;
+        }
+        pending
+    }
+
     /// Bounds replay-only scheduling yields per semantic step from admitted String limits.
-    /// Four UTF-8 octets per scalar bound comparison chunks; one extra yield covers the
+    /// Four UTF-8 octets per scalar and four linear passes bound search/comparison chunks; one extra yield covers the
     /// ordinary transition quantum. Saturation remains finite and never changes charges.
     #[cfg(all(feature = "concurrent", feature = "durable"))]
     pub(crate) fn replay_yield_allowance(&self, steps: u64) -> u64 {
@@ -3658,6 +3710,7 @@ impl Machine {
             .limits
             .value_limits
             .maximum_string_scalars()
+            .saturating_mul(4)
             .saturating_mul(4)
             .div_ceil(STRING_EQUALITY_WORK_QUANTUM as u64);
         chunks
@@ -4585,6 +4638,7 @@ impl Machine {
 
     fn finish_outcome(&mut self, outcome: MachineOutcome) -> MachineStep {
         self.string_equality_work = None;
+        self.string_search_work = None;
         self.settle_consumption_obligations();
         self.status = match outcome {
             MachineOutcome::Succeeded(_) => MachineStatus::Succeeded,
