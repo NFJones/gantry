@@ -7161,6 +7161,17 @@ fn host_receiver_loan_retains_progress_until_exact_settlement() {
             Ok(12)
         );
         assert!(loan.observe(ProgressObservation::ShortRead).is_ok());
+        let retained = loan.live().clone();
+        assert_eq!(
+            loan.observe(ProgressObservation::NotStarted),
+            Err(HostResourceError::Operation(
+                OperationAbiError::ProgressObservationMismatch {
+                    observed: ProgressObservation::ShortRead,
+                    claimed: ProgressObservation::NotStarted,
+                }
+            ))
+        );
+        assert_eq!(loan.live(), &retained);
         assert!(matches!(
             loan.observe(ProgressObservation::ShortRead),
             Err(HostResourceError::Operation(
