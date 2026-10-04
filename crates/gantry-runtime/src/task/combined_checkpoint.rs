@@ -3142,6 +3142,80 @@ mod tests {
                 .recover(Arc::clone(&fixture.program))
                 .is_ok()
         );
+        let generic_callable =
+            CanonicalCallableIdentity::free(&path("crate::main"), &[TypeDescriptor::INT]);
+        let generic_identity = TaskBodyIdentity::new(generic_callable.clone(), position(0));
+        let generic_body = ExecutableTaskBody::new(
+            generic_identity.clone(),
+            TypeDescriptor::UNIT,
+            Vec::new(),
+            ExecutableTaskContext::v1(),
+            fixture.program.task_bodies()[0].instructions().to_vec(),
+        )
+        .unwrap_or_else(|error| panic!("generic body: {error:?}"));
+        let generic_workflow = Workflow {
+            path: path("crate::main"),
+            parameters: Vec::new(),
+            result: TypeDescriptor::UNIT,
+            effects: EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: position(0),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Spawn {
+                        handle: ExecutableTaskHandle::new(
+                            Arc::from("generic"),
+                            TypeDescriptor::UNIT,
+                        )
+                        .unwrap_or_else(|error| panic!("generic handle: {error:?}")),
+                        body: generic_identity,
+                    },
+                },
+                Instruction {
+                    site: position(1),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Push(LogicalValue::unit()),
+                },
+                Instruction {
+                    site: position(2),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Return,
+                },
+            ],
+        };
+        let mut callables = fixture
+            .program
+            .callable_identities()
+            .iter()
+            .cloned()
+            .zip(fixture.program.workflows().iter().cloned())
+            .collect::<Vec<_>>();
+        callables.push((generic_callable, generic_workflow));
+        callables.sort_by(|left, right| left.0.cmp(&right.0));
+        let mut bodies = fixture.program.task_bodies().to_vec();
+        bodies.push(generic_body);
+        bodies.sort_by(|left, right| left.identity().cmp(right.identity()));
+        let ambiguous_program = Arc::new(
+            MachineProgram::with_task_bodies(callables, bodies)
+                .unwrap_or_else(|error| panic!("ambiguous executable: {error:?}")),
+        );
+        assert!(
+            ConcurrentDurableCheckpointV4::decode_compatible(
+                &ambiguous_program,
+                &checkpoint.canonical_bytes(),
+            )
+            .is_ok(),
+            "retained machine resolves its exact closed callable"
+        );
+        assert_eq!(
+            ConcurrentDurableCheckpointV4::decode_compatible(
+                &ambiguous_program,
+                &settled.canonical_bytes(),
+            )
+            .err(),
+            Some(ConcurrentDurableCheckpointError::InvalidCheckpoint),
+            "absent machine cannot guess between valid closed bodies at one workflow/site"
+        );
         let mut altered = settled;
         checkpoint_task_mut(&mut altered, created[0].task_id).result_type = TypeDescriptor::STRING;
         assert_eq!(
