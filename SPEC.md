@@ -1061,7 +1061,9 @@ portable outcomes, identity, or durable compatibility.
    deterministic-evaluation runtime error, never a panic or silent process
    termination.
    Concurrent durable graph admission MUST require a retained source task body's
-   lexical spawn site to equal its immutable task creation site's fact. Matching
+   lexical spawn site and executable-resolved enclosing workflow to equal its immutable
+   task creation facts. Equal lexical sites in different workflows MUST NOT substitute
+   for one another. Matching
    task identity, path and budget MUST NOT authorize substitution of another spawn
    body. Legacy workflow-based child machines without a task-body fact remain
    subject to their existing correspondence checks; this grants no artifact authentication.

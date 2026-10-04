@@ -1260,6 +1260,15 @@ impl MachineCheckpointV3 {
         self.task_body.as_ref().map(TaskBodyIdentity::spawn_site)
     }
 
+    /// Returns the closed callable enclosing a retained source task body, when present.
+    /// Executable-qualified graph admission resolves it against immutable creation facts.
+    #[cfg(feature = "concurrent")]
+    pub(crate) fn task_body_enclosing_callable(&self) -> Option<&CanonicalCallableIdentity> {
+        self.task_body
+            .as_ref()
+            .map(TaskBodyIdentity::enclosing_callable)
+    }
+
     /// Returns whether this checkpoint owns execution foreground/terminal labels.
     #[cfg(feature = "concurrent")]
     #[must_use]

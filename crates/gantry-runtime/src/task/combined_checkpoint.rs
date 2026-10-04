@@ -327,6 +327,7 @@ impl ConcurrentDurableCheckpointV4 {
             return Err(ConcurrentDurableCheckpointError::CaptureRace);
         }
         checkpoint.validate()?;
+        checkpoint.validate_task_body_workflows(&foreground.program_arc())?;
         Ok(checkpoint)
     }
 
@@ -397,6 +398,7 @@ impl ConcurrentDurableCheckpointV4 {
                 return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
             }
             checkpoint.validate()?;
+            checkpoint.validate_task_body_workflows(&foreground.program_arc())?;
             checkpoint.validate_resource_records(foreground.program_arc())?;
             return Ok(checkpoint);
         }
@@ -949,6 +951,7 @@ impl ConcurrentDurableCheckpointV4 {
             runnable,
         };
         checkpoint.validate()?;
+        checkpoint.validate_task_body_workflows(program)?;
         checkpoint.validate_resource_records(Arc::new(program.clone()))?;
         if checkpoint.canonical_bytes() != bytes {
             return Err(ConcurrentDurableCheckpointError::InvalidEncoding);
@@ -962,6 +965,7 @@ impl ConcurrentDurableCheckpointV4 {
         program: Arc<MachineProgram>,
     ) -> Result<RecoveredConcurrentDurableExecutionV1, ConcurrentDurableCheckpointError> {
         self.validate()?;
+        self.validate_task_body_workflows(&program)?;
         self.validate_resource_records(Arc::clone(&program))?;
         let sessions = LogicalSessionRegistryV1::recover_from_checkpoint(self.sessions)?;
         let state = self
@@ -995,6 +999,28 @@ impl ConcurrentDurableCheckpointV4 {
             },
             sessions,
         })
+    }
+
+    /// Resolves retained source bodies against their task creation's containing workflow.
+    /// Matching lexical sites alone cannot identify bodies in different closed callables.
+    /// Legacy workflow children have no body fact and retain their existing validation.
+    fn validate_task_body_workflows(
+        &self,
+        program: &MachineProgram,
+    ) -> Result<(), ConcurrentDurableCheckpointError> {
+        for task in &self.state.tasks {
+            if let Some(callable) = self
+                .machines
+                .get(&task.task_id)
+                .and_then(MachineCheckpointV3::task_body_enclosing_callable)
+                && program
+                    .callable(callable)
+                    .is_none_or(|workflow| workflow.path != task.workflow)
+            {
+                return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+            }
+        }
+        Ok(())
     }
 
     fn validate(&self) -> Result<(), ConcurrentDurableCheckpointError> {
@@ -2433,6 +2459,119 @@ mod tests {
                 &substituted.canonical_bytes()
             ),
             Err(ConcurrentDurableCheckpointError::InvalidCheckpoint)
+        );
+    }
+
+    /// Equal lexical sites in different workflows must not substitute executable task bodies.
+    #[test]
+    fn child_checkpoint_refuses_same_site_body_from_another_workflow() {
+        let (fixture, created) = pending_task_control_fixture(TaskControlSiteKind::Join, None);
+        let foreign_path = path("crate::zz_other");
+        let foreign_callable = CanonicalCallableIdentity::free(&foreign_path, &[]);
+        let foreign_identity = TaskBodyIdentity::new(foreign_callable.clone(), position(0));
+        let foreign_body = ExecutableTaskBody::new(
+            foreign_identity.clone(),
+            TypeDescriptor::UNIT,
+            Vec::new(),
+            ExecutableTaskContext::v1(),
+            vec![
+                Instruction {
+                    site: position(0),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Push(LogicalValue::unit()),
+                },
+                Instruction {
+                    site: position(1),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::TaskComplete,
+                },
+            ],
+        )
+        .unwrap_or_else(|error| panic!("foreign body: {error:?}"));
+        let foreign_workflow = Workflow {
+            path: foreign_path,
+            parameters: Vec::new(),
+            result: TypeDescriptor::UNIT,
+            effects: EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: position(0),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Spawn {
+                        handle: ExecutableTaskHandle::new(Arc::from("other"), TypeDescriptor::UNIT)
+                            .unwrap_or_else(|error| panic!("handle: {error:?}")),
+                        body: foreign_identity.clone(),
+                    },
+                },
+                Instruction {
+                    site: position(1),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Push(LogicalValue::unit()),
+                },
+                Instruction {
+                    site: position(2),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Return,
+                },
+            ],
+        };
+        let mut callables = fixture
+            .program
+            .callable_identities()
+            .iter()
+            .cloned()
+            .zip(fixture.program.workflows().iter().cloned())
+            .collect::<Vec<_>>();
+        callables.push((foreign_callable, foreign_workflow));
+        let mut bodies = fixture.program.task_bodies().to_vec();
+        bodies.push(foreign_body);
+        let program = Arc::new(
+            MachineProgram::with_task_bodies(callables, bodies)
+                .unwrap_or_else(|error| panic!("extended program: {error:?}")),
+        );
+        let checkpoint = ConcurrentDurableCheckpointV4::capture(
+            &fixture.foreground,
+            &fixture.scheduler,
+            &fixture.sessions,
+        )
+        .unwrap_or_else(|error| panic!("positive capture: {error:?}"));
+        let checkpoint = ConcurrentDurableCheckpointV4::decode_compatible(
+            &program,
+            &checkpoint.canonical_bytes(),
+        )
+        .unwrap_or_else(|error| panic!("positive graph: {error:?}"));
+        assert!(checkpoint.clone().recover(Arc::clone(&program)).is_ok());
+        let child = fixture
+            .scheduler
+            .state()
+            .task(created[0].task_id)
+            .unwrap_or_else(|| panic!("first child"));
+        let replacement = Machine::new_concurrent_task_body_with_context(
+            Arc::clone(&program),
+            &foreign_identity,
+            &[],
+            fixture.execution,
+            child.task_id(),
+            Arc::from(child.task_path()),
+            machine_limits(),
+            fixture.budget.clone(),
+            None,
+            Some(child.base_session_id()),
+        )
+        .unwrap_or_else(|error| panic!("replacement: {error:?}"));
+        let replacement = replacement.checkpoint();
+        assert!(
+            crate::MachineCheckpointV3::decode(&program, &replacement.canonical_bytes()).is_ok()
+        );
+        let mut substituted = checkpoint;
+        substituted.machines.insert(child.task_id(), replacement);
+        assert_eq!(
+            ConcurrentDurableCheckpointV4::decode_compatible(
+                &program,
+                &substituted.canonical_bytes()
+            )
+            .err(),
+            Some(ConcurrentDurableCheckpointError::InvalidCheckpoint),
         );
     }
 
