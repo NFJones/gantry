@@ -1012,6 +1012,10 @@ portable outcomes, identity, or durable compatibility.
    stack/PC update and reclaim them only after shared-counter unlocking. Empty-stack refusal
    MUST precede budget admission; failed charging MUST change no stack or program position.
    This changes neither semantic release nor quota charges and adds no latency guarantee.
+   Lexical scope exit MUST likewise retain removed value and task-handle scopes until after
+   its charged scope/PC update releases the shared execution-budget mutex. Root-scope and
+   scope-alignment checks MUST precede admission. Failed charging MUST remove no scope;
+   deferred reclamation changes no lexical release point, task settlement or quota charge.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

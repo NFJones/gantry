@@ -3279,6 +3279,9 @@ impl Machine {
         if matches!(instruction.kind, InstructionKind::Pop) {
             return self.execute_discard(workflow, instruction.site);
         }
+        if matches!(instruction.kind, InstructionKind::ExitScope) {
+            return self.execute_scope_exit(workflow, instruction.site);
+        }
         let execution_budget = self.execution_budget.clone();
         let mut budget_state = execution_budget.lock();
         let site = instruction.site.clone();
@@ -3303,7 +3306,7 @@ impl Machine {
                 unreachable!("primitives use private result construction")
             }
             InstructionKind::EnterScope => self.enter_scope(&mut budget_state),
-            InstructionKind::ExitScope => self.exit_scope(&mut budget_state),
+            InstructionKind::ExitScope => unreachable!("scope exit retains ownership until unlock"),
             InstructionKind::Jump(target) => self.jump(target, &mut budget_state),
             InstructionKind::Panic => Err(RuntimeCode::SourcePanic),
             InstructionKind::Branch {
@@ -4286,25 +4289,47 @@ impl Machine {
         Ok(())
     }
 
-    fn exit_scope(&mut self, budget_state: &mut ExecutionBudgetState) -> Result<(), RuntimeCode> {
-        let frame = self.frames.last().ok_or(RuntimeCode::InternalInvariant)?;
+    /// Removes one lexical scope with its existing charge, reclaiming ownership after unlock.
+    /// Root-scope and scope-alignment checks precede admission; refusal changes no scope or PC.
+    fn execute_scope_exit(
+        &mut self,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+    ) -> MachineStep {
+        let Some(frame) = self.frames.last() else {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        };
         if frame.scopes.len() <= 1 {
-            return Err(RuntimeCode::InternalInvariant);
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
         }
         #[cfg(feature = "concurrent")]
         if frame.handle_scopes.len() != frame.scopes.len() {
-            return Err(RuntimeCode::InternalInvariant);
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
         }
-        self.charge_transition(budget_state)?;
-        let frame = self
-            .frames
-            .last_mut()
-            .ok_or(RuntimeCode::InternalInvariant)?;
-        frame.scopes.pop();
+        let execution_budget = self.execution_budget.clone();
+        let removed_scope;
         #[cfg(feature = "concurrent")]
-        frame.handle_scopes.pop();
-        self.advance_pc();
-        Ok(())
+        let removed_handles;
+        {
+            let mut budget_state = execution_budget.lock();
+            if let Err(code) = self.charge_transition(&mut budget_state) {
+                drop(budget_state);
+                return self.fail_at(code, workflow, site);
+            }
+            let frame = self.frames.last_mut().unwrap_or_else(|| {
+                unreachable!("exclusive machine ownership retains validated frame")
+            });
+            removed_scope = frame.scopes.pop();
+            #[cfg(feature = "concurrent")]
+            {
+                removed_handles = frame.handle_scopes.pop();
+            }
+            self.advance_pc();
+        }
+        drop(removed_scope);
+        #[cfg(feature = "concurrent")]
+        drop(removed_handles);
+        self.finish_deterministic(workflow, site, Arc::from("scope-exit"))
     }
 
     fn jump(

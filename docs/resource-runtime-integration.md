@@ -802,6 +802,11 @@ update releases the shared budget mutex. Empty-stack refusal still precedes budg
 failed charging leaves the stack unchanged. Reclamation remains synchronous, with no changed
 semantic release point, quota charge or latency guarantee.
 
+Lexical scope exit retains removed value and task-handle scopes until its charged scope/PC
+update unlocks shared counters, then reclaims them. Root-scope and alignment checks still
+precede counter admission; failed charging removes no scope. This does not move a lexical
+release point, settle task work, or promise bounded destruction latency.
+
 Direct String equality, inequality, prefix and suffix matching compare at most 4096 UTF-8 octets per machine call
 before requesting a scheduling-only executor yield. Operands and program position remain
 unchanged until the Boolean result commits with the existing single transition charge.

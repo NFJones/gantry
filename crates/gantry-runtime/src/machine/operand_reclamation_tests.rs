@@ -18,6 +18,235 @@ struct Probe {
 thread_local! {
     /// Observation is scoped to the executing test thread, never retained in checkpoints.
     static PROBE: RefCell<Option<Probe>> = const { RefCell::new(None) };
+    /// A selected String binding's destruction boundary, without retaining its value.
+    static BINDING_PROBE: RefCell<Option<BindingProbe>> = const { RefCell::new(None) };
+}
+
+/// Test-only facts identifying one immutable String allocation and shared budget.
+struct BindingProbe {
+    address: usize,
+    budget: ExecutionBudget,
+    observations: Vec<Option<u64>>,
+}
+
+/// Observes the binding before ordinary field destruction; production bindings have no hook.
+impl Drop for Binding {
+    fn drop(&mut self) {
+        BINDING_PROBE.with(|cell| {
+            let mut held = cell.borrow_mut();
+            let Some(probe) = held.as_mut() else {
+                return;
+            };
+            if self
+                .value
+                .as_string()
+                .is_none_or(|text| text.as_ptr() as usize != probe.address)
+            {
+                return;
+            }
+            probe.observations.push(
+                probe
+                    .budget
+                    .inner
+                    .try_lock()
+                    .ok()
+                    .map(|state| state.revision),
+            );
+        });
+    }
+}
+
+/// Scope removal must publish once and reclaim retained bindings after the counter mutex unlocks.
+#[test]
+fn exited_scope_bindings_are_reclaimed_after_budget_unlock() {
+    let root = CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("root: {error:?}"));
+    let program = Arc::new(
+        MachineProgram::new(vec![gantry_ir::Workflow {
+            path: root.clone(),
+            parameters: Vec::new(),
+            result: TypeDescriptor::UNIT,
+            effects: gantry_ir::EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: StructuralPosition::new(vec![0])
+                        .unwrap_or_else(|error| panic!("site: {error:?}")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::ExitScope,
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![1])
+                        .unwrap_or_else(|error| panic!("site: {error:?}")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Return,
+                },
+            ],
+        }])
+        .unwrap_or_else(|error| panic!("program: {error:?}")),
+    );
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x96; 32])
+        .unwrap_or_else(|error| panic!("execution: {error:?}"));
+    let limits = MachineLimits::new(8, 1, 1, 1, 8, gantry_core::value::DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| panic!("limits"));
+    let mut machine = Machine::new(program, &root, Vec::new(), execution, limits)
+        .unwrap_or_else(|error| panic!("machine: {error:?}"));
+    let value = LogicalValue::string("é".repeat(10_000), limits.value_limits)
+        .unwrap_or_else(|error| panic!("binding value: {error:?}"));
+    let address = value
+        .as_string()
+        .unwrap_or_else(|| panic!("String fixture"))
+        .as_ptr() as usize;
+    let mut scope = Scope::new();
+    scope.insert(
+        Arc::from("retained"),
+        Binding {
+            value,
+            ty: TypeDescriptor::STRING,
+            mutable: false,
+        },
+    );
+    machine.frames[0].scopes.push(scope);
+    #[cfg(feature = "concurrent")]
+    machine.frames[0].handle_scopes.push(HandleScope::new());
+    BINDING_PROBE.with(|cell| {
+        *cell.borrow_mut() = Some(BindingProbe {
+            address,
+            budget: machine.execution_budget.clone(),
+            observations: Vec::new(),
+        })
+    });
+    let step = machine.step();
+    let observations = BINDING_PROBE.with(|cell| {
+        cell.borrow_mut()
+            .take()
+            .unwrap_or_else(|| panic!("probe exists"))
+            .observations
+    });
+    assert_eq!(observations, vec![Some(1)]);
+    assert!(
+        matches!(step, MachineStep::Transition(MachineLabel::Deterministic { kind, .. })
+        if kind.as_ref() == "scope-exit")
+    );
+    assert_eq!(machine.frames[0].scopes.len(), 1);
+    #[cfg(feature = "concurrent")]
+    assert_eq!(machine.frames[0].handle_scopes.len(), 1);
+    assert_eq!(machine.frames[0].pc, 1);
+    assert_eq!(machine.execution_budget.snapshot().revision, 1);
+}
+
+/// Refused exits preserve lexical ownership and structural errors precede exhausted budgets.
+#[test]
+fn refused_scope_exit_preserves_scopes_and_structural_precedence() {
+    assert_refused_scope_exit(true, false, RuntimeCode::DeterministicTransitionBudget);
+    assert_refused_scope_exit(false, false, RuntimeCode::InternalInvariant);
+    #[cfg(feature = "concurrent")]
+    assert_refused_scope_exit(true, true, RuntimeCode::InternalInvariant);
+}
+
+/// Drives actual ExitScope dispatch with exhausted counters and observed binding ownership.
+fn assert_refused_scope_exit(nested: bool, misaligned: bool, expected: RuntimeCode) {
+    let root = CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("root: {error:?}"));
+    let site = StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("site: {error:?}"));
+    let program = Arc::new(
+        MachineProgram::new(vec![gantry_ir::Workflow {
+            path: root.clone(),
+            parameters: Vec::new(),
+            result: TypeDescriptor::UNIT,
+            effects: gantry_ir::EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: site.clone(),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::ExitScope,
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![1])
+                        .unwrap_or_else(|error| panic!("site: {error:?}")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Return,
+                },
+            ],
+        }])
+        .unwrap_or_else(|error| panic!("program: {error:?}")),
+    );
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x97; 32])
+        .unwrap_or_else(|error| panic!("execution: {error:?}"));
+    let limits = MachineLimits::new(8, 1, 1, 1, 8, gantry_core::value::DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| panic!("limits"));
+    let mut machine = Machine::new(program, &root, Vec::new(), execution, limits)
+        .unwrap_or_else(|error| panic!("machine: {error:?}"));
+    if nested {
+        machine.frames[0].scopes.push(Scope::new());
+        #[cfg(feature = "concurrent")]
+        if !misaligned {
+            machine.frames[0].handle_scopes.push(HandleScope::new());
+        }
+    }
+    #[cfg(not(feature = "concurrent"))]
+    assert!(!misaligned, "alignment case requires concurrent profile");
+    let value = LogicalValue::string("retained scope value", limits.value_limits)
+        .unwrap_or_else(|error| panic!("value: {error:?}"));
+    let address = value
+        .as_string()
+        .unwrap_or_else(|| panic!("String fixture"))
+        .as_ptr() as usize;
+    machine.frames[0]
+        .scopes
+        .last_mut()
+        .unwrap_or_else(|| panic!("scope exists"))
+        .insert(
+            Arc::from("retained"),
+            Binding {
+                value,
+                ty: TypeDescriptor::STRING,
+                mutable: false,
+            },
+        );
+    {
+        let mut state = machine.execution_budget.lock();
+        for _ in 0..8 {
+            ExecutionBudget::charge_transition(&mut state)
+                .unwrap_or_else(|error| panic!("exhaust budget: {error:?}"));
+        }
+    }
+    let scopes = machine.frames[0].scopes.clone();
+    #[cfg(feature = "concurrent")]
+    let handles = machine.frames[0].handle_scopes.clone();
+    let before = machine.execution_budget.snapshot();
+    let pc = machine.frames[0].pc;
+    BINDING_PROBE.with(|cell| {
+        *cell.borrow_mut() = Some(BindingProbe {
+            address,
+            budget: machine.execution_budget.clone(),
+            observations: Vec::new(),
+        })
+    });
+    let step = machine.step();
+    let observations = BINDING_PROBE.with(|cell| {
+        cell.borrow_mut()
+            .take()
+            .unwrap_or_else(|| panic!("probe exists"))
+            .observations
+    });
+    assert!(
+        matches!(step, MachineStep::Transition(MachineLabel::Failure(failure))
+        if failure.code == expected && failure.workflow == root && failure.site == site)
+    );
+    assert!(
+        observations.is_empty(),
+        "a rejected exit must not destroy bindings: {observations:?}"
+    );
+    assert_eq!(machine.frames[0].scopes, scopes);
+    #[cfg(feature = "concurrent")]
+    assert_eq!(machine.frames[0].handle_scopes, handles);
+    assert_eq!(machine.frames[0].pc, pc);
+    assert_eq!(machine.execution_budget.snapshot(), before);
+    assert_eq!(
+        machine
+            .binding("retained")
+            .and_then(|binding| binding.value.as_string())
+            .map(|text| text.as_ptr() as usize),
+        Some(address)
+    );
 }
 
 /// Test builds observe only the selected origin; ordinary origins keep their normal field drop.
