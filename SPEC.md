@@ -968,6 +968,11 @@ portable outcomes, identity, or durable compatibility.
    metrics MAY supply that count. Numeric addition MUST retain its existing path. Private
    concatenation output MAY be recomputed on recovery; final logical construction and allocation
    remain outside the copy-work bound, with no partial publication or extra transition charge.
+   List-of-String joining MUST perform at most 4096 piece admissions or scalar copies per call,
+   counting empty separator/item admission as work. Each complete piece MUST be admitted before
+   copying in existing separator-before-item order, retaining refusal precedence. Private output
+   MAY be recomputed after recovery; replay MUST include admitted List-item limits in its separate
+   yield allowance. Final construction and allocation remain outside this copy-work bound.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

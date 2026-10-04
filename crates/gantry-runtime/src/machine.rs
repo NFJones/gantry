@@ -25,6 +25,7 @@ use gantry_ir::{ExecutableTaskHandle, TaskBodyIdentity};
 use crate::resource::ResourceSubjectBinding;
 use crate::session::SessionCreationModeV1;
 mod string_concat;
+mod string_join;
 mod string_lowercase;
 mod string_search;
 mod string_trim;
@@ -32,6 +33,7 @@ mod string_uppercase;
 #[cfg(feature = "concurrent")]
 use crate::task::{DynamicTaskHandleIdentity, JoinResolutionV1, TaskCaptureV1, TaskJoinFailureV1};
 use string_concat::StringConcatWork;
+use string_join::StringJoinWork;
 use string_lowercase::StringLowercaseWork;
 use string_search::StringSearchWork;
 use string_trim::StringTrimWork;
@@ -1834,6 +1836,8 @@ pub struct Machine {
     string_lowercase_work: Option<StringLowercaseWork>,
     /// Private concatenation copying after complete logical-size admission.
     string_concat_work: Option<StringConcatWork>,
+    /// Private ordered separator/item admission and joining progress.
+    string_join_work: Option<StringJoinWork>,
     #[cfg(feature = "concurrent")]
     pending_task_control: Option<PendingTaskControl>,
     pending_labels: VecDeque<MachineLabel>,
@@ -2130,6 +2134,7 @@ impl Machine {
             string_uppercase_work: None,
             string_lowercase_work: None,
             string_concat_work: None,
+            string_join_work: None,
             pending_task_control: None,
             pending_labels: VecDeque::new(),
             cancellation: None,
@@ -2244,6 +2249,7 @@ impl Machine {
             string_uppercase_work: None,
             string_lowercase_work: None,
             string_concat_work: None,
+            string_join_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: None,
             pending_labels: VecDeque::new(),
@@ -2656,6 +2662,7 @@ impl Machine {
             string_uppercase_work: None,
             string_lowercase_work: None,
             string_concat_work: None,
+            string_join_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: checkpoint.pending_task_control,
             pending_labels: checkpoint.pending_labels,
@@ -3177,6 +3184,13 @@ impl Machine {
             {
                 return MachineStep::YieldRequired;
             }
+            if matches!(
+                instruction.kind,
+                InstructionKind::Primitive(Primitive::StringListJoin)
+            ) && self.prepare_string_join()
+            {
+                return MachineStep::YieldRequired;
+            }
             return self.execute(instruction, workflow);
         }
     }
@@ -3651,7 +3665,18 @@ impl Machine {
     ) -> Result<(), RuntimeCode> {
         let arity = primitive.arity();
         let operands = self.peek_operands(arity)?;
-        let result = if primitive == Primitive::Add
+        let result = if primitive == Primitive::StringListJoin
+            && let Some(work) = self.string_join_work.as_ref()
+        {
+            if let Some(error) = work.error {
+                return Err(error);
+            }
+            if !work.complete {
+                return Err(RuntimeCode::InternalInvariant);
+            }
+            LogicalValue::string(work.output.as_str(), self.limits.value_limits)
+                .map_err(map_string_value_error)?
+        } else if primitive == Primitive::Add
             && let Some(work) = self.string_concat_work.as_ref()
         {
             if work.failed {
@@ -3731,6 +3756,7 @@ impl Machine {
         self.string_uppercase_work = None;
         self.string_lowercase_work = None;
         self.string_concat_work = None;
+        self.string_join_work = None;
         self.truncate_operands(arity);
         self.push_staged(result, None);
         self.advance_pc();
@@ -3925,7 +3951,34 @@ impl Machine {
         pending
     }
 
-    /// Bounds replay-only scheduling yields per semantic step from admitted String limits.
+    /// Admits and copies ordered join pieces outside the execution-budget lock.
+    /// Existing List/ separator validation precedes private work; item refusals retain order.
+    fn prepare_string_join(&mut self) -> bool {
+        let Ok(operands) = self.peek_operands(2) else {
+            return false;
+        };
+        if !matches!(operands[0].view(), LogicalValueView::List(_))
+            || operands[1].as_string().is_none()
+        {
+            return false;
+        }
+        let (list, separator) = (operands[0].clone(), operands[1].clone());
+        let pending = self
+            .string_join_work
+            .get_or_insert_with(StringJoinWork::default)
+            .advance(
+                &list,
+                &separator,
+                self.limits.value_limits.maximum_string_scalars(),
+                STRING_EQUALITY_WORK_QUANTUM,
+            );
+        if pending {
+            self.status = MachineStatus::YieldRequired;
+        }
+        pending
+    }
+
+    /// Bounds replay-only scheduling yields per semantic step from admitted String/List limits.
     /// Contextual lowercase uses three scalar passes, also covered by this allowance.
     /// Four UTF-8 octets per scalar and four linear passes bound search/comparison chunks; one extra yield covers the
     /// ordinary transition quantum. Saturation remains finite and never changes charges.
@@ -3937,6 +3990,12 @@ impl Machine {
             .maximum_string_scalars()
             .saturating_mul(4)
             .saturating_mul(4)
+            .saturating_add(
+                self.limits
+                    .value_limits
+                    .maximum_list_items()
+                    .saturating_mul(2),
+            )
             .div_ceil(STRING_EQUALITY_WORK_QUANTUM as u64);
         chunks
             .saturating_add(1)
@@ -4868,6 +4927,7 @@ impl Machine {
         self.string_uppercase_work = None;
         self.string_lowercase_work = None;
         self.string_concat_work = None;
+        self.string_join_work = None;
         self.settle_consumption_obligations();
         self.status = match outcome {
             MachineOutcome::Succeeded(_) => MachineStatus::Succeeded,

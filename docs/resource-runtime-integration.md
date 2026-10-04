@@ -823,6 +823,12 @@ discards private output, and recovery recomputes it from retained operands; the 
 atomically with the existing single transition charge. Final logical construction, allocation,
 cloning and disposal remain outside this copy-work guarantee.
 
+List joining shares a finite 4096-unit piece-admission/scalar-copy quantum. Empty pieces consume
+admission work, and cached scalar metrics admit each whole separator/item before copying in
+the existing order. Refusal publishes no private prefix; recovery restarts from retained operands.
+Only the complete logical result publishes with one transition charge. Replay includes List-item
+limits as well as String limits; final construction and allocation remain outside the work bound.
+
 Concatenation, replacement and list joining check each next output piece's Unicode-scalar contribution before
 appending it to private construction state. Over-limit pieces are not allocated or appended;
 only the complete logical value is published. Replacement stays nonoverlapping and never rescans
