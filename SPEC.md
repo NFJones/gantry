@@ -1087,6 +1087,9 @@ portable outcomes, identity, or durable compatibility.
    the executable body's capture names, types and mutability. Valid logical values MUST NOT
    authorize extra or missing capture declarations. Child-local mutable values need not equal
    original capture snapshots; this check compares contracts, not historical value contents.
+   Their immutable creation result type MUST also equal the executable body's result type,
+   including detached children without a remaining lexical handle. Handle removal MUST NOT
+   permit result-contract substitution at capture, decode or recovery admission.
 <a id="GNT-3.7"></a>
 
 7. An implementation claiming the durable-runtime profile MUST make Gantry

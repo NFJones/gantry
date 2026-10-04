@@ -55,6 +55,8 @@ For retained source-body children, creation captures also match the executable's
 types and mutability. Extra, missing or altered declarations refuse even when their values are
 individually valid. Mutable child-local values are not compared with original capture snapshots;
 this is contract correspondence, not a prohibition on admitted child mutation.
+Creation result types also match the retained executable body, including detached children
+without a lexical handle. Removing a handle does not authorize changing the child's result contract.
 
 The version-six combined graph wire (`GNTCDP06`) retains enabled empty resource-accounting
 policy as two independently optional ceilings. Legacy v4/v5 graph encodings remain unchanged.

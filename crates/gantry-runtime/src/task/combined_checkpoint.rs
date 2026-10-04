@@ -1026,7 +1026,8 @@ impl ConcurrentDurableCheckpointV4 {
                 let body = program
                     .task_body(&identity)
                     .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
-                if body.captures().len() != task.captures.len()
+                if body.result_type() != &task.result_type
+                    || body.captures().len() != task.captures.len()
                     || body.captures().iter().any(|expected| {
                         task.captures.get(expected.name()).is_none_or(|capture| {
                             capture.ty() != expected.ty()
@@ -3049,6 +3050,45 @@ mod tests {
         let checkpoint = unchecked_checkpoint(&fixture);
         assert_eq!(checkpoint.clone().validate(), Ok(()));
         assert!(checkpoint.recover(Arc::clone(&fixture.program)).is_ok());
+    }
+
+    /// Detached children retain executable result contracts after their lexical handle is gone.
+    #[test]
+    fn detached_child_result_contract_matches_executable_body() {
+        let (mut fixture, created) =
+            pending_task_control_fixture(TaskControlSiteKind::Detach, None);
+        let suspension = fixture
+            .foreground
+            .pending_task_control()
+            .and_then(|pending| pending.detach())
+            .cloned()
+            .unwrap_or_else(|| panic!("pending detach"));
+        fixture
+            .foreground
+            .complete_detach(&suspension)
+            .unwrap_or_else(|error| panic!("detach completion: {error:?}"));
+        let checkpoint = ConcurrentDurableCheckpointV4::capture(
+            &fixture.foreground,
+            &fixture.scheduler,
+            &fixture.sessions,
+        )
+        .unwrap_or_else(|error| panic!("positive detached graph: {error:?}"));
+        assert!(
+            checkpoint
+                .clone()
+                .recover(Arc::clone(&fixture.program))
+                .is_ok()
+        );
+        let mut altered = checkpoint;
+        checkpoint_task_mut(&mut altered, created[0].task_id).result_type = TypeDescriptor::STRING;
+        assert_eq!(
+            ConcurrentDurableCheckpointV4::decode_compatible(
+                &fixture.program,
+                &altered.canonical_bytes(),
+            )
+            .err(),
+            Some(ConcurrentDurableCheckpointError::InvalidCheckpoint)
+        );
     }
 
     #[test]
