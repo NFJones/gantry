@@ -15721,7 +15721,9 @@ or excess bytes MUST also refuse without mutation. Coordinator-backed recovery M
 validate issuing execution, known issuing/cleanup tasks, budget predecessors, current owners,
 canonical subject order, containment winners and policy ceilings before exposing accounting.
 When the graph retains the issuing task's machine, its execution, task and task path MUST match
-the validated issuing checkpoint, and its retained generation counter for that operation site
+the validated issuing checkpoint. Its executable task-body identity, including absence for a
+workflow-root machine, MUST also match; equal task coordinates and generation counters MUST NOT
+authorize a different executable body. Its retained generation counter for that operation site
 MUST be no earlier than the issued generation. A shared budget alone MUST NOT substitute for
 that machine history. Settled children without a retained machine still require validated issuing
 evidence and known task membership; this correspondence check is not journal authentication.

@@ -309,7 +309,9 @@ physical slots, adapter bindings, poison history, missing issuing evidence and e
 cloning machines or reserving publication. Coordinator-backed recovery checks the complete set's
 execution/task provenance, budget predecessors, current owners, canonical order, containment and
 capacity before exposing accounting. Where an issuing machine remains in the graph, its task path
-and retained operation-site generation frontier must agree with validated issuing evidence; a
+and executable task-body identity must match validated issuing evidence, including an absent body
+for workflow-root machines. Matching task coordinates and counters cannot substitute another body.
+Its retained operation-site generation frontier must agree with validated issuing evidence; a
 shared budget cannot substitute for missing machine history. Settled children without retained
 machines still use validated issuing evidence and known task membership. This is correspondence,
 not journal authentication. Consuming driver admission revalidates the actual machine graph after

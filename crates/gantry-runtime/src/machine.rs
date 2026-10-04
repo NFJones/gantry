@@ -1285,6 +1285,10 @@ impl MachineCheckpointV3 {
         {
             return false;
         }
+        #[cfg(feature = "concurrent")]
+        if self.task_body != origin.task_body {
+            return false;
+        }
         let Some(occurrence) = origin.pending_operation() else {
             return false;
         };

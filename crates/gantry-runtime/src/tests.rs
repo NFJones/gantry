@@ -6593,6 +6593,117 @@ fn resplice_moved_out_section(bytes: &[u8], section: &[u8]) -> Vec<u8> {
     rewritten
 }
 
+/// Resource-origin correspondence must not substitute another executable body at the same task.
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+#[test]
+fn resource_origin_correspondence_rejects_substituted_task_bodies() {
+    let action_path = path("crate::action");
+    let operation = ExecutableOperation {
+        kind: OperationSiteKind::Action,
+        section20_kind: Some(OperationKind::LiveResource),
+        result_type: TypeDescriptor::INT,
+        action: Some(ExecutableAction {
+            path: action_path.clone(),
+            signature: CanonicalSignature::action(
+                RecoveryClass::Idempotent,
+                &action_path,
+                &[],
+                &TypeDescriptor::INT,
+            ),
+            recovery: RecoveryClass::Idempotent,
+            parameters: Vec::new(),
+        }),
+        template_segments: Vec::new(),
+        interpolation_types: Vec::new(),
+        named_input_names: Vec::new(),
+        named_input_types: Vec::new(),
+        retry_limit: None,
+        session_mode: None,
+        attempted: false,
+    };
+    let instructions = vec![
+        instruction(
+            0,
+            TypeDescriptor::INT,
+            InstructionKind::OperationCall {
+                operation,
+                operands: 0,
+            },
+        ),
+        instruction(1, TypeDescriptor::INT, InstructionKind::TaskComplete),
+    ];
+    let (base, first_identity) = spawn_program_with_body(instructions.clone());
+    let caller = CanonicalCallableIdentity::free(&path("crate::main"), &[]);
+    let second_identity = TaskBodyIdentity::new(caller.clone(), site(1));
+    let mut bodies = base.task_bodies().to_vec();
+    bodies.push(
+        ExecutableTaskBody::new(
+            second_identity.clone(),
+            TypeDescriptor::INT,
+            bodies[0].captures().to_vec(),
+            ExecutableTaskContext::v1(),
+            instructions,
+        )
+        .unwrap_or_else(|error| panic!("second body: {error:?}")),
+    );
+    let mut root = base.workflows()[0].clone();
+    root.instructions[1] = instruction(
+        1,
+        TypeDescriptor::UNIT,
+        InstructionKind::Spawn {
+            handle: ExecutableTaskHandle::new(Arc::from("other"), TypeDescriptor::INT)
+                .unwrap_or_else(|error| panic!("handle: {error:?}")),
+            body: second_identity.clone(),
+        },
+    );
+    let program = Arc::new(
+        MachineProgram::with_task_bodies(vec![(caller, root)], bodies)
+            .unwrap_or_else(|error| panic!("program: {error:?}")),
+    );
+    let count = LogicalValue::integer(GantryInt::new(5).unwrap_or_else(|| panic!("integer")));
+    let capture = TaskCaptureV1::new(
+        Arc::from("count"),
+        TypeDescriptor::INT,
+        false,
+        &count,
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("capture: {error:?}"));
+    let machine_limits = limits(16, 4, 1, 1, 16);
+    let (task, task_path) = child_task_coordinate();
+    let make = |identity| {
+        let mut machine = Machine::new_concurrent_task_body_with_context(
+            Arc::clone(&program),
+            identity,
+            std::slice::from_ref(&capture),
+            execution(),
+            task,
+            Arc::clone(&task_path),
+            machine_limits,
+            ExecutionBudget::new(execution(), machine_limits),
+            None,
+            None,
+        )
+        .unwrap_or_else(|error| panic!("machine: {error:?}"));
+        assert!(matches!(
+            machine.step(),
+            MachineStep::Transition(MachineLabel::OperationPrepared(_))
+        ));
+        let checkpoint = machine.checkpoint();
+        let decoded = crate::MachineCheckpointV3::decode(&program, &checkpoint.canonical_bytes())
+            .unwrap_or_else(|error| panic!("checkpoint must independently validate: {error:?}"));
+        assert_eq!(decoded, checkpoint);
+        checkpoint
+    };
+    let origin = make(&first_identity);
+    let retained = make(&second_identity);
+    assert!(origin.retains_resource_origin(&origin));
+    assert!(
+        !retained.retains_resource_origin(&origin),
+        "matching task coordinates and generation cannot substitute an executable task body"
+    );
+}
+
 /// Pending action checkpoints cannot omit or reuse a resource-generation ordinal.
 #[cfg(feature = "durable")]
 #[test]
