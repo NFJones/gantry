@@ -1025,6 +1025,11 @@ portable outcomes, identity, or durable compatibility.
    operand ownership through its existing charge until mutex release. Invalid-result refusal
    MUST precede budget admission; failed charging MUST consume no operand. Terminal settlement
    follows unlocking, preserving its existing outcome and consumption-obligation evidence.
+   Assignment replacement and propagated exclusive-receiver candidates MUST be fully validated
+   outside shared counters. Mutability, type, path and result-limit refusals MUST precede budget
+   admission. One charged update MUST publish all candidates and preserve existing moved-out
+   and consumption-obligation rules. Superseded values and consumed operands MUST remain owned
+   until unlocking. Refusal MUST publish no partial assignment; construction remains synchronous.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

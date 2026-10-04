@@ -818,6 +818,12 @@ until its existing completion charge unlocks. Invalid-result refusal precedes bu
 failed charging consumes no operand. Outcome and obligation settlement run after unlocking,
 without changing terminal semantics or claiming bounded destruction latency.
 
+Assignment stages replacement paths and propagated exclusive-receiver candidates outside shared
+counters, preserving mutability/type/path/limit refusal precedence. A single charged update installs
+all validated values and clears the same moved-out/consumption facts as before. Consumed operands
+and superseded values are retained until after unlocking. Refusal changes no assignment target;
+this does not establish cooperative construction or bounded publication bookkeeping.
+
 Direct String equality, inequality, prefix and suffix matching compare at most 4096 UTF-8 octets per machine call
 before requesting a scheduling-only executor yield. Operands and program position remain
 unchanged until the Boolean result commits with the existing single transition charge.

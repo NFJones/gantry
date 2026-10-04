@@ -782,6 +782,12 @@ struct Binding {
     mutable: bool,
 }
 
+/// Fully validated replacement values, private until one charged assignment publication.
+struct AssignmentCandidate {
+    value: LogicalValue,
+    callers: Vec<(usize, Arc<str>, LogicalValue)>,
+}
+
 type Scope = BTreeMap<Arc<str>, Binding>;
 
 /// One coordinator-created dynamic task handle visible in a lexical machine scope.
@@ -3289,6 +3295,14 @@ impl Machine {
         if matches!(instruction.kind, InstructionKind::TaskComplete) {
             return self.complete_task_body(workflow, instruction.site);
         }
+        if let InstructionKind::Assign {
+            name,
+            path,
+            target_type,
+        } = instruction.kind.clone()
+        {
+            return self.execute_assignment(&name, &path, &target_type, workflow, instruction.site);
+        }
         let execution_budget = self.execution_budget.clone();
         let mut budget_state = execution_budget.lock();
         let site = instruction.site.clone();
@@ -3299,11 +3313,9 @@ impl Machine {
             InstructionKind::Bind { name, ty, mutable } => {
                 self.bind_value(name, ty, mutable, &mut budget_state)
             }
-            InstructionKind::Assign {
-                name,
-                path,
-                target_type,
-            } => self.assign_value(&name, &path, &target_type, &mut budget_state),
+            InstructionKind::Assign { .. } => {
+                unreachable!("assignment owns private staging and charged publication")
+            }
             InstructionKind::Pop => unreachable!("discard retains consumed ownership until unlock"),
             InstructionKind::Aggregate { .. } => {
                 unreachable!("aggregates use private result construction")
@@ -3481,13 +3493,14 @@ impl Machine {
         Ok(())
     }
 
-    fn assign_value(
-        &mut self,
+    /// Validates and constructs replacement paths without locking shared execution counters.
+    /// Caller propagation retains existing mutability, type, path and receiver checks.
+    fn assignment_result(
+        &self,
         name: &str,
         path: &[gantry_core::value::ValuePathSegment],
         target_type: &TypeDescriptor,
-        budget_state: &mut ExecutionBudgetState,
-    ) -> Result<(), RuntimeCode> {
+    ) -> Result<AssignmentCandidate, RuntimeCode> {
         let replacement = self
             .values
             .last()
@@ -3597,28 +3610,57 @@ impl Machine {
                 frame_index = Some(parent_index);
             }
         }
-        self.charge_transition(budget_state)?;
-        self.pop_staged();
-        self.binding_mut(name)
-            .ok_or(RuntimeCode::InternalInvariant)?
-            .value = candidate;
-        for (parent_index, root, candidate) in caller_candidates {
-            let parent = self
-                .frames
-                .get_mut(parent_index)
-                .ok_or(RuntimeCode::InternalInvariant)?;
-            parent
-                .scopes
-                .iter_mut()
-                .rev()
-                .find_map(|scope| scope.get_mut(root.as_ref()))
-                .ok_or(RuntimeCode::InternalInvariant)?
-                .value = candidate;
+        Ok(AssignmentCandidate {
+            value: candidate,
+            callers: caller_candidates,
+        })
+    }
+
+    /// Publishes all prevalidated assignment values with one charge and no partial update.
+    /// Consumed and superseded ownership is reclaimed only after shared counters unlock.
+    fn execute_assignment(
+        &mut self,
+        name: &str,
+        path: &[ValuePathSegment],
+        target_type: &TypeDescriptor,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+    ) -> MachineStep {
+        let candidate = match self.assignment_result(name, path, target_type) {
+            Ok(candidate) => candidate,
+            Err(code) => return self.fail_at(code, workflow, site),
+        };
+        let mut retired = Vec::with_capacity(candidate.callers.len() + 1);
+        let execution_budget = self.execution_budget.clone();
+        let consumed;
+        {
+            let mut budget_state = execution_budget.lock();
+            if let Err(code) = self.charge_transition(&mut budget_state) {
+                drop(budget_state);
+                return self.fail_at(code, workflow, site);
+            }
+            consumed = self.pop_staged();
+            let binding = self.binding_mut(name).unwrap_or_else(|| {
+                unreachable!("exclusive machine ownership retains validated assignment binding")
+            });
+            retired.push(std::mem::replace(&mut binding.value, candidate.value));
+            for (parent_index, root, value) in candidate.callers {
+                let binding = self.frames[parent_index]
+                    .scopes
+                    .iter_mut()
+                    .rev()
+                    .find_map(|scope| scope.get_mut(root.as_ref()))
+                    .unwrap_or_else(|| {
+                        unreachable!("private assignment staging validated caller binding")
+                    });
+                retired.push(std::mem::replace(&mut binding.value, value));
+            }
+            self.clear_moved_out(name, path);
+            self.clear_consumption_obligations(name, path);
+            self.advance_pc();
         }
-        self.clear_moved_out(name, path);
-        self.clear_consumption_obligations(name, path);
-        self.advance_pc();
-        Ok(())
+        drop((consumed, retired));
+        self.finish_deterministic(workflow, site, Arc::from("assignment"))
     }
 
     /// Removes one staged value with its existing charge, then reclaims it after unlocking.

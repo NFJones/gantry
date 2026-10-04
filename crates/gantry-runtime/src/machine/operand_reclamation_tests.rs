@@ -829,3 +829,167 @@ fn assert_task_completion_reclamation(
         MachineStep::Complete(MachineOutcome::Succeeded(LogicalValue::unit()))
     );
 }
+/// Assignment construction and consumed-origin disposal must not hold shared counters.
+#[test]
+fn assignment_staging_and_reclamation_run_outside_budget_lock() {
+    assert_assignment_boundary(false, true, false, None);
+    assert_assignment_boundary(
+        true,
+        true,
+        false,
+        Some(RuntimeCode::DeterministicTransitionBudget),
+    );
+    assert_assignment_boundary(true, false, false, Some(RuntimeCode::InternalInvariant));
+    assert_assignment_boundary(true, true, true, Some(RuntimeCode::InternalInvariant));
+}
+
+/// Exercises successful publication and conflicting refusal conditions through actual dispatch.
+fn assert_assignment_boundary(
+    exhausted: bool,
+    mutable: bool,
+    invalid_type: bool,
+    expected: Option<RuntimeCode>,
+) {
+    let root = CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("root: {error:?}"));
+    let site = |index| {
+        StructuralPosition::new(vec![index]).unwrap_or_else(|error| panic!("site: {error:?}"))
+    };
+    let program = Arc::new(
+        MachineProgram::new(vec![gantry_ir::Workflow {
+            path: root.clone(),
+            parameters: Vec::new(),
+            result: TypeDescriptor::UNIT,
+            effects: gantry_ir::EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: site(0),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Assign {
+                        name: Arc::from("target"),
+                        path: Vec::new(),
+                        target_type: TypeDescriptor::STRING,
+                    },
+                },
+                Instruction {
+                    site: site(1),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Push(LogicalValue::unit()),
+                },
+                Instruction {
+                    site: site(2),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Return,
+                },
+            ],
+        }])
+        .unwrap_or_else(|error| panic!("program: {error:?}")),
+    );
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x9a; 32])
+        .unwrap_or_else(|error| panic!("execution: {error:?}"));
+    let limits = MachineLimits::new(8, 1, 1, 1, 8, gantry_core::value::DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| panic!("limits"));
+    let mut machine = Machine::new(program, &root, Vec::new(), execution, limits)
+        .unwrap_or_else(|error| panic!("machine: {error:?}"));
+    let previous = LogicalValue::string("é".repeat(10_000), limits.value_limits)
+        .unwrap_or_else(|error| panic!("previous: {error:?}"));
+    let address = previous
+        .as_string()
+        .unwrap_or_else(|| panic!("String fixture"))
+        .as_ptr() as usize;
+    machine.frames[0].scopes[0].insert(
+        Arc::from("target"),
+        Binding {
+            value: previous,
+            ty: TypeDescriptor::STRING,
+            mutable,
+        },
+    );
+    let replacement = LogicalValue::string("replacement", limits.value_limits)
+        .unwrap_or_else(|error| panic!("replacement: {error:?}"));
+    let origin: Arc<str> = Arc::from("assignment-input-origin");
+    let weak = Arc::downgrade(&origin);
+    machine.push_staged(
+        replacement.clone(),
+        Some(LoadedPlace {
+            root: origin,
+            path: Vec::new(),
+        }),
+    );
+    if invalid_type {
+        machine.values[0] = LogicalValue::boolean(true);
+    }
+    if exhausted {
+        let mut state = machine.execution_budget.lock();
+        for _ in 0..8 {
+            ExecutionBudget::charge_transition(&mut state)
+                .unwrap_or_else(|error| panic!("exhaust budget: {error:?}"));
+        }
+    }
+    let before = machine.execution_budget.snapshot();
+    let frames = expected.map(|_| machine.frames.clone());
+    let values = expected.map(|_| machine.values.clone());
+    let places = expected.map(|_| machine.values_places.clone());
+    BINDING_PROBE.with(|cell| {
+        *cell.borrow_mut() = Some(BindingProbe {
+            address,
+            budget: machine.execution_budget.clone(),
+            observations: Vec::new(),
+        })
+    });
+    PROBE.with(|cell| {
+        *cell.borrow_mut() = Some(Probe {
+            root: weak.clone(),
+            budget: machine.execution_budget.clone(),
+            observations: Vec::new(),
+        })
+    });
+    let step = machine.step();
+    let bindings = BINDING_PROBE.with(|cell| {
+        cell.borrow_mut()
+            .take()
+            .unwrap_or_else(|| panic!("binding probe"))
+            .observations
+    });
+    let origins = PROBE.with(|cell| {
+        cell.borrow_mut()
+            .take()
+            .unwrap_or_else(|| panic!("origin probe"))
+            .observations
+    });
+    if let Some(code) = expected {
+        assert!(
+            matches!(step, MachineStep::Transition(MachineLabel::Failure(failure))
+            if failure.code == code && failure.workflow == root && failure.site == site(0))
+        );
+        assert!(
+            origins.is_empty(),
+            "refusal must retain the consumed origin"
+        );
+        assert!(bindings.iter().all(Option::is_some), "{bindings:?}");
+        assert_eq!(Some(machine.frames.clone()), frames);
+        assert_eq!(Some(machine.values.clone()), values);
+        assert_eq!(Some(machine.values_places.clone()), places);
+        assert_eq!(machine.execution_budget.snapshot(), before);
+        assert!(weak.upgrade().is_some());
+        return;
+    }
+    assert!(
+        !bindings.is_empty(),
+        "staged binding copies must be observed"
+    );
+    assert!(bindings.iter().all(Option::is_some), "{bindings:?}");
+    assert_eq!(origins, vec![(true, true, Some(1))]);
+    assert!(weak.upgrade().is_none());
+    assert!(
+        matches!(step, MachineStep::Transition(MachineLabel::Deterministic { kind, .. })
+        if kind.as_ref() == "assignment")
+    );
+    assert_eq!(
+        machine.binding("target").map(|binding| &binding.value),
+        Some(&replacement)
+    );
+    assert!(machine.values.is_empty());
+    assert!(machine.values_places.is_empty());
+    assert_eq!(machine.frames[0].pc, 1);
+    assert_eq!(machine.execution_budget.snapshot().revision, 1);
+}
