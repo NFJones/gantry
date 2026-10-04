@@ -983,6 +983,12 @@ portable outcomes, identity, or durable compatibility.
    construction; adjacent, leading and trailing empty segments MUST remain exact. Private
    segment state MAY be recomputed on recovery. Segment and final List construction,
    allocation, cloning and destruction remain outside this work bound.
+   Runtime String-to-Float grammar admission MUST perform at most 4096 constant-work
+   RFC 8259 scanner steps per call before yielding when more grammar work remains.
+   Token endpoints MUST NOT authorize conversion of trailing or substituted input. Invalid
+   grammar still publishes `None`, not a task failure. Exact decimal range conversion,
+   binary64 rounding, final grammar revalidation and logical construction remain synchronous
+   and outside this grammar-only work bound. Scratch MAY be recomputed after recovery.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

@@ -153,6 +153,14 @@ without constructing a normalized digit vector. Exact ordering, integer conversi
 normalization remain unchanged. Binary64 parsing and input-dependent scanning still prevent a total
 allocation, semantic-work or cancellation-bound claim.
 
+Runtime Float-token grammar admission now shares an incremental RFC 8259 scanner with
+document decoding. It performs at most 4096 constant-work grammar steps before a scheduling
+yield; document decoding drives the same states synchronously and preserves absolute syntax
+offsets. Runtime scratch requires whole-token consumption, remains private and restarts from
+retained operands after recovery. Invalid grammar publishes `None`. Final parsing revalidates
+the whole token and performs exact range conversion and binary64 rounding synchronously:
+the grammar endpoint grants no conversion authority or whole-primitive latency guarantee.
+
 `GNT-40.6-canonical-numeric-text` publishes canonical text for the canonical `Int` and finite `Float` domains, adopting `GNT-35.2-literal-formation-and-canonical-text`'s rule: an `Int`'s text is an optional `-` with decimal digits, no leading zero on a multi-digit magnitude and no negative zero; a `Float`'s text is the canonical number spelling of its normalized binary64 value, the canonical number spelling `GNT-8.5` requires at canonical JSON boundaries. Formatting is total and publishes exactly the canonical text; parsing admits exactly the canonical text of one value and publishes nothing otherwise, so a non-canonical spelling is refused rather than normalized and `-0` is refused for both domains; the two directions round-trip exactly. `format_canonical_int`, `parse_canonical_int`, `format_canonical_float`, and `parse_canonical_float` publish this surface in the model. No source-literal grammar, digit separator, radix prefix, type suffix, bare `+`, trailing decimal point, non-finite or `NaN` text, rounding, host text facility, locale formatting, other type's text, work limit, cancellation safe point, quota, schema, recovery, durability, boundary encoding, lowering, machine representation, or family behavior is published with them, and no performance, storage layout, or physical-representation claim is made.
 
 ## Canonical integer overflow modes (`GNT-40.7`)

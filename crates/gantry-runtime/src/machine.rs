@@ -25,6 +25,7 @@ use gantry_ir::{ExecutableTaskHandle, TaskBodyIdentity};
 use crate::resource::ResourceSubjectBinding;
 use crate::session::SessionCreationModeV1;
 mod string_concat;
+mod string_float;
 mod string_join;
 mod string_lowercase;
 mod string_replace;
@@ -35,6 +36,7 @@ mod string_uppercase;
 #[cfg(feature = "concurrent")]
 use crate::task::{DynamicTaskHandleIdentity, JoinResolutionV1, TaskCaptureV1, TaskJoinFailureV1};
 use string_concat::StringConcatWork;
+use string_float::StringFloatWork;
 use string_join::StringJoinWork;
 use string_lowercase::StringLowercaseWork;
 use string_replace::StringReplaceWork;
@@ -1846,6 +1848,8 @@ pub struct Machine {
     string_replace_work: Option<StringReplaceWork>,
     /// Private exact segment search, admission and construction.
     string_split_work: Option<StringSplitWork>,
+    /// Recomputable Float-token grammar admission, distinct from numeric conversion.
+    string_float_work: Option<StringFloatWork>,
     #[cfg(feature = "concurrent")]
     pending_task_control: Option<PendingTaskControl>,
     pending_labels: VecDeque<MachineLabel>,
@@ -2145,6 +2149,7 @@ impl Machine {
             string_join_work: None,
             string_replace_work: None,
             string_split_work: None,
+            string_float_work: None,
             pending_task_control: None,
             pending_labels: VecDeque::new(),
             cancellation: None,
@@ -2262,6 +2267,7 @@ impl Machine {
             string_join_work: None,
             string_replace_work: None,
             string_split_work: None,
+            string_float_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: None,
             pending_labels: VecDeque::new(),
@@ -2677,6 +2683,7 @@ impl Machine {
             string_join_work: None,
             string_replace_work: None,
             string_split_work: None,
+            string_float_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: checkpoint.pending_task_control,
             pending_labels: checkpoint.pending_labels,
@@ -3219,6 +3226,13 @@ impl Machine {
             {
                 return MachineStep::YieldRequired;
             }
+            if matches!(
+                instruction.kind,
+                InstructionKind::Primitive(Primitive::StringParseFloat)
+            ) && self.prepare_string_float()
+            {
+                return MachineStep::YieldRequired;
+            }
             return self.execute(instruction, workflow);
         }
     }
@@ -3693,7 +3707,15 @@ impl Machine {
     ) -> Result<(), RuntimeCode> {
         let arity = primitive.arity();
         let operands = self.peek_operands(arity)?;
-        let result = if primitive == Primitive::StringSplit
+        let result = if primitive == Primitive::StringParseFloat
+            && let Some(work) = self.string_float_work.as_ref()
+        {
+            match work.valid {
+                Some(false) => LogicalValue::none(),
+                Some(true) => evaluate_primitive(primitive, operands, self.limits.value_limits)?,
+                None => return Err(RuntimeCode::InternalInvariant),
+            }
+        } else if primitive == Primitive::StringSplit
             && let Some(work) = self.string_split_work.as_ref()
         {
             if let Some(error) = work.error {
@@ -3809,6 +3831,7 @@ impl Machine {
         self.string_join_work = None;
         self.string_replace_work = None;
         self.string_split_work = None;
+        self.string_float_work = None;
         self.truncate_operands(arity);
         self.push_staged(result, None);
         self.advance_pc();
@@ -4095,7 +4118,33 @@ impl Machine {
         pending
     }
 
+    /// Advances private Float-token grammar admission outside the shared budget lock.
+    /// Exact conversion still revalidates the whole token during primitive publication.
+    fn prepare_string_float(&mut self) -> bool {
+        let Ok(operands) = self.peek_operands(1) else {
+            return false;
+        };
+        if operands[0].as_string().is_none() {
+            return false;
+        }
+        let source = operands[0].clone();
+        let pending = self
+            .string_float_work
+            .get_or_insert_with(StringFloatWork::default)
+            .advance(
+                source
+                    .as_string()
+                    .unwrap_or_else(|| unreachable!("validated String")),
+                STRING_EQUALITY_WORK_QUANTUM,
+            );
+        if pending {
+            self.status = MachineStatus::YieldRequired;
+        }
+        pending
+    }
+
     /// Bounds replay-only scheduling yields per semantic step from admitted String/List limits.
+    /// Numeric grammar steps are also bounded by the admitted String octet count.
     /// Contextual lowercase uses three scalar passes, also covered by this allowance.
     /// Four UTF-8 octets per scalar and sixteen conservative passes cover search and construction;
     /// List framing covers empty segments. One extra yield covers the
@@ -5048,6 +5097,7 @@ impl Machine {
         self.string_join_work = None;
         self.string_replace_work = None;
         self.string_split_work = None;
+        self.string_float_work = None;
         self.settle_consumption_obligations();
         self.status = match outcome {
             MachineOutcome::Succeeded(_) => MachineStatus::Succeeded,

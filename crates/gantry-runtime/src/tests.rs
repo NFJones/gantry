@@ -1925,6 +1925,85 @@ fn long_string_equality_yields_before_atomic_publication_and_cancellation() {
     }
 }
 
+/// Long JSON number grammar admission yields without publishing or charging a partial parse.
+#[test]
+fn long_float_token_admission_yields_before_publication_and_cancellation() {
+    let option_float = TypeDescriptor::option(TypeDescriptor::FLOAT)
+        .unwrap_or_else(|error| panic!("option: {error:?}"));
+    let root = workflow(
+        "crate::main",
+        vec![],
+        option_float.clone(),
+        EffectSet::default(),
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::STRING,
+                InstructionKind::Push(
+                    LogicalValue::string(format!("1.{}", "0".repeat(20_000)), DEFAULT_VALUE_LIMITS)
+                        .unwrap_or_else(|error| panic!("token: {error:?}")),
+                ),
+            ),
+            instruction(
+                1,
+                option_float.clone(),
+                InstructionKind::Primitive(Primitive::StringParseFloat),
+            ),
+            instruction(2, option_float, InstructionKind::Return),
+        ],
+    );
+    let mut machine = new_machine(
+        program(vec![root]),
+        "crate::main",
+        vec![],
+        limits(8, 1, 1, 1, 8),
+    );
+    assert!(matches!(machine.step(), MachineStep::Transition(_)));
+    let before = machine.execution_budget().snapshot();
+    assert_eq!(machine.step(), MachineStep::YieldRequired);
+    assert_eq!(machine.execution_budget().snapshot(), before);
+    let mut cancelled = machine.clone();
+    assert!(cancelled.cancel("numeric admission cancelled").is_some());
+    assert!(matches!(
+        drive(&mut cancelled),
+        MachineOutcome::Cancelled(_)
+    ));
+    assert_eq!(cancelled.execution_budget().snapshot(), before);
+    assert!(machine.resume_after_yield());
+    let expected = LogicalValue::some(
+        LogicalValue::float(
+            gantry_core::numeric::GantryFloat::new(1.0).unwrap_or_else(|| panic!("finite fixture")),
+        ),
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("result: {error:?}"));
+    #[cfg(feature = "durable")]
+    {
+        let bytes = machine.checkpoint().canonical_bytes();
+        let checkpoint = crate::MachineCheckpointV3::decode(&machine.program_arc(), &bytes)
+            .unwrap_or_else(|error| panic!("numeric admission checkpoint: {error:?}"));
+        let budget = ExecutionBudget::recover_from_checkpoint(before)
+            .unwrap_or_else(|error| panic!("numeric admission budget: {error:?}"));
+        let mut recovered =
+            Machine::recover_from_checkpoint(machine.program_arc(), checkpoint, budget)
+                .unwrap_or_else(|error| panic!("numeric admission recovery: {error:?}"));
+        assert_eq!(recovered.checkpoint().canonical_bytes(), bytes);
+        assert_eq!(
+            drive(&mut recovered),
+            MachineOutcome::Succeeded(expected.clone())
+        );
+        assert_eq!(
+            recovered.execution_budget().snapshot().revision,
+            before.revision + 1
+        );
+    }
+    assert_eq!(drive(&mut machine), MachineOutcome::Succeeded(expected));
+    assert_eq!(
+        machine.execution_budget().snapshot().revision,
+        before.revision + 1
+    );
+}
+
 /// Long splitting yields before publication while preserving adjacent and trailing empty segments.
 #[test]
 fn long_string_splitting_yields_before_publication_and_cancellation() {

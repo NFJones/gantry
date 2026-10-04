@@ -5,6 +5,9 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 use std::sync::Arc;
 
+mod number_scan;
+pub use number_scan::JsonNumberScanner;
+
 /// Finite limits enforced while decoding one JSON text.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct JsonLimits {
@@ -641,43 +644,13 @@ pub fn parse_json_float(token: &str) -> Option<f64> {
 
 /// Scans one JSON numeric token, preserving the first refusal offset for document decoding.
 fn scan_number(bytes: &[u8], cursor: &mut usize) -> Result<(), JsonError> {
-    if bytes.get(*cursor) == Some(&b'-') {
-        *cursor += 1;
-    }
-    match bytes.get(*cursor) {
-        Some(b'0') => {
-            *cursor += 1;
-            if bytes.get(*cursor).is_some_and(u8::is_ascii_digit) {
-                return Err(JsonError::Syntax { offset: *cursor });
-            }
+    let mut scanner = JsonNumberScanner::new(*cursor);
+    loop {
+        let outcome = scanner.advance(bytes, 4096);
+        *cursor = scanner.cursor();
+        if let Some(outcome) = outcome {
+            return outcome.map(|_| ());
         }
-        Some(b'1'..=b'9') => consume_number_digits(bytes, cursor),
-        _ => return Err(JsonError::Syntax { offset: *cursor }),
-    }
-    if bytes.get(*cursor) == Some(&b'.') {
-        *cursor += 1;
-        if !bytes.get(*cursor).is_some_and(u8::is_ascii_digit) {
-            return Err(JsonError::Syntax { offset: *cursor });
-        }
-        consume_number_digits(bytes, cursor);
-    }
-    if matches!(bytes.get(*cursor), Some(b'e' | b'E')) {
-        *cursor += 1;
-        if matches!(bytes.get(*cursor), Some(b'+' | b'-')) {
-            *cursor += 1;
-        }
-        if !bytes.get(*cursor).is_some_and(u8::is_ascii_digit) {
-            return Err(JsonError::Syntax { offset: *cursor });
-        }
-        consume_number_digits(bytes, cursor);
-    }
-    Ok(())
-}
-
-/// Advances only across ASCII decimal digits in an already bounded borrowed input.
-fn consume_number_digits(bytes: &[u8], cursor: &mut usize) {
-    while bytes.get(*cursor).is_some_and(u8::is_ascii_digit) {
-        *cursor += 1;
     }
 }
 
