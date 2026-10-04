@@ -125,6 +125,20 @@ mod tests {
             format!("1.7976931348623157{}1e308", "0".repeat(20_000)),
             format!("0.{}1e20309", "0".repeat(20_000)),
         ];
+        // Pin the checked exponent accumulator at and across the i128 boundary, rather
+        // than relying only on obviously oversized runs of nines.
+        for magnitude in [
+            (i128::MAX - 1).to_string(),
+            i128::MAX.to_string(),
+            (i128::MAX as u128 + 1).to_string(),
+            (i128::MAX as u128 + 2).to_string(),
+        ] {
+            for significand in ["0", "-0.000", "1", "-1", "0.001", "10.00"] {
+                for sign in ["", "+", "-"] {
+                    sources.push(format!("{significand}e{sign}{magnitude}"));
+                }
+            }
+        }
         for integer in [0, 1, 9, 10, 17976931348623157_u64] {
             for fraction in ["", ".0", ".001", ".10200"] {
                 for exponent in ["", "e+3", "e-3", "e292", "e308", "e309", "e-324"] {
