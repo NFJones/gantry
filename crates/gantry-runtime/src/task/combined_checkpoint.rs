@@ -246,13 +246,51 @@ impl ConcurrentDurableCheckpointV4 {
             .resource_policy
             .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
         for record in &self.resource_records {
+            let (bytes, _) = record
+                .issuing_evidence()
+                .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
+            let origin = MachineCheckpointV3::decode(&program, bytes)?;
             if let Some(issuing_machine) = self.task_checkpoint(record.subject().task_id()) {
-                let (bytes, _) = record
-                    .issuing_evidence()
-                    .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
-                let origin = MachineCheckpointV3::decode(&program, bytes)?;
                 if !issuing_machine.retains_resource_origin(&origin) {
                     return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+                }
+            } else {
+                let task = self
+                    .state
+                    .tasks
+                    .iter()
+                    .find(|task| task.task_id == record.subject().task_id())
+                    .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
+                if origin.execution_id() != self.execution_budget.execution
+                    || origin.task_id() != task.task_id
+                    || origin.task_path() != task.task_path.as_ref()
+                {
+                    return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+                }
+                if let Some(callable) = origin.task_body_enclosing_callable() {
+                    if origin.task_body_spawn_site() != Some(&task.spawn_site)
+                        || program
+                            .callable(callable)
+                            .is_none_or(|workflow| workflow.path != task.workflow)
+                    {
+                        return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+                    }
+                    let identity =
+                        gantry_ir::TaskBodyIdentity::new(callable.clone(), task.spawn_site.clone());
+                    let body = program
+                        .task_body(&identity)
+                        .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
+                    if body.result_type() != &task.result_type
+                        || body.captures().len() != task.captures.len()
+                        || body.captures().iter().any(|expected| {
+                            task.captures.get(expected.name()).is_none_or(|capture| {
+                                capture.ty() != expected.ty()
+                                    || capture.is_mutable() != expected.is_mutable()
+                            })
+                        })
+                    {
+                        return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+                    }
                 }
             }
         }
@@ -3068,6 +3106,235 @@ mod tests {
         let checkpoint = unchecked_checkpoint(&fixture);
         assert_eq!(checkpoint.clone().validate(), Ok(()));
         assert!(checkpoint.recover(Arc::clone(&fixture.program)).is_ok());
+    }
+
+    /// Settled children must not adopt issuing evidence from another independently valid body.
+    #[test]
+    fn settled_child_resource_origin_matches_creation_contract() {
+        use gantry_ir::generated::{OperationSiteKind, RecoveryClass};
+        use gantry_ir::{
+            CanonicalSignature, ExecutableAction, ExecutableOperation, LivenessRoot, OperationKind,
+            OwnerGeneration, ResourceCarrier, ResourceLedger, ResourceState,
+        };
+
+        let (mut fixture, created) =
+            pending_task_control_fixture(TaskControlSiteKind::Detach, None);
+        let detach = fixture
+            .foreground
+            .pending_task_control()
+            .and_then(|pending| pending.detach())
+            .cloned()
+            .unwrap_or_else(|| panic!("detach"));
+        fixture
+            .foreground
+            .complete_detach(&detach)
+            .unwrap_or_else(|error| panic!("detach completion: {error:?}"));
+        let foreign_path = path("crate::zforeign");
+        let foreign_callable = CanonicalCallableIdentity::free(&foreign_path, &[]);
+        let foreign_id = TaskBodyIdentity::new(foreign_callable.clone(), position(0));
+        let original_id = fixture.program.task_bodies()[0].identity().clone();
+        let resource_body = |identity: TaskBodyIdentity| {
+            let action = path("crate::resource");
+            ExecutableTaskBody::new(
+                identity,
+                TypeDescriptor::UNIT,
+                Vec::new(),
+                ExecutableTaskContext::v1(),
+                vec![
+                    Instruction {
+                        site: position(0),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::OperationCall {
+                            operation: ExecutableOperation {
+                                kind: OperationSiteKind::Action,
+                                section20_kind: Some(OperationKind::LiveResource),
+                                result_type: TypeDescriptor::UNIT,
+                                action: Some(ExecutableAction {
+                                    signature: CanonicalSignature::action(
+                                        RecoveryClass::Idempotent,
+                                        &action,
+                                        &[],
+                                        &TypeDescriptor::UNIT,
+                                    ),
+                                    path: action,
+                                    recovery: RecoveryClass::Idempotent,
+                                    parameters: Vec::new(),
+                                }),
+                                template_segments: Vec::new(),
+                                interpolation_types: Vec::new(),
+                                named_input_names: Vec::new(),
+                                named_input_types: Vec::new(),
+                                retry_limit: None,
+                                session_mode: None,
+                                attempted: false,
+                            },
+                            operands: 0,
+                        },
+                    },
+                    Instruction {
+                        site: position(1),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::TaskComplete,
+                    },
+                ],
+            )
+            .unwrap_or_else(|error| panic!("resource body: {error:?}"))
+        };
+        let foreign_workflow = Workflow {
+            path: foreign_path,
+            parameters: Vec::new(),
+            result: TypeDescriptor::UNIT,
+            effects: EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: position(0),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Spawn {
+                        handle: ExecutableTaskHandle::new(
+                            Arc::from("foreign"),
+                            TypeDescriptor::UNIT,
+                        )
+                        .unwrap_or_else(|error| panic!("foreign handle: {error:?}")),
+                        body: foreign_id.clone(),
+                    },
+                },
+                Instruction {
+                    site: position(1),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Push(LogicalValue::unit()),
+                },
+                Instruction {
+                    site: position(2),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Return,
+                },
+            ],
+        };
+        let mut callables = fixture
+            .program
+            .callable_identities()
+            .iter()
+            .cloned()
+            .zip(fixture.program.workflows().iter().cloned())
+            .collect::<Vec<_>>();
+        callables.push((foreign_callable, foreign_workflow));
+        callables.sort_by(|left, right| left.0.cmp(&right.0));
+        let mut bodies = fixture.program.task_bodies().to_vec();
+        bodies[0] = resource_body(original_id.clone());
+        bodies.push(resource_body(foreign_id.clone()));
+        bodies.sort_by(|left, right| left.identity().cmp(right.identity()));
+        let program = Arc::new(
+            MachineProgram::with_task_bodies(callables, bodies)
+                .unwrap_or_else(|error| panic!("extended executable: {error:?}")),
+        );
+        let task = fixture
+            .scheduler
+            .state()
+            .task(created[0].task_id)
+            .unwrap_or_else(|| panic!("issuing task"));
+        let task_path = Arc::from(task.task_path());
+        let session = task.base_session_id();
+        let owner = OwnerGeneration::new(4);
+        let mut records = Vec::new();
+        for body in [&original_id, &foreign_id] {
+            let mut issuer = Machine::new_concurrent_task_body_with_context(
+                Arc::clone(&program),
+                body,
+                &[],
+                fixture.execution,
+                created[0].task_id,
+                Arc::clone(&task_path),
+                machine_limits(),
+                fixture.budget.clone(),
+                None,
+                Some(session),
+            )
+            .unwrap_or_else(|error| panic!("issuer: {error:?}"));
+            assert!(matches!(
+                issuer.step(),
+                MachineStep::Transition(MachineLabel::OperationPrepared(_))
+            ));
+            let subject = issuer
+                .pending_resource_subject()
+                .unwrap_or_else(|| panic!("subject"));
+            let mut registry = crate::ResourceRegistry::with_limits(1, 1);
+            registry
+                .admit_pending_operation_with_issuing_evidence(
+                    &issuer,
+                    ResourceCarrier::ReconstructionRecord,
+                    ResourceLedger::new(
+                        owner,
+                        ResourceState::Usable,
+                        &[LivenessRoot::Resource],
+                        &[],
+                    )
+                    .unwrap_or_else(|error| panic!("ledger: {error:?}"))
+                    .durable_record(),
+                    65_536,
+                )
+                .unwrap_or_else(|error| panic!("origin admission: {error:?}"));
+            registry
+                .settle_containment(
+                    &subject,
+                    owner,
+                    gantry_ir::Completion::observed(
+                        gantry_ir::ExternalOutcome::Accepted,
+                        gantry_ir::EffectState::NotStarted,
+                    ),
+                )
+                .unwrap_or_else(|error| panic!("containment: {error:?}"));
+            let operation = issuer
+                .checkpoint()
+                .pending_operation()
+                .unwrap_or_else(|| panic!("operation"))
+                .identity;
+            issuer
+                .fail_operation_with_code(operation, RuntimeCode::InternalInvariant)
+                .unwrap_or_else(|error| panic!("issuer settlement: {error:?}"));
+            records.push(registry.declared_records_with_containment());
+        }
+        fixture
+            .scheduler
+            .state
+            .settle(
+                created[0].task_id,
+                MachineOutcome::Failed(crate::MachineFailure {
+                    code: RuntimeCode::InternalInvariant,
+                    workflow: path("crate::main"),
+                    site: position(0),
+                    join_failure: None,
+                }),
+            )
+            .unwrap_or_else(|error| panic!("task settlement: {error:?}"));
+        fixture
+            .scheduler
+            .state
+            .mark_driver_physically_settled(created[0].task_id)
+            .unwrap_or_else(|error| panic!("driver settlement: {error:?}"));
+        fixture.scheduler.machines.remove(&created[0].task_id);
+        fixture
+            .scheduler
+            .runnable
+            .retain(|task| *task != created[0].task_id);
+        let base = ConcurrentDurableCheckpointV4::decode_compatible(
+            &program,
+            &unchecked_checkpoint(&fixture).canonical_bytes(),
+        )
+        .unwrap_or_else(|error| panic!("settled graph control: {error:?}"));
+        let mut base = base;
+        base.resource_policy = Some((Some(1), Some(1)));
+        assert!(
+            base.clone()
+                .with_resource_records(Arc::clone(&program), records[0].clone())
+                .is_ok(),
+            "matching settled-child origin remains eligible"
+        );
+        assert_eq!(
+            base.with_resource_records(program, records[1].clone())
+                .err(),
+            Some(ConcurrentDurableCheckpointError::InvalidCheckpoint),
+            "settled child cannot adopt foreign-body issuing evidence"
+        );
     }
 
     /// Detached children retain executable result contracts after their lexical handle is gone.

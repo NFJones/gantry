@@ -313,8 +313,9 @@ and executable task-body identity must match validated issuing evidence, includi
 for workflow-root machines. Matching task coordinates and counters cannot substitute another body.
 Its retained operation-site generation frontier must agree with validated issuing evidence; a
 shared budget cannot substitute for missing machine history. Settled children without retained
-machines still use validated issuing evidence and known task membership. This is correspondence,
-not journal authentication. Consuming driver admission revalidates the actual machine graph after
+machines still validate issuing evidence against immutable creation coordinates and source-body
+result/capture contracts. Known task membership cannot authorize another issuing body. This is
+correspondence, not journal authentication. Consuming driver admission revalidates the actual machine graph after
 mutable recovery access, so replacing a recovered machine cannot bypass this history check.
 Records are frozen across ordinary replay transitions; the exact typed `ResourceFinish` cut is
 the only mutation exception. Coordinator capture/staging compares the committed resource image before

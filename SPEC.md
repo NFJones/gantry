@@ -15802,7 +15802,10 @@ workflow-root machine, MUST also match; equal task coordinates and generation co
 authorize a different executable body. Its retained generation counter for that operation site
 MUST be no earlier than the issued generation. A shared budget alone MUST NOT substitute for
 that machine history. Settled children without a retained machine still require validated issuing
-evidence and known task membership; this correspondence check is not journal authentication.
+evidence matching immutable task creation's execution, task path, lexical spawn site and
+executable-resolved enclosing workflow. A retained source body's result and capture contracts
+MUST match creation facts even when its driver is absent. Known task membership alone MUST NOT
+authorize foreign issuing bodies; this correspondence check is not journal authentication.
 Consuming driver admission MUST revalidate the actual machine graph after mutable recovery access
 and before exposing coordinator-backed resource records. Prior checkpoint validation alone MUST
 NOT authorize a substituted machine with missing issuing-generation history.
