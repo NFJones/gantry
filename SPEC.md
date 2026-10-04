@@ -12351,8 +12351,9 @@ for one exact declaration, one exact site, and one exact resource generation, it
 never a transfer of ownership, it cannot be written as, decoded from, or substituted
 for an owner generation or a retained receiver, and it is released when the operation
 that holds it settles. A borrowed receiver MUST carry a loan sealed for that exact
-site and that exact resource generation, and an implementation MUST refuse a loan of
-another site or another generation rather than reinterpret it. `GNT-6.2f` is not this
+declaration, site and resource generation, and an implementation MUST refuse a loan of
+another declaration, site or generation rather than reinterpret it. Matching site and
+generation alone MUST NOT substitute for the declaration-qualified seal. `GNT-6.2f` is not this
 rule: that clause is the general argument-loan rule, and it explicitly excludes
 live-resource loans, so no receiver loan of this clause is admitted, sealed, or
 released by `GNT-6.2f` and this clause neither narrows nor extends it. An owner

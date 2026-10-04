@@ -10217,6 +10217,16 @@ fn pending_resource_abi_preserves_machine_facts_and_refuses_foreign_loans() {
     );
     assert_eq!(transferred.operation(), abi.operation());
     assert_eq!(transferred.generation(), abi.generation());
+    let substituted = gantry::ir::LoanId::seal(
+        &CanonicalPath::new("crate::foreign")
+            .unwrap_or_else(|error| panic!("foreign declaration: {error:?}")),
+        abi.site(),
+        abi.generation(),
+    );
+    assert!(matches!(
+        machine.pending_resource_abi(ReceiverOwnership::BorrowedLoan(substituted)),
+        Err(OperationAbiError::ForeignLoan { .. })
+    ));
     let future = OperationAbi::new(
         OperationKind::LiveResource,
         abi.declaration(),

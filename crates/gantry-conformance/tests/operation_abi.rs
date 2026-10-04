@@ -409,6 +409,22 @@ fn receiver_arrangements_are_distinct_and_a_borrowed_receiver_is_a_sealed_loan()
     assert_ne!(sealed_loan(&site, 2), loan);
     assert_eq!(loan.site(), &site);
     assert_eq!(loan.generation(), &resource_generation(&site, 1));
+    let foreign_declaration = LoanId::seal(
+        &path("crate::foreign"),
+        &site,
+        &resource_generation(&site, 1),
+    );
+    assert_eq!(
+        refusal(OperationAbi::new(
+            OperationKind::LiveResource,
+            &path(DECLARATION),
+            &site,
+            1,
+            RecoveryClass::Idempotent,
+            ReceiverOwnership::BorrowedLoan(foreign_declaration),
+        )),
+        OperationAbiDiagnosticCode::ForeignLoan
+    );
     assert_eq!(
         loan.as_str(),
         format!("receiver-loan:{}", loan.digest_hex())

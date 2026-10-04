@@ -601,8 +601,11 @@ Legacy transfer remains uncharged; physical size never supplies an implicit char
 
 `OwnedHostResource::borrow_receiver` consumes an exact borrowed `LiveResource` into an exclusive
 `HostReceiverLoan`, returning the handle on refusal. Admission checks the account's operation,
-site, resource generation, current owner and declared loan root. The loan's recovery class must
-match issuing executable metadata retained by the account; absent or mismatched metadata refuses
+site, resource generation, current owner and declared loan root.
+The Section 20 ABI constructor validates the complete declaration-qualified loan seal;
+matching site and generation alone cannot admit a loan sealed for a foreign declaration.
+The loan's recovery class must match issuing executable metadata retained by the account;
+absent or mismatched metadata refuses
 `ForeignLoan` without changing either input. Subject identity alone cannot substitute a recovery
 contract. Eligible acquisition then checks
 the admitted account's machine lease: cancellation refuses with `CancellationRequested`, and an

@@ -1391,8 +1391,8 @@ impl OperationAbi {
     /// Declares one operation ABI of one kind, declaration, site, generation
     /// counter, recovery class, and receiver arrangement.
     ///
-    /// A borrowed receiver must be a loan sealed for this exact site and resource
-    /// generation, so a loan of another site or another generation is refused as
+    /// A borrowed receiver must be a loan sealed for this exact declaration, site and resource
+    /// generation, so a loan of another declaration, site or generation is refused as
     /// [`OperationAbiError::ForeignLoan`] rather than reinterpreted.
     pub fn new(
         kind: OperationKind,
@@ -1405,7 +1405,7 @@ impl OperationAbi {
         let operation = LogicalOperationId::derive(declaration, site);
         let resource = ResourceGenerationId::derive(&operation, site, generation);
         if let Some(loan) = ownership.loan()
-            && !loan.matches(site, &resource)
+            && *loan != LoanId::seal(declaration, site, &resource)
         {
             return Err(OperationAbiError::ForeignLoan {
                 loan: Arc::from(loan.as_str()),
