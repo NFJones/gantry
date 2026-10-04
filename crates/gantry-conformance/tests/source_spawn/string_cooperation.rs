@@ -56,6 +56,7 @@ fn runtime_string_work_yields_observe_public_cancellation() {
         "[value, value].join(\"x\")",
         "value.replace(\"missing\", \"replacement\")",
         "value.split(\"missing\")",
+        "value.parse_float()",
     ] {
         for long in [false, true] {
             let source = format!("fn main(value: String) {{ discard {expression}; }}");
@@ -70,9 +71,17 @@ fn runtime_string_work_yields_observe_public_cancellation() {
             ));
             let interpreter = interpreter(executor.clone(), integration.clone());
             let input = serde_json::to_vec(&if long {
-                " ".repeat(10_000)
+                if expression == "value.parse_float()" {
+                    format!("1.{}", "0".repeat(10_000))
+                } else {
+                    " ".repeat(10_000)
+                }
             } else {
-                " ".to_owned()
+                if expression == "value.parse_float()" {
+                    "1.0".to_owned()
+                } else {
+                    " ".to_owned()
+                }
             })
             .unwrap_or_else(|error| panic!("input: {error:?}"));
             let selection = selection();
