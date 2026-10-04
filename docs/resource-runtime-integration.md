@@ -807,6 +807,12 @@ update unlocks shared counters, then reclaims them. Root-scope and alignment che
 precede counter admission; failed charging removes no scope. This does not move a lexical
 release point, settle task work, or promise bounded destruction latency.
 
+Callable return validates its result outside shared counters. Nonroot return retains retired
+callee frames and operand storage until charged caller restoration unlocks, preserving moved-out
+facts and consumption obligations. Invalid-result refusal precedes budget admission; rejected
+charging changes no frame or caller context. Root return remains uncharged. This relocates
+reclamation, not semantic release or synchronous destruction latency.
+
 Direct String equality, inequality, prefix and suffix matching compare at most 4096 UTF-8 octets per machine call
 before requesting a scheduling-only executor yield. Operands and program position remain
 unchanged until the Boolean result commits with the existing single transition charge.

@@ -1016,6 +1016,11 @@ portable outcomes, identity, or durable compatibility.
    its charged scope/PC update releases the shared execution-budget mutex. Root-scope and
    scope-alignment checks MUST precede admission. Failed charging MUST remove no scope;
    deferred reclamation changes no lexical release point, task settlement or quota charge.
+   Callable return MUST validate its result outside the shared execution-budget mutex.
+   Nonroot return MUST preserve its existing charge, caller restoration, moved-out facts and
+   consumption obligations, retaining retired callee storage until after unlocking. Invalid
+   results MUST refuse before budget admission; failed charging MUST restore no caller or
+   remove a frame. Root return remains uncharged. Reclamation remains synchronous.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

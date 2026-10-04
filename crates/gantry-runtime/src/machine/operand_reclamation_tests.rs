@@ -133,6 +133,159 @@ fn exited_scope_bindings_are_reclaimed_after_budget_unlock() {
     assert_eq!(machine.execution_budget.snapshot().revision, 1);
 }
 
+/// A real nonroot return must dispose callee bindings after releasing shared counters.
+#[test]
+fn returned_callee_bindings_are_reclaimed_after_budget_unlock() {
+    assert_return_reclamation(8, false, None);
+    assert_return_reclamation(2, false, Some(RuntimeCode::DeterministicTransitionBudget));
+    assert_return_reclamation(2, true, Some(RuntimeCode::InternalInvariant));
+}
+
+/// Exercises successful restoration and refused returns with independently observed ownership.
+fn assert_return_reclamation(
+    transitions: u64,
+    invalid_result: bool,
+    expected: Option<RuntimeCode>,
+) {
+    let root = CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("root: {error:?}"));
+    let callee =
+        CanonicalPath::new("crate::callee").unwrap_or_else(|error| panic!("callee: {error:?}"));
+    let site = |index| {
+        StructuralPosition::new(vec![index]).unwrap_or_else(|error| panic!("site: {error:?}"))
+    };
+    let instruction = |index, kind| Instruction {
+        site: site(index),
+        ty: TypeDescriptor::UNIT,
+        kind,
+    };
+    let program = Arc::new(
+        MachineProgram::new(vec![
+            gantry_ir::Workflow {
+                path: callee.clone(),
+                parameters: Vec::new(),
+                result: TypeDescriptor::UNIT,
+                effects: gantry_ir::EffectSet::default(),
+                instructions: vec![
+                    instruction(0, InstructionKind::Push(LogicalValue::unit())),
+                    instruction(1, InstructionKind::Return),
+                ],
+            },
+            gantry_ir::Workflow {
+                path: root.clone(),
+                parameters: Vec::new(),
+                result: TypeDescriptor::UNIT,
+                effects: gantry_ir::EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        InstructionKind::Call {
+                            callee: CanonicalCallableIdentity::free(&callee, &[]),
+                            arguments: 0,
+                        },
+                    ),
+                    instruction(1, InstructionKind::Return),
+                ],
+            },
+        ])
+        .unwrap_or_else(|error| panic!("program: {error:?}")),
+    );
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x98; 32])
+        .unwrap_or_else(|error| panic!("execution: {error:?}"));
+    let limits = MachineLimits::new(
+        transitions,
+        1,
+        1,
+        2,
+        8,
+        gantry_core::value::DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|| panic!("limits"));
+    let mut machine = Machine::new(program, &root, Vec::new(), execution, limits)
+        .unwrap_or_else(|error| panic!("machine: {error:?}"));
+    assert!(matches!(machine.step(), MachineStep::Transition(_)));
+    assert_eq!(machine.frames.len(), 2);
+    let value = LogicalValue::string("é".repeat(10_000), limits.value_limits)
+        .unwrap_or_else(|error| panic!("value: {error:?}"));
+    let address = value
+        .as_string()
+        .unwrap_or_else(|| panic!("String fixture"))
+        .as_ptr() as usize;
+    machine
+        .frames
+        .last_mut()
+        .unwrap_or_else(|| panic!("callee frame"))
+        .scopes[0]
+        .insert(
+            Arc::from("retained"),
+            Binding {
+                value,
+                ty: TypeDescriptor::STRING,
+                mutable: false,
+            },
+        );
+    assert!(matches!(machine.step(), MachineStep::Transition(_)));
+    let before = machine.execution_budget.snapshot();
+    if invalid_result {
+        machine.values[0] = LogicalValue::boolean(true);
+    }
+    let frames = expected.map(|_| machine.frames.clone());
+    let values = machine.values.clone();
+    let places = machine.values_places.clone();
+    let occurrences = machine.occurrences.clone();
+    let agent = machine.agent.clone();
+    let session = machine.session;
+    BINDING_PROBE.with(|cell| {
+        *cell.borrow_mut() = Some(BindingProbe {
+            address,
+            budget: machine.execution_budget.clone(),
+            observations: Vec::new(),
+        })
+    });
+    let step = machine.step();
+    let observations = BINDING_PROBE.with(|cell| {
+        cell.borrow_mut()
+            .take()
+            .unwrap_or_else(|| panic!("probe exists"))
+            .observations
+    });
+    if let Some(code) = expected {
+        assert!(
+            matches!(step, MachineStep::Transition(MachineLabel::Failure(failure))
+            if failure.code == code && failure.workflow == callee && failure.site == site(1))
+        );
+        assert!(
+            observations.is_empty(),
+            "refused return must not reclaim callee bindings"
+        );
+        assert_eq!(Some(machine.frames.clone()), frames);
+        assert_eq!(machine.values, values);
+        assert_eq!(machine.values_places, places);
+        assert_eq!(machine.occurrences, occurrences);
+        assert_eq!(machine.agent, agent);
+        assert_eq!(machine.session, session);
+        assert_eq!(machine.execution_budget.snapshot(), before);
+        return;
+    }
+    assert_eq!(observations, vec![Some(before.revision + 1)]);
+    assert!(
+        matches!(step, MachineStep::Transition(MachineLabel::Deterministic { kind, .. }) if kind.as_ref() == "return")
+    );
+    assert_eq!(machine.frames.len(), 1);
+    assert_eq!(machine.frames[0].pc, 1);
+    assert_eq!(machine.values, vec![LogicalValue::unit()]);
+    assert_eq!(machine.values_places, vec![None]);
+    assert_eq!(
+        machine.execution_budget.snapshot().revision,
+        before.revision + 1
+    );
+    assert!(matches!(machine.step(), MachineStep::Transition(_)));
+    assert_eq!(
+        machine.execution_budget.snapshot().revision,
+        before.revision + 1,
+        "root return remains uncharged"
+    );
+}
+
 /// Refused exits preserve lexical ownership and structural errors precede exhausted budgets.
 #[test]
 fn refused_scope_exit_preserves_scopes_and_structural_precedence() {

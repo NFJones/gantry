@@ -3282,6 +3282,9 @@ impl Machine {
         if matches!(instruction.kind, InstructionKind::ExitScope) {
             return self.execute_scope_exit(workflow, instruction.site);
         }
+        if matches!(instruction.kind, InstructionKind::Return) {
+            return self.return_value(workflow, instruction.site);
+        }
         let execution_budget = self.execution_budget.clone();
         let mut budget_state = execution_budget.lock();
         let site = instruction.site.clone();
@@ -3346,7 +3349,7 @@ impl Machine {
                 );
             }
             InstructionKind::Return => {
-                return self.return_value(workflow, site, &mut budget_state);
+                unreachable!("return owns its validation and publication lock")
             }
             #[cfg(feature = "concurrent")]
             InstructionKind::Spawn { handle, body } => {
@@ -4957,12 +4960,9 @@ impl Machine {
         self.finish_outcome(MachineOutcome::Succeeded(value))
     }
 
-    fn return_value(
-        &mut self,
-        workflow: CanonicalPath,
-        site: StructuralPosition,
-        budget_state: &mut ExecutionBudgetState,
-    ) -> MachineStep {
+    /// Validates outside shared counters and retains retired callee ownership until unlock.
+    /// Nonroot restoration has its existing charge; root return remains uncharged.
+    fn return_value(&mut self, workflow: CanonicalPath, site: StructuralPosition) -> MachineStep {
         let Some(value) = self.values.last().cloned() else {
             return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
         };
@@ -4982,26 +4982,49 @@ impl Machine {
             let outcome = MachineOutcome::Succeeded(value);
             return self.finish_outcome(outcome);
         }
-        if let Err(code) = self.charge_transition(budget_state) {
+        let stack_base = self
+            .frames
+            .last()
+            .unwrap_or_else(|| unreachable!("return validation retains a frame"))
+            .stack_base;
+        let mut consumed = Vec::with_capacity(self.values.len().saturating_sub(stack_base));
+        let execution_budget = self.execution_budget.clone();
+        let mut budget_state = execution_budget.lock();
+        if let Err(code) = self.charge_transition(&mut budget_state) {
+            drop(budget_state);
             return self.fail_at(code, workflow, site);
         }
-        let frame = self
+        let mut frame = self
             .frames
             .pop()
             .unwrap_or_else(|| unreachable!("nonroot return retains frame"));
-        self.truncate_staged(frame.stack_base);
+        while self.values.len() > frame.stack_base {
+            consumed.push(
+                self.pop_staged().unwrap_or_else(|| {
+                    unreachable!("validated staged stack retains consumed values")
+                }),
+            );
+        }
         self.push_staged(value, None);
-        self.occurrences
-            .truncate(frame.occurrence_base.saturating_sub(1));
-        self.agent_stack.truncate(frame.agent_stack_base);
-        self.agent = frame.agent_at_entry;
-        self.session_stack.truncate(frame.session_stack_base);
+        let retired_occurrences = self.occurrences.split_off(
+            frame
+                .occurrence_base
+                .saturating_sub(1)
+                .min(self.occurrences.len()),
+        );
+        let retired_agents = self
+            .agent_stack
+            .split_off(frame.agent_stack_base.min(self.agent_stack.len()));
+        let retired_agent = std::mem::replace(&mut self.agent, frame.agent_at_entry.take());
+        let retired_sessions = self
+            .session_stack
+            .split_off(frame.session_stack_base.min(self.session_stack.len()));
         self.session = frame.session_at_entry;
         // A normal return of an owned callee transfers its single staging entry into the caller
         // frame, so the moved-out place stays durably marked after the callee frame is gone. The
         // caller binding keeps its value; the transfer is a logical discard. Failure and
         // cancellation paths never reach this transfer.
-        let mut staged = frame.place_initialization;
+        let mut staged = std::mem::take(&mut frame.place_initialization);
         if staged.len() == 1
             && let Some(entry) = staged.pop()
             && let Some(caller) = self.frames.last_mut()
@@ -5011,10 +5034,20 @@ impl Machine {
         // A normal return transfers the callee's live obligations to the caller frame that owns the
         // consumed place, so the accounting survives the callee-frame pop.
         if let Some(caller) = self.frames.last_mut() {
-            for entry in frame.consumption_obligation {
+            for entry in std::mem::take(&mut frame.consumption_obligation) {
                 record_consumption_obligation(caller, entry.root, entry.path);
             }
         }
+        drop(budget_state);
+        drop((
+            consumed,
+            frame,
+            staged,
+            retired_occurrences,
+            retired_agents,
+            retired_agent,
+            retired_sessions,
+        ));
         self.finish_deterministic(workflow, site, Arc::from("return"))
     }
 
