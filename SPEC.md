@@ -978,6 +978,11 @@ portable outcomes, identity, or durable compatibility.
    MUST NOT be searched. Each whole unmatched/replacement piece MUST pass its output-scalar
    admission before copying. Private scratch MAY restart from retained operands on recovery;
    allocation, cloning and final logical construction remain outside this work bound.
+   String splitting MUST share at most 4096 search, scalar admission/copy or phase-boundary
+   work units per call. Each next List place MUST be admitted before its segment's String
+   construction; adjacent, leading and trailing empty segments MUST remain exact. Private
+   segment state MAY be recomputed on recovery. Segment and final List construction,
+   allocation, cloning and destruction remain outside this work bound.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

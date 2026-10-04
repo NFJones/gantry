@@ -836,6 +836,13 @@ counted before any of it is copied; refusal publishes no accumulated prefix. Rec
 scratch from unchanged operands and completed publication charges one transition. Allocation,
 cloning, disposal and final logical construction remain outside this work guarantee.
 
+Splitting shares a finite 4096-unit quantum across nonoverlapping search, segment admission,
+scalar copying and phase boundaries. The next List place is admitted before segment construction,
+preserving item-limit precedence and exact empty segments. Private items remain invisible until
+one atomic List publication with the existing transition charge. Recovery recomputes scratch from
+retained operands. Segment/String and final List construction, allocation, cloning and disposal
+remain synchronous and outside the search/copy-work guarantee.
+
 Concatenation, replacement and list joining check each next output piece's Unicode-scalar contribution before
 appending it to private construction state. Over-limit pieces are not allocated or appended;
 only the complete logical value is published. Replacement stays nonoverlapping and never rescans

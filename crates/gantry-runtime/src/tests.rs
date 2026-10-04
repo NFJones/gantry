@@ -1925,6 +1925,101 @@ fn long_string_equality_yields_before_atomic_publication_and_cancellation() {
     }
 }
 
+/// Long splitting yields before publication while preserving adjacent and trailing empty segments.
+#[test]
+fn long_string_splitting_yields_before_publication_and_cancellation() {
+    let piece = "é".repeat(10_000);
+    let source = format!("{piece}😀😀tail😀");
+    let list_type = TypeDescriptor::list(TypeDescriptor::STRING);
+    let root = workflow(
+        "crate::main",
+        vec![],
+        list_type.clone(),
+        EffectSet::default(),
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::STRING,
+                InstructionKind::Push(
+                    LogicalValue::string(source, DEFAULT_VALUE_LIMITS)
+                        .unwrap_or_else(|error| panic!("source: {error:?}")),
+                ),
+            ),
+            instruction(
+                1,
+                TypeDescriptor::STRING,
+                InstructionKind::Push(
+                    LogicalValue::string("😀", DEFAULT_VALUE_LIMITS)
+                        .unwrap_or_else(|error| panic!("separator: {error:?}")),
+                ),
+            ),
+            instruction(
+                2,
+                list_type.clone(),
+                InstructionKind::Primitive(Primitive::StringSplit),
+            ),
+            instruction(3, list_type, InstructionKind::Return),
+        ],
+    );
+    let mut machine = new_machine(
+        program(vec![root]),
+        "crate::main",
+        vec![],
+        limits(8, 1, 1, 1, 8),
+    );
+    for _ in 0..2 {
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+    }
+    let before = machine.execution_budget().snapshot();
+    assert_eq!(machine.step(), MachineStep::YieldRequired);
+    assert_eq!(machine.execution_budget().snapshot(), before);
+    let mut cancelled = machine.clone();
+    assert!(cancelled.cancel("split cancelled").is_some());
+    assert!(matches!(
+        drive(&mut cancelled),
+        MachineOutcome::Cancelled(_)
+    ));
+    assert_eq!(cancelled.execution_budget().snapshot(), before);
+    assert!(machine.resume_after_yield());
+    let expected = LogicalValue::list(
+        [piece.as_str(), "", "tail", ""]
+            .into_iter()
+            .map(|text| {
+                LogicalValue::string(text, DEFAULT_VALUE_LIMITS)
+                    .unwrap_or_else(|error| panic!("segment: {error:?}"))
+            })
+            .collect(),
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("expected: {error:?}"));
+    #[cfg(feature = "durable")]
+    {
+        let bytes = machine.checkpoint().canonical_bytes();
+        let checkpoint = crate::MachineCheckpointV3::decode(&machine.program_arc(), &bytes)
+            .unwrap_or_else(|error| panic!("split checkpoint: {error:?}"));
+        let budget = ExecutionBudget::recover_from_checkpoint(before)
+            .unwrap_or_else(|error| panic!("split budget: {error:?}"));
+        let mut recovered =
+            Machine::recover_from_checkpoint(machine.program_arc(), checkpoint, budget)
+                .unwrap_or_else(|error| panic!("split recovery: {error:?}"));
+        assert_eq!(recovered.checkpoint().canonical_bytes(), bytes);
+        // The original has resumed but has not advanced its operands or program position.
+        assert_eq!(
+            drive(&mut recovered),
+            MachineOutcome::Succeeded(expected.clone())
+        );
+        assert_eq!(
+            recovered.execution_budget().snapshot().revision,
+            before.revision + 1
+        );
+    }
+    assert_eq!(drive(&mut machine), MachineOutcome::Succeeded(expected));
+    assert_eq!(
+        machine.execution_budget().snapshot().revision,
+        before.revision + 1
+    );
+}
+
 /// Replacement yields before publication and never searches newly inserted text.
 #[test]
 fn long_string_replacement_yields_before_publication_and_cancellation() {

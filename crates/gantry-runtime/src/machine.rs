@@ -29,6 +29,7 @@ mod string_join;
 mod string_lowercase;
 mod string_replace;
 mod string_search;
+mod string_split;
 mod string_trim;
 mod string_uppercase;
 #[cfg(feature = "concurrent")]
@@ -38,6 +39,7 @@ use string_join::StringJoinWork;
 use string_lowercase::StringLowercaseWork;
 use string_replace::StringReplaceWork;
 use string_search::StringSearchWork;
+use string_split::StringSplitWork;
 use string_trim::StringTrimWork;
 use string_uppercase::StringUppercaseWork;
 
@@ -1842,6 +1844,8 @@ pub struct Machine {
     string_join_work: Option<StringJoinWork>,
     /// Recomputable nonoverlapping search and admitted replacement copying.
     string_replace_work: Option<StringReplaceWork>,
+    /// Private exact segment search, admission and construction.
+    string_split_work: Option<StringSplitWork>,
     #[cfg(feature = "concurrent")]
     pending_task_control: Option<PendingTaskControl>,
     pending_labels: VecDeque<MachineLabel>,
@@ -2140,6 +2144,7 @@ impl Machine {
             string_concat_work: None,
             string_join_work: None,
             string_replace_work: None,
+            string_split_work: None,
             pending_task_control: None,
             pending_labels: VecDeque::new(),
             cancellation: None,
@@ -2256,6 +2261,7 @@ impl Machine {
             string_concat_work: None,
             string_join_work: None,
             string_replace_work: None,
+            string_split_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: None,
             pending_labels: VecDeque::new(),
@@ -2670,6 +2676,7 @@ impl Machine {
             string_concat_work: None,
             string_join_work: None,
             string_replace_work: None,
+            string_split_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: checkpoint.pending_task_control,
             pending_labels: checkpoint.pending_labels,
@@ -3205,6 +3212,13 @@ impl Machine {
             {
                 return MachineStep::YieldRequired;
             }
+            if matches!(
+                instruction.kind,
+                InstructionKind::Primitive(Primitive::StringSplit)
+            ) && self.prepare_string_split()
+            {
+                return MachineStep::YieldRequired;
+            }
             return self.execute(instruction, workflow);
         }
     }
@@ -3679,7 +3693,18 @@ impl Machine {
     ) -> Result<(), RuntimeCode> {
         let arity = primitive.arity();
         let operands = self.peek_operands(arity)?;
-        let result = if primitive == Primitive::StringReplace
+        let result = if primitive == Primitive::StringSplit
+            && let Some(work) = self.string_split_work.as_ref()
+        {
+            if let Some(error) = work.error {
+                return Err(error);
+            }
+            if !work.complete {
+                return Err(RuntimeCode::InternalInvariant);
+            }
+            LogicalValue::list(work.items.clone(), self.limits.value_limits)
+                .map_err(map_list_value_error)?
+        } else if primitive == Primitive::StringReplace
             && let Some(work) = self.string_replace_work.as_ref()
         {
             if let Some(error) = work.error {
@@ -3783,6 +3808,7 @@ impl Machine {
         self.string_concat_work = None;
         self.string_join_work = None;
         self.string_replace_work = None;
+        self.string_split_work = None;
         self.truncate_operands(arity);
         self.push_staged(result, None);
         self.advance_pc();
@@ -4039,9 +4065,40 @@ impl Machine {
         pending
     }
 
+    /// Advances private segment search and copying outside the shared budget lock.
+    /// Ordinary segment/List construction retains its limits and refusal precedence.
+    fn prepare_string_split(&mut self) -> bool {
+        let Ok(operands) = self.peek_operands(2) else {
+            return false;
+        };
+        if operands.iter().any(|operand| operand.as_string().is_none()) {
+            return false;
+        }
+        let pieces = [operands[0].clone(), operands[1].clone()];
+        let [source, separator] = pieces.each_ref().map(|piece| {
+            piece
+                .as_string()
+                .unwrap_or_else(|| unreachable!("validated String"))
+        });
+        let pending = self
+            .string_split_work
+            .get_or_insert_with(StringSplitWork::default)
+            .advance(
+                source,
+                separator,
+                self.limits.value_limits,
+                STRING_EQUALITY_WORK_QUANTUM,
+            );
+        if pending {
+            self.status = MachineStatus::YieldRequired;
+        }
+        pending
+    }
+
     /// Bounds replay-only scheduling yields per semantic step from admitted String/List limits.
     /// Contextual lowercase uses three scalar passes, also covered by this allowance.
-    /// Four UTF-8 octets per scalar and four linear passes bound search/comparison chunks; one extra yield covers the
+    /// Four UTF-8 octets per scalar and sixteen conservative passes cover search and construction;
+    /// List framing covers empty segments. One extra yield covers the
     /// ordinary transition quantum. Saturation remains finite and never changes charges.
     #[cfg(all(feature = "concurrent", feature = "durable"))]
     pub(crate) fn replay_yield_allowance(&self, steps: u64) -> u64 {
@@ -4055,7 +4112,7 @@ impl Machine {
                 self.limits
                     .value_limits
                     .maximum_list_items()
-                    .saturating_mul(2),
+                    .saturating_mul(8),
             )
             .div_ceil(STRING_EQUALITY_WORK_QUANTUM as u64);
         chunks
@@ -4990,6 +5047,7 @@ impl Machine {
         self.string_concat_work = None;
         self.string_join_work = None;
         self.string_replace_work = None;
+        self.string_split_work = None;
         self.settle_consumption_obligations();
         self.status = match outcome {
             MachineOutcome::Succeeded(_) => MachineStatus::Succeeded,
