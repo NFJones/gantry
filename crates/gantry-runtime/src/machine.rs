@@ -2463,6 +2463,50 @@ impl Machine {
         )
     }
 
+    /// Derives a live-resource ABI from the pending machine's retained action facts.
+    ///
+    /// Identity, recovery class, site and generation cannot be supplied by the caller.
+    /// Missing pending/action/generation facts or an unauthenticated/non-live kind return
+    /// `Ok(None)`. A supplied receiver loan must match the derived site and generation;
+    /// model refusal changes no machine, accounting, budget or admission-lease fact.
+    /// The caller must independently authenticate receiver authority and ownership.
+    /// This inspection grants no admission, physical ownership or source handle transport.
+    pub fn pending_resource_abi(
+        &self,
+        ownership: gantry_ir::ReceiverOwnership,
+    ) -> Result<Option<gantry_ir::OperationAbi>, gantry_ir::OperationAbiError> {
+        let Some(pending) = self.pending_operation.as_ref() else {
+            return Ok(None);
+        };
+        let occurrence = &pending.occurrence;
+        let Some(metadata) = occurrence.metadata.as_deref() else {
+            return Ok(None);
+        };
+        if metadata.section20_kind != Some(gantry_ir::OperationKind::LiveResource) {
+            return Ok(None);
+        }
+        let Some(action) = metadata.action.as_ref() else {
+            return Ok(None);
+        };
+        let Some(generation) = self.counters.get(&resource_generation_counter_key(
+            &occurrence.workflow,
+            &occurrence.site,
+        )) else {
+            return Ok(None);
+        };
+        let site =
+            gantry_ir::StaticSiteId::new(occurrence.workflow.clone(), occurrence.site.clone());
+        gantry_ir::OperationAbi::new(
+            gantry_ir::OperationKind::LiveResource,
+            &action.path,
+            &site,
+            *generation,
+            action.recovery,
+            ownership,
+        )
+        .map(Some)
+    }
+
     /// Captures complete typed state at one durable checkpoint boundary.
     #[cfg(feature = "durable")]
     #[must_use]

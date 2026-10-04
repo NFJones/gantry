@@ -15301,6 +15301,14 @@ live-account place, but MUST retain the independent pending-work admission check
 create, discover, reconstruct, or claim ownership of a physical host resource, and it does not
 define evaluator-wide uniqueness, a checkpoint format, or a journal schema.
 
+`Machine::pending_resource_abi` MAY derive a Section 20 live-resource ABI from the pending
+operation's retained action declaration, recovery class, exact site and machine generation.
+The caller MAY supply only the explicit receiver arrangement; a foreign loan MUST refuse
+under the existing ABI validation. Missing pending/action/generation facts or absent/non-live
+authentication MUST return no ABI. Inspection MUST change no machine, budget or lease fact.
+This derivation grants no admission, receiver authority, physical ownership or source transport;
+the caller remains responsible for authenticating the receiver arrangement independently.
+
 A registry MAY independently declare a retained-account ceiling
 through `with_accounting_limits`; every registry-held account consumes one retained place,
 including settled, retired and deleted accounts until eligible `reap_deleted` reclamation.

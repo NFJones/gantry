@@ -10183,6 +10183,99 @@ fn repeated_loop_site_gets_a_distinct_checkpointed_resource_generation() {
     assert!(registry.declared_records().is_empty());
 }
 
+/// Host adapters derive ABI identity and recovery from the pending machine, not caller text.
+#[test]
+fn pending_resource_abi_preserves_machine_facts_and_refuses_foreign_loans() {
+    let (program, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("pending subject"));
+    let before = machine.checkpoint().canonical_bytes();
+    let budget_before = machine.budget_checkpoint();
+    let abi = machine
+        .pending_resource_abi(ReceiverOwnership::RetainedByCaller)
+        .unwrap_or_else(|error| panic!("pending ABI: {error:?}"))
+        .unwrap_or_else(|| panic!("authenticated live action has an ABI"));
+    assert_eq!(abi.kind(), OperationKind::LiveResource);
+    assert_eq!(abi.declaration().as_str(), FIXTURE_DECLARATION);
+    assert_eq!(abi.site(), subject.site());
+    assert_eq!(abi.operation(), subject.operation());
+    assert_eq!(abi.generation(), subject.generation());
+    assert_eq!(abi.recovery(), RecoveryClass::Idempotent);
+    let loan = gantry::ir::LoanId::seal(abi.declaration(), abi.site(), abi.generation());
+    let borrowed = machine
+        .pending_resource_abi(ReceiverOwnership::BorrowedLoan(loan.clone()))
+        .unwrap_or_else(|error| panic!("matching loan: {error:?}"))
+        .unwrap_or_else(|| panic!("borrowed ABI"));
+    assert_eq!(borrowed.ownership(), &ReceiverOwnership::BorrowedLoan(loan));
+    assert_eq!(borrowed.recovery(), abi.recovery());
+    let transferred = machine
+        .pending_resource_abi(ReceiverOwnership::TransferredIn(OwnerGeneration::new(4)))
+        .unwrap_or_else(|error| panic!("transferred ABI: {error:?}"))
+        .unwrap_or_else(|| panic!("explicit arrangement retains an ABI"));
+    assert_eq!(
+        transferred.ownership(),
+        &ReceiverOwnership::TransferredIn(OwnerGeneration::new(4))
+    );
+    assert_eq!(transferred.operation(), abi.operation());
+    assert_eq!(transferred.generation(), abi.generation());
+    let future = OperationAbi::new(
+        OperationKind::LiveResource,
+        abi.declaration(),
+        abi.site(),
+        1,
+        RecoveryClass::Idempotent,
+        ReceiverOwnership::RetainedByCaller,
+    )
+    .unwrap_or_else(|error| panic!("future ABI: {error:?}"));
+    let foreign =
+        gantry::ir::LoanId::seal(future.declaration(), future.site(), future.generation());
+    assert!(matches!(
+        machine.pending_resource_abi(ReceiverOwnership::BorrowedLoan(foreign)),
+        Err(OperationAbiError::ForeignLoan { .. })
+    ));
+    let decoded = MachineCheckpointV3::decode(&program, &before)
+        .unwrap_or_else(|error| panic!("checkpoint: {error:?}"));
+    let budget = ExecutionBudget::recover_from_checkpoint(budget_before)
+        .unwrap_or_else(|error| panic!("budget: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(program, decoded, budget)
+        .unwrap_or_else(|error| panic!("machine recovery: {error:?}"));
+    assert_eq!(
+        recovered.pending_resource_abi(ReceiverOwnership::RetainedByCaller),
+        Ok(Some(abi))
+    );
+    assert_eq!(machine.checkpoint().canonical_bytes(), before);
+    assert_eq!(machine.budget_checkpoint(), budget_before);
+    let operation = recovered
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("recovered pending operation"))
+        .identity;
+    recovered
+        .fail_operation(
+            operation,
+            gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+        )
+        .unwrap_or_else(|error| panic!("explicit settlement: {error:?}"));
+    assert_eq!(
+        recovered.pending_resource_abi(ReceiverOwnership::RetainedByCaller),
+        Ok(None)
+    );
+    for (action, kind) in [
+        (None, Some(OperationKind::LiveResource)),
+        (Some(FIXTURE_DECLARATION), None),
+        (Some(FIXTURE_DECLARATION), Some(OperationKind::ValueAction)),
+        (
+            Some(FIXTURE_DECLARATION),
+            Some(OperationKind::ProtectedOperation),
+        ),
+    ] {
+        let (_, other, _) = machine_with_subject(action, kind);
+        assert_eq!(
+            other.pending_resource_abi(ReceiverOwnership::RetainedByCaller),
+            Ok(None)
+        );
+    }
+}
+
 #[test]
 fn runtime_subject_survives_checkpoint_recovery() {
     let (program, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));

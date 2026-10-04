@@ -27,6 +27,12 @@ deduplication use operation, generation, execution and task. Mutations select ex
 first; a portable alias without matching ownership can only produce a foreign-provenance refusal.
 Portable identity derivation and host authority remain unchanged.
 
+`Machine::pending_resource_abi(ownership)` derives the live-resource declaration, recovery
+class, site and generation from the pending machine rather than caller-selected identity facts.
+The explicit receiver arrangement still requires independent authority and ownership validation.
+Foreign loans use the model's refusal; missing action or live-kind authentication yields no ABI.
+Inspection changes no accounting, budget or settlement lease and supplies no source-handle path.
+
 `ResourceRegistry::with_limits` optionally declares independent live-account and pending
 resource-operation ceilings under `GNT-28.11-runtime-admission-mapping`. `pending_limit` inspects
 the ceiling; `pending_operations` tracks accepted work even when that ceiling is absent.
