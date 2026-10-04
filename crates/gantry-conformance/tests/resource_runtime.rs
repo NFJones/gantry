@@ -2526,6 +2526,25 @@ fn machine_with_subject(
     action_path: Option<&str>,
     section20_kind: Option<OperationKind>,
 ) -> (Arc<MachineProgram>, Machine, Option<ResourceSubjectBinding>) {
+    machine_with_subject_recovery(action_path, section20_kind, RecoveryClass::Idempotent)
+}
+
+/// Builds matching executable recovery metadata rather than substituting a model-only class.
+fn machine_with_subject_recovery(
+    action_path: Option<&str>,
+    section20_kind: Option<OperationKind>,
+    recovery: RecoveryClass,
+) -> (Arc<MachineProgram>, Machine, Option<ResourceSubjectBinding>) {
+    let mut metadata = operation_metadata(action_path, section20_kind);
+    if let Some(action) = metadata.action.as_mut() {
+        action.recovery = recovery;
+        action.signature = CanonicalSignature::action(
+            recovery,
+            &action.path,
+            &action.parameters,
+            &metadata.result_type,
+        );
+    }
     let workflow = CanonicalPath::new(FIXTURE_WORKFLOW)
         .unwrap_or_else(|_| unreachable!("fixture workflow is canonical"));
     let site = StructuralPosition::new(vec![FIXTURE_SITE])
@@ -2540,7 +2559,7 @@ fn machine_with_subject(
                 site,
                 ty: TypeDescriptor::UNIT,
                 kind: InstructionKind::OperationCall {
-                    operation: operation_metadata(action_path, section20_kind),
+                    operation: metadata,
                     operands: 0,
                 },
             },
@@ -9083,6 +9102,107 @@ fn runtime_projects_retained_failure_state_without_releasing_accounting() {
     }
 }
 
+/// Accepted evidence must preserve the recovery contract authenticated by account admission.
+#[test]
+fn resource_state_projection_refuses_substituted_recovery_contracts() {
+    let (_, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("subject"));
+    let declaration = CanonicalPath::new(FIXTURE_DECLARATION)
+        .unwrap_or_else(|error| panic!("declaration: {error:?}"));
+    for recovery in [RecoveryClass::ReadOnly, RecoveryClass::NonIdempotent] {
+        for (failed, owner) in [(false, 4), (true, 4), (false, 3), (true, 3)] {
+            let mut registry = ResourceRegistry::with_limits(1, 1);
+            registry
+                .admit_pending_operation(
+                    &machine,
+                    ResourceCarrier::ReconstructionRecord,
+                    ledger().durable_record(),
+                )
+                .unwrap_or_else(|error| panic!("admission: {error:?}"));
+            let before = registry.declared_records();
+            let abi = OperationAbi::new(
+                OperationKind::LiveResource,
+                &declaration,
+                subject.site(),
+                0,
+                recovery,
+                ReceiverOwnership::RetainedByCaller,
+            )
+            .unwrap_or_else(|error| panic!("ABI: {error:?}"));
+            let mut live = abi
+                .open_live(
+                    OwnerGeneration::new(owner),
+                    OperationAbi::observation_allowance(
+                        1,
+                        DisclosureCharge::new(1).unwrap_or_else(|| panic!("charge")),
+                    ),
+                )
+                .unwrap_or_else(|error| panic!("live: {error:?}"));
+            assert_eq!(live.operation(), subject.operation());
+            assert_eq!(live.generation(), subject.generation());
+            let expected = if owner == 4 {
+                ResourceRegistryRefusal::RecoveryContractMismatch {
+                    presented: recovery,
+                    expected: Some(RecoveryClass::Idempotent),
+                }
+            } else {
+                ResourceRegistryRefusal::OperationStateProjection(ResourceError::StaleOwner {
+                    presented: OwnerGeneration::new(owner),
+                    current: OwnerGeneration::new(4),
+                })
+            };
+            if failed {
+                live.settle_failure(FailureClass::AdapterFailure)
+                    .unwrap_or_else(|error| panic!("failure winner: {error:?}"));
+                assert_eq!(
+                    registry.project_failure_state(&live, &subject),
+                    Err(expected.clone())
+                );
+            } else {
+                let settlement = OperationSettlement::new(
+                    live.operation(),
+                    live.generation(),
+                    live.owner(),
+                    ExternalOutcome::Accepted,
+                    ProgressObservation::CommittedProgress,
+                    25,
+                )
+                .unwrap_or_else(|error| panic!("settlement: {error:?}"));
+                live.settle(&settlement)
+                    .unwrap_or_else(|error| panic!("winner: {error:?}"));
+                assert_eq!(
+                    registry.project_operation_state(&live, &subject),
+                    Err(expected.clone())
+                );
+            }
+            assert_eq!(registry.declared_records(), before);
+            assert_eq!(registry.pending_operations(), 1);
+            let coordinator =
+                resource_coordinator(machine.execution_id(), machine.task_id(), Some(1));
+            coordinator
+                .admit_resource(
+                    &machine,
+                    ResourceCarrier::ReconstructionRecord,
+                    ledger().durable_record(),
+                )
+                .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
+            let before = coordinator.snapshot();
+            let result = if failed {
+                coordinator.project_resource_failure_state(&live, &subject)
+            } else {
+                coordinator.project_resource_operation_state(&live, &subject)
+            };
+            assert_eq!(
+                result,
+                Err(gantry::runtime::CoordinatorResourceRefusal::Registry(
+                    expected
+                ))
+            );
+            assert_eq!(coordinator.snapshot(), before);
+        }
+    }
+}
+
 #[test]
 fn runtime_projects_only_accepted_live_settlement_state_into_matching_account() {
     let subject = active_subject();
@@ -9430,7 +9550,12 @@ fn runtime_projects_only_accepted_live_settlement_state_into_matching_account() 
 /// Both cancellation/completion race orders retain one winner through accounting reconstruction.
 #[test]
 fn runtime_projects_only_the_cancellation_race_winner() {
-    let subject = active_subject();
+    let (_, _machine, subject) = machine_with_subject_recovery(
+        Some(FIXTURE_DECLARATION),
+        Some(OperationKind::LiveResource),
+        RecoveryClass::NonIdempotent,
+    );
+    let subject = subject.unwrap_or_else(|| panic!("race subject"));
     let operation_path = CanonicalPath::new(FIXTURE_DECLARATION)
         .unwrap_or_else(|_| unreachable!("fixture declaration is canonical"));
     let operation_site = StaticSiteId::new(

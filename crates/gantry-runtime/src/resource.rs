@@ -2015,7 +2015,7 @@ impl ResourceRegistry {
         let projection = live
             .operation_state_projection()
             .ok_or(ResourceRegistryRefusal::OperationStateProjectionNotSettled)?;
-        self.project_retained_state(&projection, subject)
+        self.project_retained_state(&projection, subject, live.abi().recovery())
     }
 
     /// Projects only a retained failure winner's state, without settling lifetime or work.
@@ -2030,7 +2030,7 @@ impl ResourceRegistry {
         let projection = live
             .failure_state_projection()
             .ok_or(ResourceRegistryRefusal::OperationStateProjectionNotSettled)?;
-        self.project_retained_state(&projection, subject)
+        self.project_retained_state(&projection, subject, live.abi().recovery())
     }
 
     /// Selects exact evidence-qualified accounting and applies its model-owned state fence.
@@ -2038,6 +2038,7 @@ impl ResourceRegistry {
         &mut self,
         projection: &gantry_ir::OperationStateProjection,
         subject: &ResourceSubjectBinding,
+        recovery: gantry_ir::generated::RecoveryClass,
     ) -> Result<ResourceState, ResourceRegistryRefusal> {
         let key = self.evidence_key(projection.operation(), projection.generation(), subject);
         let account = self
@@ -2045,6 +2046,16 @@ impl ResourceRegistry {
             .get_mut(&key)
             .ok_or(ResourceRegistryRefusal::UnknownSubject)?;
         require_evidence_subject(account, subject)?;
+        account
+            .require_current_owner(projection.owner())
+            .map_err(ResourceRegistryRefusal::OperationStateProjection)?;
+        let expected = account.subject().operation_recovery();
+        if expected != Some(recovery) {
+            return Err(ResourceRegistryRefusal::RecoveryContractMismatch {
+                presented: recovery,
+                expected,
+            });
+        }
         account
             .ledger
             .project_operation_state(projection)
@@ -2597,6 +2608,13 @@ pub enum ResourceRegistryRefusal {
     ForeignSubject,
     /// The supplied runtime binding differs from the evidence-selected operation or generation.
     EvidenceSubjectMismatch,
+    /// The accepted model handle differs from the admitted issuing recovery contract.
+    RecoveryContractMismatch {
+        /// Recovery class carried by the presented live handle.
+        presented: gantry_ir::generated::RecoveryClass,
+        /// Machine-authenticated recovery class retained by the admitted account, if any.
+        expected: Option<gantry_ir::generated::RecoveryClass>,
+    },
     /// Physical ownership must be disposed before accounting finalization completes.
     PhysicalValuePresent,
     /// Contained physical destruction failed and cannot authorize normal finalization.

@@ -16119,6 +16119,11 @@ portable subject identity MUST refuse with `EvidenceSubjectMismatch`; foreign ru
 MUST refuse with `ForeignSubject`. Registry failure settlement and adapter-failure poisoning MUST
 require the same accompanying binding. Unsettled projection and absent evidence-selected accounts
 retain their existing refusal precedence. These bindings supply runtime context, not host authority.
+Ordinary and failure state projection MUST also match the live handle's recovery class against
+the selected account's machine-authenticated issuing recovery metadata, after current-owner
+validation and before state mutation. Missing or mismatched metadata MUST refuse with
+`RecoveryContractMismatch`, without changing accounting or advancing coordinator publication.
+Matching portable identities MUST NOT authorize a substituted recovery contract.
 The projected operation state MUST equal the accepted settlement's derived `ResourceState`, except
 that a generation fenced under Section 20 MUST project `Poisoned` regardless of that outcome.
 Projection MUST preserve the fence without rewriting the accepted settlement or its progress;

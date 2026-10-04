@@ -735,7 +735,11 @@ execution/task. `EvidenceSubjectMismatch` and `ForeignSubject` refuse before mut
 unsettled projection and absent evidence-selected account refusals retain precedence. A
 projection exists only after the supplied `LiveResource` accepted its own Section 20 settlement.
 That exact operation and resource generation select the account, and the accepted owner generation
-must still be current. A fenced generation projects `Poisoned` even when its retained completion
+must still be current. Ordinary and failure projections additionally compare the live handle's
+recovery class with the selected account's issuing metadata after current-owner validation.
+Missing or substituted recovery metadata returns `RecoveryContractMismatch` without accounting
+mutation or coordinator publication; a caller binding cannot replace the account's contract.
+A fenced generation projects `Poisoned` even when its retained completion
 would otherwise derive another state; projection preserves the fence without rewriting settlement
 or progress evidence.
 Once the ledger retains `Poisoned`, older non-poisoned projections refuse with
