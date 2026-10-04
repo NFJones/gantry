@@ -745,7 +745,8 @@ fn a_crash_before_admission_carries_no_effect_and_a_crash_after_admission_withou
         current.generation(),
         owner,
         bounds(1, 100),
-    );
+    )
+    .unwrap_or_else(|error| panic!("matching rejected identity: {error:?}"));
     assert!(
         current
             .classify_crash_cut(DurableOperationCut::Admitted, Some(&rejected))
@@ -1816,7 +1817,8 @@ fn compaction_preserves_every_identity_needed_to_redispatch_and_restart_reconstr
         current.generation(),
         owner,
         bounds(1, 50),
-    );
+    )
+    .unwrap_or_else(|error| panic!("matching rejected identity: {error:?}"));
     assert_eq!(rejected.state(), DedupRecordState::RejectedStaleOwner);
     assert!(rejected.settlement().is_none());
     assert!(!rejected.retains(owner, 40));
@@ -1863,6 +1865,13 @@ fn compaction_preserves_every_identity_needed_to_redispatch_and_restart_reconstr
 
     // Retention bounds are declared, bounded, and deterministic in their arguments.
     let foreign_operation = operation_at(&site_at(&[7, 8]));
+    let mixed = DedupRecord::rejected_stale_owner(
+        &foreign_operation,
+        current.generation(),
+        owner,
+        bounds(1, 50),
+    );
+    assert_eq!(refusal(mixed), OperationAbiDiagnosticCode::ForeignOperation);
     assert_eq!(
         refusal(DedupRecord::restore(
             &foreign_operation,
@@ -1914,7 +1923,8 @@ fn retirement_requires_durable_settlement_and_an_advanced_owner_generation_and_f
         current.generation(),
         owner,
         bounds(1, 100),
-    );
+    )
+    .unwrap_or_else(|error| panic!("matching rejected identity: {error:?}"));
 
     // Retirement without durable settlement, and retirement that does not advance the
     // owner generation, are both refused.

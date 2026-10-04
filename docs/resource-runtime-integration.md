@@ -726,6 +726,9 @@ fences. Updating retention bounds cannot revive dispatch proof or fabricate miss
 Restoration also checks that the resource generation belongs to the presented operation,
 including rejected records with no settlement. Mixed identities refuse before record publication;
 this consistency check does not authenticate caller-supplied evidence.
+`DedupRecord::rejected_stale_owner` now returns `Result` and reuses restoration validation.
+Callers must handle `ForeignOperation` when the generation belongs to another operation;
+valid rejection records still carry no settlement or dispatch proof.
 Registry failure settlement and adapter-failure poisoning likewise require the accompanying binding. Evidence still selects
 its own exact account; the binding must name that operation/generation and match its issuing
 execution/task. `EvidenceSubjectMismatch` and `ForeignSubject` refuse before mutation, while

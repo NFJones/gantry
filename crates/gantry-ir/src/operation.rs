@@ -2389,21 +2389,22 @@ impl DedupRecord {
 
     /// Records that one completion of one operation and generation was rejected
     /// because it came from a stale owner generation.
-    #[must_use]
+    /// A generation belonging to another operation refuses with `ForeignOperation`;
+    /// no partial record is returned and supplied evidence remains caller-authenticated.
     pub fn rejected_stale_owner(
         operation: &LogicalOperationId,
         generation: &ResourceGenerationId,
         owner: OwnerGeneration,
         bounds: DedupRetentionBounds,
-    ) -> Self {
-        Self {
-            operation: operation.clone(),
-            generation: generation.clone(),
+    ) -> Result<Self, OperationAbiError> {
+        Self::restore(
+            operation,
+            generation,
+            DedupRecordState::RejectedStaleOwner,
+            None,
             owner,
-            state: DedupRecordState::RejectedStaleOwner,
-            settlement: None,
             bounds,
-        }
+        )
     }
 
     /// Restores one record from retained evidence after a restart.
