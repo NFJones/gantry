@@ -842,6 +842,37 @@ fn observation_upgrades_preserve_progress_state_and_allowance() {
     assert_eq!(exhausted, before);
 }
 
+/// Canonical settlement text must distinguish outcomes even when their derived states coincide.
+#[test]
+fn settlement_text_preserves_observed_outcome_independently_of_state() {
+    let current = abi(
+        OperationKind::LiveResource,
+        1,
+        RecoveryClass::Idempotent,
+        ReceiverOwnership::RetainedByCaller,
+    );
+    let owner = OwnerGeneration::initial();
+    let accepted = settlement(
+        &current,
+        owner,
+        ExternalOutcome::Accepted,
+        ProgressObservation::NotStarted,
+        10,
+    );
+    let rejected = settlement(
+        &current,
+        owner,
+        ExternalOutcome::Rejected,
+        ProgressObservation::NotStarted,
+        10,
+    );
+    assert_eq!(accepted.resource_state(), rejected.resource_state());
+    assert_ne!(accepted, rejected);
+    assert_ne!(accepted.canonical_text(), rejected.canonical_text());
+    assert!(accepted.canonical_text().contains(";outcome=accepted;"));
+    assert!(rejected.canonical_text().contains(";outcome=rejected;"));
+}
+
 #[test]
 fn partial_progress_is_distinct_from_completion_and_eof() {
     // A short read and a short write are progress, never completion and never EOF.

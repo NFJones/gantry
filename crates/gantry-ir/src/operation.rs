@@ -1184,14 +1184,19 @@ impl OperationSettlement {
         }
     }
 
-    /// Returns the canonical text of this settlement.
+    /// Returns complete canonical settlement facts, including the independently observed outcome.
     #[must_use]
     pub fn canonical_text(&self) -> String {
         format!(
-            "operation={};generation={};owner={};state={};progress={};settled-at-us={}",
+            "operation={};generation={};owner={};outcome={};state={};progress={};settled-at-us={}",
             self.operation.as_str(),
             self.generation.as_str(),
             self.owner.value(),
+            match self.outcome {
+                ExternalOutcome::Accepted => "accepted",
+                ExternalOutcome::Ambiguous => "ambiguous",
+                ExternalOutcome::Rejected => "rejected",
+            },
             self.resource_state().wire_name(),
             self.progress.wire_name(),
             self.settled_at_us,

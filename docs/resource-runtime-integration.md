@@ -705,8 +705,10 @@ the one registry-wide mutating route and changes no declared fact.
 
 `ResourceRegistry::project_operation_state` accepts a `LiveResource` and derives its opaque
 projection internally, alongside a machine-issued `ResourceSubjectBinding`;
-`ResourceLedger::project_operation_state` consumes that projection. Registry failure settlement
-and adapter-failure poisoning likewise require the accompanying binding. Evidence still selects
+`ResourceLedger::project_operation_state` consumes that projection.
+Canonical `OperationSettlement` text retains the observed outcome separately from derived state,
+so accepted and rejected unstarted work cannot collapse into identical evidence text.
+Registry failure settlement and adapter-failure poisoning likewise require the accompanying binding. Evidence still selects
 its own exact account; the binding must name that operation/generation and match its issuing
 execution/task. `EvidenceSubjectMismatch` and `ForeignSubject` refuse before mutation, while
 unsettled projection and absent evidence-selected account refusals retain precedence. A

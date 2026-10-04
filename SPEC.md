@@ -12496,6 +12496,9 @@ identity needed to redispatch and to reconstruct the record after a restart surv
 compaction. A restart MUST NOT reconstruct an operation identity without the
 settlement that gives it meaning, MUST NOT attach a settlement to a record that
 rejected a stale owner, and MUST refuse a settlement that names another identity.
+Canonical settlement text MUST retain the observed external outcome independently of
+derived resource state. Accepted and rejected outcomes MUST remain distinct even when
+their progress and resulting state coincide; state alone MUST NOT substitute for outcome.
 
 <a id="GNT-20.10-retirement-and-stale-owner-fencing"></a>
 
