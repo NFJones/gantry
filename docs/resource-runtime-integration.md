@@ -265,7 +265,9 @@ slots or accepted-work leases are created, and journal authentication remains th
 
 `ExecutionCoordinator::new_with_budget_and_recovered_resource_envelopes` additionally checks
 current budget execution before decoding, issuing execution and known issuing/cleanup tasks,
-and each issuing budget against the unchanged current frontier. It retains the shared current
+and each issuing budget against the unchanged current frontier. Issuing checkpoint coordinates
+and source-body creation workflow/site/result/capture contracts must match retained task facts;
+membership alone cannot authorize a foreign issuing body. It retains the shared current
 budget and optional accounting policy only after complete validation. This is not authenticated
 journal recovery or physical-resource reconstruction.
 

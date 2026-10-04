@@ -493,7 +493,7 @@ impl ExecutionCoordinator {
             ));
         }
         let resources = crate::ResourceRegistry::reconstruct_recovery_envelopes(
-            program,
+            Arc::clone(&program),
             envelopes,
             maximum_bytes,
             policy,
@@ -508,12 +508,64 @@ impl ExecutionCoordinator {
             {
                 return Err(CoordinatorResourceRefusal::UnknownTask);
             }
-            let (_, issuing_budget) = record
+            let (issuing_bytes, issuing_budget) = record
                 .issuing_evidence()
                 .unwrap_or_else(|| unreachable!("envelope restoration retains issuing evidence"));
             crate::recovery::validate_budget_successor(&issuing_budget, &frontier).map_err(
                 |_| CoordinatorResourceRefusal::Task(TaskStateError::InvalidTaskMachine),
             )?;
+            let origin =
+                crate::MachineCheckpointV3::decode(&program, issuing_bytes).map_err(|_| {
+                    CoordinatorResourceRefusal::Task(TaskStateError::InvalidTaskMachine)
+                })?;
+            let task = tasks
+                .task_record(record.subject().task_id())
+                .unwrap_or_else(|| unreachable!("issuing task membership validated above"));
+            if origin.execution_id() != tasks.execution_id()
+                || origin.task_id() != task.task_id()
+                || origin.task_path() != task.task_path()
+            {
+                return Err(CoordinatorResourceRefusal::Task(
+                    TaskStateError::InvalidTaskMachine,
+                ));
+            }
+            #[cfg(feature = "concurrent")]
+            if let Some(callable) = origin.task_body_enclosing_callable() {
+                let crate::ExecutionTaskRecordRefV1::Child(task) = task else {
+                    return Err(CoordinatorResourceRefusal::Task(
+                        TaskStateError::InvalidTaskMachine,
+                    ));
+                };
+                if origin.task_body_spawn_site() != Some(task.spawn_site())
+                    || program
+                        .callable(callable)
+                        .is_none_or(|workflow| &workflow.path != task.workflow())
+                {
+                    return Err(CoordinatorResourceRefusal::Task(
+                        TaskStateError::InvalidTaskMachine,
+                    ));
+                }
+                let identity =
+                    gantry_ir::TaskBodyIdentity::new(callable.clone(), task.spawn_site().clone());
+                let body = program
+                    .task_body(&identity)
+                    .ok_or(CoordinatorResourceRefusal::Task(
+                        TaskStateError::InvalidTaskMachine,
+                    ))?;
+                if body.result_type() != task.result_type()
+                    || body.captures().len() != task.captures().len()
+                    || body.captures().iter().any(|expected| {
+                        task.captures().get(expected.name()).is_none_or(|capture| {
+                            capture.ty() != expected.ty()
+                                || capture.is_mutable() != expected.is_mutable()
+                        })
+                    })
+                {
+                    return Err(CoordinatorResourceRefusal::Task(
+                        TaskStateError::InvalidTaskMachine,
+                    ));
+                }
+            }
         }
         if execution_budget.snapshot() != frontier {
             return Err(CoordinatorResourceRefusal::Task(

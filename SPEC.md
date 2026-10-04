@@ -15754,7 +15754,9 @@ provenance or relax combined-graph resource-state refusal.
 The current budget MUST name the task execution before envelope decoding; issuing execution,
 issuing task and cleanup-task membership MUST validate before publication. Every issuing budget
 MUST be a valid predecessor of the current budget frontier, and that frontier MUST remain unchanged
-during validation. Success retains the shared current budget and exact optional accounting policy
+during validation. Issuing checkpoint task coordinates MUST match retained task facts; source-body
+origins MUST also match immutable creation workflow, spawn site, result and capture contracts.
+Known membership MUST NOT authorize a substituted issuing body. Success retains the shared current budget and exact optional accounting policy
 without creating physical slots or accepted-work leases. Journal provenance remains caller-authenticated.
 
 `admit_pending_operation_with_issuing_evidence` MAY retain validated issuing evidence during

@@ -3323,6 +3323,31 @@ mod tests {
         .unwrap_or_else(|error| panic!("settled graph control: {error:?}"));
         let mut base = base;
         base.resource_policy = Some((Some(1), Some(1)));
+        for (index, retained) in records.iter().enumerate() {
+            let envelope = crate::encode_resource_recovery_envelope(&retained[0], 65_536)
+                .unwrap_or_else(|error| panic!("envelope: {error:?}"));
+            let restored =
+                crate::ExecutionCoordinator::new_with_budget_and_recovered_resource_envelopes(
+                    fixture.scheduler.state.clone(),
+                    fixture.sessions.clone(),
+                    fixture.budget.clone(),
+                    Arc::clone(&program),
+                    &[(envelope.as_slice(), owner, created[0].task_id)],
+                    65_536,
+                    (Some(1), Some(1), None),
+                );
+            if index == 0 {
+                assert!(restored.is_ok(), "matching direct origin: {restored:?}");
+            } else {
+                assert_eq!(
+                    restored.err(),
+                    Some(crate::CoordinatorResourceRefusal::Task(
+                        TaskStateError::InvalidTaskMachine,
+                    )),
+                    "direct restoration must reject foreign issuing-body evidence"
+                );
+            }
+        }
         assert!(
             base.clone()
                 .with_resource_records(Arc::clone(&program), records[0].clone())
