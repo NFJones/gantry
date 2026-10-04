@@ -2,6 +2,116 @@
 
 use super::*;
 
+/// Projection must use admitted recovery facts, never a caller alias's substituted metadata.
+#[test]
+fn projection_requires_account_recovery_metadata_even_with_a_matching_alias() {
+    use gantry_ir::generated::RecoveryClass;
+    use gantry_ir::{DisclosureCharge, OperationAbi, OperationSettlement, ReceiverOwnership};
+
+    let path =
+        CanonicalPath::new("crate::resource").unwrap_or_else(|error| panic!("path: {error}"));
+    let execution = gantry_core::identity::ProtocolIdentity::from_fresh_material(
+        gantry_core::portable::IdentityKind::Execution,
+        [72; 32],
+    )
+    .unwrap_or_else(|error| panic!("execution: {error}"));
+    let subject = ResourceSubjectBinding::derive(
+        &path,
+        path.clone(),
+        StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("site: {error}")),
+        0,
+        Some(OperationKind::LiveResource),
+        Arc::new(Mutex::new(crate::machine::ResourceOperationLease::open())),
+        (execution, crate::root_task_identity(execution)),
+    );
+    let owner = OwnerGeneration::new(4);
+    for failed in [false, true] {
+        let mut registry = ResourceRegistry::new();
+        registry
+            .admit(
+                subject.clone(),
+                ResourceCarrier::ReconstructionRecord,
+                ResourceLedger::new(owner, ResourceState::Usable, &[LivenessRoot::Resource], &[])
+                    .unwrap_or_else(|error| panic!("ledger: {error:?}"))
+                    .durable_record(),
+            )
+            .unwrap_or_else(|error| panic!("admit: {error:?}"));
+        let mut alias = subject.clone();
+        alias.recovery = Some(RecoveryClass::Idempotent);
+        let mut live = OperationAbi::new(
+            OperationKind::LiveResource,
+            &path,
+            subject.site(),
+            0,
+            RecoveryClass::Idempotent,
+            ReceiverOwnership::RetainedByCaller,
+        )
+        .unwrap_or_else(|error| panic!("ABI: {error:?}"))
+        .open_live(
+            owner,
+            OperationAbi::observation_allowance(
+                1,
+                DisclosureCharge::new(1).unwrap_or_else(|| panic!("charge")),
+            ),
+        )
+        .unwrap_or_else(|error| panic!("live: {error:?}"));
+        if failed {
+            live.settle_failure(gantry_ir::FailureClass::AdapterFailure)
+                .unwrap_or_else(|error| panic!("failure: {error:?}"));
+        } else {
+            let settlement = OperationSettlement::new(
+                live.operation(),
+                live.generation(),
+                owner,
+                ExternalOutcome::Accepted,
+                gantry_ir::ProgressObservation::CommittedProgress,
+                25,
+            )
+            .unwrap_or_else(|error| panic!("settlement: {error:?}"));
+            live.settle(&settlement)
+                .unwrap_or_else(|error| panic!("winner: {error:?}"));
+        }
+        let before = registry.declared_records();
+        let project = |registry: &mut ResourceRegistry| {
+            if failed {
+                registry.project_failure_state(&live, &alias)
+            } else {
+                registry.project_operation_state(&live, &alias)
+            }
+        };
+        assert_eq!(
+            project(&mut registry),
+            Err(ResourceRegistryRefusal::RecoveryContractMismatch {
+                presented: RecoveryClass::Idempotent,
+                expected: None,
+            })
+        );
+        assert_eq!(registry.declared_records(), before);
+        assert_eq!(registry.pending_operations(), 1);
+        registry
+            .accounts
+            .get_mut(&subject.registry_key())
+            .unwrap_or_else(|| panic!("account"))
+            .subject
+            .recovery = Some(RecoveryClass::Idempotent);
+        alias.recovery = Some(RecoveryClass::ReadOnly);
+        let result = if failed {
+            registry.project_failure_state(&live, &alias)
+        } else {
+            registry.project_operation_state(&live, &alias)
+        };
+        assert_eq!(
+            result,
+            Ok(if failed {
+                ResourceState::HalfClosed
+            } else {
+                ResourceState::Consumed
+            })
+        );
+        assert_eq!(registry.pending_operations(), 1);
+    }
+}
+
 /// Direct reconstruction must retain the same historical-owner fence as envelope decoding.
 #[cfg(feature = "durable")]
 #[test]
