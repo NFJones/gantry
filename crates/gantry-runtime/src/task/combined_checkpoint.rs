@@ -1295,7 +1295,7 @@ impl RecoveredConcurrentDurableExecutionV1 {
             &self.scheduler.machines,
             &self.scheduler.state,
             &self.sessions,
-            &self.foreground.execution_budget(),
+            &self.scheduler.execution_budget,
             self.scheduler.resource_policy,
             self.scheduler.retained_resource_limit,
         )?
@@ -2881,6 +2881,35 @@ mod tests {
             .execution_budget();
         assert!(foreground_budget.same_owner(scheduler_budget));
         assert!(foreground_budget.same_owner(&child_budget));
+    }
+
+    /// Equal snapshots do not establish shared budget ownership after mutable recovery access.
+    #[test]
+    fn recovered_capture_refuses_independent_scheduler_budget_owner() {
+        let fixture = fixture();
+        let checkpoint = ConcurrentDurableCheckpointV4::capture(
+            &fixture.foreground,
+            &fixture.scheduler,
+            &fixture.sessions,
+        )
+        .unwrap_or_else(|error| panic!("positive capture: {error:?}"));
+        let mut recovered = checkpoint
+            .recover(Arc::clone(&fixture.program))
+            .unwrap_or_else(|error| panic!("positive recovery: {error:?}"));
+        assert!(recovered.capture_replayed_checkpoint().is_ok());
+        let snapshot = recovered.foreground().budget_checkpoint();
+        let independent = ExecutionBudget::recover_from_checkpoint(snapshot)
+            .unwrap_or_else(|error| panic!("independent budget: {error:?}"));
+        assert!(!independent.same_owner(&recovered.foreground().execution_budget()));
+        *recovered.scheduler_mut() =
+            ConcurrentSchedulerV1::new(recovered.scheduler().state().clone(), independent)
+                .unwrap_or_else(|error| panic!("independent scheduler: {error:?}"));
+        assert_eq!(recovered.scheduler().execution_budget(), snapshot);
+        assert_eq!(
+            recovered.capture_replayed_checkpoint().err(),
+            Some(ConcurrentDurableCheckpointError::InvalidCheckpoint),
+            "replay capture must retain one actual budget owner, not equal counters"
+        );
     }
 
     #[test]

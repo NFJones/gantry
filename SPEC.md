@@ -1076,6 +1076,9 @@ portable outcomes, identity, or durable compatibility.
    Component decomposition MUST also revalidate before moving the machine, scheduler
    and session owners. Invalid correspondence MUST return the complete recovered owner;
    successful decomposition retains accounting policy and records in the scheduler.
+   Replayed capture and consuming recovery validation MUST require foreground, child
+   and scheduler budgets to share one actual owner. Equal counter snapshots MUST NOT
+   substitute for shared ownership or permit independently charged recovery components.
 <a id="GNT-3.7"></a>
 
 7. An implementation claiming the durable-runtime profile MUST make Gantry
