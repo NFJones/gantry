@@ -993,11 +993,14 @@ portable outcomes, identity, or durable compatibility.
    Runtime String-to-Float grammar admission MUST perform at most 4096 constant-work
    RFC 8259 scanner steps per call before yielding when more grammar work remains.
    Token endpoints MUST NOT authorize conversion of trailing or substituted input. Invalid
-   grammar still publishes `None`, not a task failure. Exact decimal range conversion,
+   grammar still publishes `None`, not a task failure. After complete grammar admission,
+   exact magnitude preflight MUST scan at most 4096 octets per call using constant-size
+   private facts, preserving the mathematical finite-Float bound and normalized zero.
+   Out-of-range input publishes `None` without binary64 conversion. In-range conversion,
    binary64 rounding and final grammar revalidation MUST run outside the shared execution-budget
    mutex, caching only a private numeric result. Logical-result limits and the existing transition
    charge MUST still precede atomic publication. Conversion and logical construction remain
-   synchronous and outside this grammar-only work bound. Scratch MAY be recomputed after recovery.
+   synchronous and outside these grammar/range scanning bounds. Scratch MAY be recomputed after recovery.
    Primitive result evaluation and logical-value construction MUST occur outside the shared
    execution-budget mutex. Deterministic evaluation and result-limit refusals MUST retain
    precedence over transition-budget exhaustion. Only a complete validated private result

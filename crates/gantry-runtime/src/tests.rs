@@ -2271,6 +2271,23 @@ fn long_float_token_admission_yields_before_publication_and_cancellation() {
         MachineOutcome::Cancelled(_)
     ));
     assert_eq!(cancelled.execution_budget().snapshot(), before);
+    // Complete grammar and enter range scanning before cancellation or checkpoint restart.
+    for _ in 0..5 {
+        assert!(machine.resume_after_yield());
+        assert_eq!(machine.step(), MachineStep::YieldRequired);
+        assert_eq!(machine.execution_budget().snapshot(), before);
+    }
+    let mut range_cancelled = machine.clone();
+    assert!(
+        range_cancelled
+            .cancel("numeric range inspection cancelled")
+            .is_some()
+    );
+    assert!(matches!(
+        drive(&mut range_cancelled),
+        MachineOutcome::Cancelled(_)
+    ));
+    assert_eq!(range_cancelled.execution_budget().snapshot(), before);
     assert!(machine.resume_after_yield());
     let expected = LogicalValue::some(
         LogicalValue::float(

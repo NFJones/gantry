@@ -28,6 +28,7 @@ use crate::session::SessionCreationModeV1;
 mod operand_reclamation_tests;
 mod string_concat;
 mod string_float;
+mod string_float_range;
 mod string_join;
 mod string_list_equality;
 mod string_lowercase;
@@ -4399,7 +4400,7 @@ impl Machine {
         pending
     }
 
-    /// Advances private Float-token grammar admission outside the shared budget lock.
+    /// Advances private Float-token grammar and range admission outside the shared budget lock.
     /// Exact conversion revalidates the whole token and caches a private result here;
     /// value-limit validation and transition charging remain at primitive publication.
     fn prepare_string_float(&mut self) -> bool {
@@ -4426,7 +4427,7 @@ impl Machine {
     }
 
     /// Bounds replay-only scheduling yields per semantic step from admitted String/List limits.
-    /// Numeric grammar steps are also bounded by the admitted String octet count.
+    /// Numeric grammar and range steps are bounded by the admitted String octet count.
     /// Contextual lowercase uses three scalar passes, also covered by this allowance.
     /// Four UTF-8 octets per scalar and sixteen conservative passes cover search and construction;
     /// List framing covers empty segments; flat String-list equality additionally compares

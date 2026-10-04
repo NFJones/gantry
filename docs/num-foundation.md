@@ -158,10 +158,18 @@ document decoding. It performs at most 4096 constant-work grammar steps before a
 yield; document decoding drives the same states synchronously and preserves absolute syntax
 offsets. Runtime scratch requires whole-token consumption, remains private and restarts from
 retained operands after recovery. Invalid grammar publishes `None`. Final parsing revalidates
-the whole token and performs exact range conversion and binary64 rounding synchronously outside
+the whole in-range token and performs exact range conversion and binary64 rounding synchronously outside
 the shared execution-budget mutex, retaining only a private numeric result. Value-limit validation
 and the existing transition charge still precede atomic publication. The grammar endpoint grants
 no conversion authority or whole-primitive latency guarantee.
+
+Private magnitude preflight scans at most 4096 octets per call after grammar admission,
+retaining a seventeen-digit prefix, significant/fraction counts and a saturating exponent.
+It preserves the exact mathematical `1.7976931348623157e308` ceiling, including nonzero
+digits beyond the prefix and zero under hostile exponents. Out-of-range input refuses
+before synchronous conversion; in-range input still uses the unchanged authoritative parser.
+Grammar and range scanners each have a finite quantum, but final revalidation, rounding,
+allocation and logical construction remain outside these bounds. Recovery restarts both scans.
 
 `GNT-40.6-canonical-numeric-text` publishes canonical text for the canonical `Int` and finite `Float` domains, adopting `GNT-35.2-literal-formation-and-canonical-text`'s rule: an `Int`'s text is an optional `-` with decimal digits, no leading zero on a multi-digit magnitude and no negative zero; a `Float`'s text is the canonical number spelling of its normalized binary64 value, the canonical number spelling `GNT-8.5` requires at canonical JSON boundaries. Formatting is total and publishes exactly the canonical text; parsing admits exactly the canonical text of one value and publishes nothing otherwise, so a non-canonical spelling is refused rather than normalized and `-0` is refused for both domains; the two directions round-trip exactly. `format_canonical_int`, `parse_canonical_int`, `format_canonical_float`, and `parse_canonical_float` publish this surface in the model. No source-literal grammar, digit separator, radix prefix, type suffix, bare `+`, trailing decimal point, non-finite or `NaN` text, rounding, host text facility, locale formatting, other type's text, work limit, cancellation safe point, quota, schema, recovery, durability, boundary encoding, lowering, machine representation, or family behavior is published with them, and no performance, storage layout, or physical-representation claim is made.
 
