@@ -1049,6 +1049,11 @@ portable outcomes, identity, or durable compatibility.
    charge MUST publish the branch occurrence and target atomically, retaining consumed value/origin
    ownership until after unlock. Refusal MUST change no operand, occurrence or PC; the `branch`
    label and semantic release remain unchanged. This supplies no bounded destruction latency.
+   Option branches MUST prepare payload and extended place-origin facts before shared-counter
+   admission. Their existing single charge MUST atomically publish payload, occurrence and target;
+   consumed and temporary ownership MUST remain retained until after unlock. Invalid Option
+   refusal MUST precede budget exhaustion, and rejected publication MUST preserve operands,
+   occurrences and PC. The `branch` label, semantic release and quota charges remain unchanged.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

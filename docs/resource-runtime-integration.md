@@ -888,6 +888,12 @@ existing occurrence and target with one charge. Consumed values and origins rema
 after unlocking; refusal changes no operands, occurrence or PC. The `branch` label is preserved.
 This relocates reclamation, not semantic release or synchronous destruction latency.
 
+Option branches likewise prepare payload and extended place-origin facts before locking.
+Their existing single charge publishes payload, occurrence and target atomically; consumed
+and temporary values/origins are reclaimed after unlocking. Invalid Option refusal precedes
+counter exhaustion and rejected publication preserves operands, occurrences and PC. This adds
+no scheduling stop or latency bound and leaves semantic release and quota charges unchanged.
+
 Direct String equality, inequality, prefix and suffix matching compare at most 4096 UTF-8 octets per machine call
 before requesting a scheduling-only executor yield. Operands and program position remain
 unchanged until the Boolean result commits with the existing single transition charge.

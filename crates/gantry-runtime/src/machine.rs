@@ -3405,6 +3405,13 @@ impl Machine {
         {
             return self.execute_branch(workflow, instruction.site, when_true, when_false);
         }
+        if let InstructionKind::BranchOption {
+            when_some,
+            when_none,
+        } = instruction.kind
+        {
+            return self.execute_option_branch(workflow, instruction.site, when_some, when_none);
+        }
         let execution_budget = self.execution_budget.clone();
         let mut budget_state = execution_budget.lock();
         let site = instruction.site.clone();
@@ -3433,10 +3440,9 @@ impl Machine {
             InstructionKind::Branch { .. } => {
                 unreachable!("Boolean branches own validation and deferred reclamation")
             }
-            InstructionKind::BranchOption {
-                when_some,
-                when_none,
-            } => self.branch_option(&workflow, &site, when_some, when_none, &mut budget_state),
+            InstructionKind::BranchOption { .. } => {
+                unreachable!("Option branches own preparation and deferred reclamation")
+            }
             InstructionKind::BranchResult { when_ok, when_err } => {
                 self.branch_result(&workflow, &site, when_ok, when_err, &mut budget_state)
             }
@@ -4597,29 +4603,39 @@ impl Machine {
         self.finish_deterministic(workflow, site, Arc::from("branch"))
     }
 
-    fn branch_option(
+    /// Prepares Option payload/origin facts before charging and reclaims ownership after unlock.
+    /// Refusal leaves operands, occurrences and PC unchanged; publication retains one charge.
+    fn execute_option_branch(
         &mut self,
-        workflow: &CanonicalPath,
-        site: &StructuralPosition,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
         when_some: usize,
         when_none: usize,
-        budget_state: &mut ExecutionBudgetState,
-    ) -> Result<(), RuntimeCode> {
-        let value = self
-            .values
-            .last()
-            .cloned()
-            .ok_or(RuntimeCode::InternalInvariant)?;
-        let place = self
-            .values_places
-            .last()
-            .cloned()
-            .ok_or(RuntimeCode::InternalInvariant)?;
+    ) -> MachineStep {
+        let Some(value) = self.values.last().cloned() else {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        };
+        let Some(place) = self.values_places.last().cloned() else {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        };
         let LogicalValueView::Option { is_some } = value.view() else {
-            return Err(RuntimeCode::InternalInvariant);
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
         };
         let payload = if is_some {
-            Some(value.payload().ok_or(RuntimeCode::InternalInvariant)?)
+            let Some(payload) = value.payload() else {
+                return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+            };
+            Some(payload)
+        } else {
+            None
+        };
+        if self.frames.is_empty() {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        }
+        let payload_place = if is_some {
+            place
+                .as_ref()
+                .map(|place| place.extended(ValuePathSegment::OptionValue))
         } else {
             None
         };
@@ -4628,22 +4644,30 @@ impl Machine {
         let occurrence = Arc::from(format!(
             "branch:{}:{}:{arm}",
             workflow.as_str(),
-            position_key(site)
+            position_key(&site)
         ));
-        self.charge_transition(budget_state)?;
-        self.pop_staged();
-        if let Some(payload) = payload {
-            self.push_staged(
-                payload,
-                place.map(|place| place.extended(ValuePathSegment::OptionValue)),
-            );
+        let execution_budget = self.execution_budget.clone();
+        let consumed;
+        {
+            let mut budget_state = execution_budget.lock();
+            if let Err(code) = self.charge_transition(&mut budget_state) {
+                drop(budget_state);
+                return self.fail_at(code, workflow, site);
+            }
+            consumed = self.pop_staged();
+            if let Some(payload) = payload {
+                self.push_staged(payload, payload_place);
+            }
+            self.occurrences.push(occurrence);
+            self.frames
+                .last_mut()
+                .unwrap_or_else(|| unreachable!("Option branch admission validated the frame"))
+                .pc = target;
         }
-        self.occurrences.push(occurrence);
-        self.frames
-            .last_mut()
-            .ok_or(RuntimeCode::InternalInvariant)?
-            .pc = target;
-        Ok(())
+        drop(consumed);
+        drop(place);
+        drop(value);
+        self.finish_deterministic(workflow, site, Arc::from("branch"))
     }
 
     fn branch_enum(

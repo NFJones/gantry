@@ -458,6 +458,12 @@ fn branched_operand_origins_are_reclaimed_after_budget_unlock() {
     assert_consumed_origin_reclamation(ReclamationOperation::Branch);
 }
 
+/// An absent Option must dispose its consumed origin outside shared counters.
+#[test]
+fn option_branch_origins_are_reclaimed_after_budget_unlock() {
+    assert_consumed_origin_reclamation(ReclamationOperation::OptionNone);
+}
+
 /// Structural binding refusals precede exhausted counters and preserve staged ownership.
 #[test]
 fn refused_binding_preserves_operands_scopes_and_precedence() {
@@ -688,6 +694,129 @@ fn branch_publication_preserves_targets_and_refusal_precedence() {
     }
 }
 
+/// Option dispatch preserves payload origins and rejects without partial branch publication.
+#[test]
+fn option_branch_preserves_payload_origins_and_refusal_precedence() {
+    for variant in 0..6 {
+        let root =
+            CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("root: {error:?}"));
+        let site =
+            StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("site: {error:?}"));
+        let program = Arc::new(
+            MachineProgram::new(vec![gantry_ir::Workflow {
+                path: root.clone(),
+                parameters: Vec::new(),
+                result: TypeDescriptor::UNIT,
+                effects: gantry_ir::EffectSet::default(),
+                instructions: vec![
+                    Instruction {
+                        site: site.clone(),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::BranchOption {
+                            when_some: 1,
+                            when_none: 2,
+                        },
+                    },
+                    Instruction {
+                        site: StructuralPosition::new(vec![1])
+                            .unwrap_or_else(|error| panic!("site: {error:?}")),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::Return,
+                    },
+                    Instruction {
+                        site: StructuralPosition::new(vec![2])
+                            .unwrap_or_else(|error| panic!("site: {error:?}")),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::Return,
+                    },
+                ],
+            }])
+            .unwrap_or_else(|error| panic!("program: {error:?}")),
+        );
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x9b; 32])
+            .unwrap_or_else(|error| panic!("execution: {error:?}"));
+        let limits = MachineLimits::new(8, 1, 1, 1, 8, gantry_core::value::DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|| panic!("limits"));
+        let mut machine = Machine::new(program, &root, Vec::new(), execution, limits)
+            .unwrap_or_else(|error| panic!("machine: {error:?}"));
+        if variant != 5 {
+            let value = match variant {
+                1 | 3 => LogicalValue::none(),
+                4 => LogicalValue::unit(),
+                _ => LogicalValue::some(LogicalValue::unit(), limits.value_limits)
+                    .unwrap_or_else(|error| panic!("Some: {error:?}")),
+            };
+            machine.push_staged(
+                value,
+                Some(LoadedPlace {
+                    root: Arc::from("option-origin"),
+                    path: vec![ValuePathSegment::ListItem(0)],
+                }),
+            );
+        }
+        if variant >= 2 {
+            let mut budget = machine.execution_budget.lock();
+            for _ in 0..8 {
+                ExecutionBudget::charge_transition(&mut budget)
+                    .unwrap_or_else(|error| panic!("exhaustion: {error:?}"));
+            }
+        }
+        let before = machine.execution_budget.snapshot();
+        let values = machine.values.clone();
+        let places = machine.values_places.clone();
+        let occurrences = machine.occurrences.clone();
+        let step = machine.step();
+        if variant < 2 {
+            assert!(
+                matches!(step, MachineStep::Transition(MachineLabel::Deterministic {
+                workflow, site: actual_site, kind,
+            }) if workflow == root && actual_site == site && kind.as_ref() == "branch")
+            );
+            assert_eq!(machine.frames[0].pc, if variant == 0 { 1 } else { 2 });
+            assert_eq!(
+                machine.occurrences.last().map(|value| value.as_ref()),
+                Some(if variant == 0 {
+                    "branch:crate::main:0:0"
+                } else {
+                    "branch:crate::main:0:1"
+                })
+            );
+            if variant == 0 {
+                assert_eq!(machine.values, vec![LogicalValue::unit()]);
+                assert_eq!(
+                    machine.values_places,
+                    vec![Some(LoadedPlace {
+                        root: Arc::from("option-origin"),
+                        path: vec![ValuePathSegment::ListItem(0), ValuePathSegment::OptionValue],
+                    })]
+                );
+            } else {
+                assert!(machine.values.is_empty());
+                assert!(machine.values_places.is_empty());
+            }
+            assert_eq!(
+                machine.execution_budget.snapshot().revision,
+                before.revision + 1
+            );
+        } else {
+            let expected = if variant < 4 {
+                RuntimeCode::DeterministicTransitionBudget
+            } else {
+                RuntimeCode::InternalInvariant
+            };
+            assert!(
+                matches!(step, MachineStep::Transition(MachineLabel::Failure(failure))
+                if failure.code == expected && failure.workflow == root && failure.site == site)
+            );
+            assert_eq!(machine.values, values);
+            assert_eq!(machine.values_places, places);
+            assert_eq!(machine.occurrences, occurrences);
+            assert_eq!(machine.frames[0].pc, 0);
+            assert_eq!(machine.execution_budget.snapshot(), before);
+        }
+    }
+}
+
 /// Dispatch variants sharing the same independently observed consumed origin.
 #[derive(Clone, Copy)]
 enum ReclamationOperation {
@@ -696,6 +825,7 @@ enum ReclamationOperation {
     Discard,
     Binding,
     Branch,
+    OptionNone,
 }
 
 /// Exercises the actual publication dispatch with an independently observed unique origin.
@@ -710,6 +840,7 @@ fn assert_consumed_origin_reclamation(operation: ReclamationOperation) {
         ReclamationOperation::Discard => TypeDescriptor::UNIT,
         ReclamationOperation::Binding => TypeDescriptor::UNIT,
         ReclamationOperation::Branch => TypeDescriptor::UNIT,
+        ReclamationOperation::OptionNone => TypeDescriptor::UNIT,
     };
     let program = Arc::new(
         MachineProgram::new(vec![gantry_ir::Workflow {
@@ -739,6 +870,10 @@ fn assert_consumed_origin_reclamation(operation: ReclamationOperation) {
                             when_true: 1,
                             when_false: 1,
                         },
+                        ReclamationOperation::OptionNone => InstructionKind::BranchOption {
+                            when_some: 1,
+                            when_none: 1,
+                        },
                     },
                 },
                 Instruction {
@@ -766,6 +901,8 @@ fn assert_consumed_origin_reclamation(operation: ReclamationOperation) {
     .unwrap_or_else(|error| panic!("value: {error:?}"));
     let value = if matches!(operation, ReclamationOperation::Branch) {
         LogicalValue::boolean(true)
+    } else if matches!(operation, ReclamationOperation::OptionNone) {
+        LogicalValue::none()
     } else {
         value
     };
@@ -794,7 +931,14 @@ fn assert_consumed_origin_reclamation(operation: ReclamationOperation) {
         step,
         MachineStep::Transition(MachineLabel::Deterministic { .. })
     ));
-    assert_eq!(observations, vec![(true, true, Some(1))]);
+    if matches!(operation, ReclamationOperation::OptionNone) {
+        assert_eq!(
+            observations,
+            vec![(false, true, Some(1)), (true, true, Some(1))]
+        );
+    } else {
+        assert_eq!(observations, vec![(true, true, Some(1))]);
+    }
     assert!(
         weak.upgrade().is_none(),
         "the consumed origin must actually be reclaimed"
@@ -817,7 +961,9 @@ fn assert_consumed_origin_reclamation(operation: ReclamationOperation) {
     }
     if matches!(
         operation,
-        ReclamationOperation::Discard | ReclamationOperation::Branch
+        ReclamationOperation::Discard
+            | ReclamationOperation::Branch
+            | ReclamationOperation::OptionNone
     ) {
         assert!(machine.values.is_empty());
         assert!(machine.values_places.is_empty());
