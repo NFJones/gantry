@@ -39,6 +39,8 @@ structural correspondence, not authentication of caller-supplied checkpoint evid
 Consuming replacement-driver admission revalidates the actual graph after mutable recovery
 access, even with no resource records. Prior decoding cannot authorize a substituted child;
 invalid correspondence refuses before exposing coordinator-backed replacement ownership.
+Machine-only extraction also revalidates policy-free graphs, returning the complete recovered
+owner on invalid correspondence. Its existing accounting-policy refusal remains unchanged.
 
 The version-six combined graph wire (`GNTCDP06`) retains enabled empty resource-accounting
 policy as two independently optional ceilings. Legacy v4/v5 graph encodings remain unchanged.

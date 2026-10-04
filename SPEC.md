@@ -1070,6 +1070,9 @@ portable outcomes, identity, or durable compatibility.
    Consuming replacement-driver admission MUST revalidate the actual recovered graph
    after mutable access, including record-free graphs. Prior decode validation alone
    MUST NOT authorize substituted child machines; refusal MUST expose no driver owner.
+   Machine-only extraction MUST likewise revalidate policy-free graphs after mutable access.
+   Invalid correspondence MUST return the complete recovered owner rather than expose
+   substituted machines; accounting-policy-bearing extraction remains refused.
 <a id="GNT-3.7"></a>
 
 7. An implementation claiming the durable-runtime profile MUST make Gantry

@@ -1348,11 +1348,12 @@ impl RecoveredConcurrentDurableExecutionV1 {
     ///
     /// Policy-bearing recovery returns the complete owner untouched because machines alone
     /// cannot retain accounting policy. Use `into_driver_admission` for coordinator-backed
-    /// recovery. Policy-free machines retain one private shared execution budget owner.
+    /// recovery. Invalid correspondence after mutable access also returns the complete owner.
+    /// Valid policy-free machines retain one private shared execution budget owner.
     pub fn into_machine_graph(
         self,
     ) -> Result<(Machine, BTreeMap<ProtocolIdentity, Machine>), Box<Self>> {
-        if self.scheduler.resource_policy.is_some() {
+        if self.scheduler.resource_policy.is_some() || self.capture_replayed_checkpoint().is_err() {
             return Err(Box::new(self));
         }
         Ok((self.foreground, self.scheduler.machines))
@@ -2581,6 +2582,34 @@ mod tests {
             Some(TaskStateError::InvalidTaskMachine),
             "mutable record-free recovery must revalidate before driver admission"
         );
+        let mut recovered = checkpoint
+            .clone()
+            .recover(Arc::clone(&program))
+            .unwrap_or_else(|error| panic!("machine-only recovery: {error:?}"));
+        assert!(
+            checkpoint
+                .clone()
+                .recover(Arc::clone(&program))
+                .unwrap_or_else(|error| panic!("positive recovery: {error:?}"))
+                .into_machine_graph()
+                .is_ok(),
+            "valid record-free control"
+        );
+        let replacement_machine = Machine::recover_from_checkpoint(
+            Arc::clone(&program),
+            replacement.clone(),
+            recovered.foreground().execution_budget(),
+        )
+        .unwrap_or_else(|error| panic!("machine-only replacement: {error:?}"));
+        *recovered
+            .scheduler_mut()
+            .machine_mut(child.task_id())
+            .unwrap_or_else(|| panic!("machine-only child")) = replacement_machine;
+        let refused = recovered
+            .into_machine_graph()
+            .err()
+            .unwrap_or_else(|| panic!("invalid graph must retain its recovery owner"));
+        assert!(refused.scheduler().machines.contains_key(&child.task_id()));
         let mut substituted = checkpoint;
         substituted.machines.insert(child.task_id(), replacement);
         assert_eq!(
