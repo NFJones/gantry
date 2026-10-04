@@ -68,7 +68,10 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   fields, grant execution admission, or introduce affine values and loans.
   For declaration-aware inspection, `TypedPackage::type_capabilities` reports
   the three existing sealed capabilities for primitives and exact retained
-  closed types, plus canonical-key eligibility and hashability for the five
+  closed types, including aggregate result types retained in the executable's
+  complete classification inventory. Inventory membership admits the query only;
+  the existing fresh depth and proof budgets still derive its capabilities, and
+  unrelated descriptors remain refused. It also reports canonical-key eligibility and hashability for the five
   scalar primitives, numeric ordering for `Int` and `Float`, and independent ownership, transfer, live-resource,
   source-protection, and value-recovery classifications. One componentwise
   fold over the retained instantiated stored-member graph derives all five;

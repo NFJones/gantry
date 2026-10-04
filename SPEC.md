@@ -12248,7 +12248,10 @@ live-handle ownership or bypass static transport eligibility. Classification MUS
 frontend limits before integration preflight; unused live-resource declarations alone do not
 make otherwise ordinary executable instructions ineligible.
 The analyzer MUST retain the complete resource classification of reachable aggregate result
-types, including spawned-body aggregates, in the executable program. `GNTPRG06` carries this
+types, including spawned-body aggregates, in the executable program. Exact types in this
+inventory MUST remain eligible for bounded capability queries even when no authored type
+annotation retains them elsewhere. Inventory membership does not bypass configured proof
+limits, infer capabilities, or admit unrelated descriptors. `GNTPRG06` carries this
 canonical type-to-class map alongside predecessor metadata; missing, extra, duplicate, reordered
 or unknown classification entries MUST refuse decoding. Predecessor wires retain absence rather
 than infer a non-live class. Source-free resume MUST require retained non-live classification for

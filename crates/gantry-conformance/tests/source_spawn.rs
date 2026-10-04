@@ -78,6 +78,9 @@ mod resource_obligations;
 #[path = "source_spawn/resource_escalation.rs"]
 mod resource_escalation;
 
+#[path = "source_spawn/string_cooperation.rs"]
+mod string_cooperation;
+
 struct TempDirectory(PathBuf);
 
 type EventDeliveryObserver = Arc<dyn Fn(&EventEnvelope) + Send + Sync>;

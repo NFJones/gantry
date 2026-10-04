@@ -1074,6 +1074,38 @@ fn public_type_capability_queries_are_bounded_and_declaration_aware() {
     );
 }
 
+/// Executable-only aggregate types remain queryable without admitting arbitrary descriptors.
+#[test]
+fn executable_aggregate_types_are_retained_for_capability_queries() {
+    use gantry::analysis::TypeCapabilityQueryError;
+    use gantry::ir::{TypeDescriptor, ValueResourceClass};
+
+    let package = analyze("fn main(value: String) { discard [value, value].join(\"x\"); }");
+    let ty = TypeDescriptor::list(TypeDescriptor::STRING);
+    let program = package
+        .executable_program()
+        .unwrap_or_else(|| panic!("valid fixture must retain its executable"));
+    assert_eq!(
+        program.aggregate_resource_class(&ty),
+        Some(ValueResourceClass::NonLiveResource)
+    );
+    let policy = FrontendLimits::new(
+        4, 65_536, 65_536, 65_536, 64, 65_536, 65_536, 65_536, 65_536, 64, 64, 100,
+    )
+    .unwrap_or_else(|error| panic!("query policy: {error:?}"));
+    let properties = package
+        .type_capabilities(&ty, policy)
+        .unwrap_or_else(|error| panic!("executable-retained query: {error:?}"));
+    assert_eq!(
+        properties.resource_class(),
+        ValueResourceClass::NonLiveResource
+    );
+    assert_eq!(
+        package.type_capabilities(&TypeDescriptor::list(TypeDescriptor::INT), policy),
+        Err(TypeCapabilityQueryError::TypeNotRetained)
+    );
+}
+
 /// Standard containers fold stored sealed members without changing v1 value axes.
 #[test]
 fn public_standard_container_capabilities_fold_sealed_members() {

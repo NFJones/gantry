@@ -204,7 +204,12 @@ impl TypedPackage {
                 .any(|fact| fact.descriptor.as_ref() == Some(descriptor))
             || self
                 .declared_value_shapes()
-                .is_some_and(|shapes| shapes.get(descriptor).is_some());
+                .is_some_and(|shapes| shapes.get(descriptor).is_some())
+            || self.executable_program().is_some_and(|program| {
+                program
+                    .aggregate_resource_classes()
+                    .contains_key(descriptor)
+            });
         if !retained {
             return Err(TypeCapabilityQueryError::TypeNotRetained);
         }
