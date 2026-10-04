@@ -2397,6 +2397,235 @@ mod tests {
         );
     }
 
+    /// Creation metadata remains exact while mutable child-local capture values may advance.
+    #[test]
+    fn child_capture_contracts_refuse_mutations_without_freezing_values() {
+        let mut fixture = spawned_fixture();
+        let body_id = fixture.program.task_bodies()[0].identity().clone();
+        let body = ExecutableTaskBody::new(
+            body_id.clone(),
+            TypeDescriptor::UNIT,
+            vec![
+                gantry_ir::ExecutableTaskCapture::new(
+                    Arc::from("count"),
+                    TypeDescriptor::INT,
+                    true,
+                )
+                .unwrap_or_else(|error| panic!("capture declaration: {error:?}")),
+            ],
+            ExecutableTaskContext::v1(),
+            vec![
+                Instruction {
+                    site: position(0),
+                    ty: TypeDescriptor::INT,
+                    kind: InstructionKind::Push(LogicalValue::integer(
+                        gantry_core::numeric::GantryInt::new(9)
+                            .unwrap_or_else(|| panic!("integer")),
+                    )),
+                },
+                Instruction {
+                    site: position(1),
+                    ty: TypeDescriptor::INT,
+                    kind: InstructionKind::Assign {
+                        name: Arc::from("count"),
+                        path: Vec::new(),
+                        target_type: TypeDescriptor::INT,
+                    },
+                },
+                Instruction {
+                    site: position(2),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Push(LogicalValue::unit()),
+                },
+                Instruction {
+                    site: position(3),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::TaskComplete,
+                },
+            ],
+        )
+        .unwrap_or_else(|error| panic!("mutable body: {error:?}"));
+        let initial = LogicalValue::integer(
+            gantry_core::numeric::GantryInt::new(5).unwrap_or_else(|| panic!("initial integer")),
+        );
+        let callables = fixture
+            .program
+            .callable_identities()
+            .iter()
+            .cloned()
+            .zip(fixture.program.workflows().iter().cloned())
+            .map(|(identity, mut workflow)| {
+                workflow.parameters = vec![Parameter {
+                    name: Arc::from("count"),
+                    ty: TypeDescriptor::INT,
+                    mutable: true,
+                    receiver_mode: None,
+                }];
+                (identity, workflow)
+            })
+            .collect();
+        fixture.program = Arc::new(
+            MachineProgram::with_task_bodies(callables, vec![body])
+                .unwrap_or_else(|error| panic!("capture program: {error:?}")),
+        );
+        fixture.foreground = Machine::new_with_context(
+            Arc::clone(&fixture.program),
+            &path("crate::main"),
+            vec![initial.clone()],
+            fixture.execution,
+            machine_limits(),
+            None,
+            Some(fixture.root_session),
+        )
+        .unwrap_or_else(|error| panic!("root: {error:?}"));
+        fixture.budget = fixture.foreground.execution_budget();
+        fixture.scheduler =
+            ConcurrentSchedulerV1::new(fixture.scheduler.state().clone(), fixture.budget.clone())
+                .unwrap_or_else(|error| panic!("scheduler: {error:?}"));
+        let capture = crate::TaskCaptureV1::new(
+            Arc::from("count"),
+            TypeDescriptor::INT,
+            true,
+            &initial,
+            DEFAULT_VALUE_LIMITS,
+        )
+        .unwrap_or_else(|error| panic!("capture: {error:?}"));
+        let suspension = pending_spawn(&mut fixture.foreground);
+        let mut creation = request(fixture.root_task, fixture.root_session, 0);
+        creation.captures = vec![capture.clone()];
+        let created = fixture
+            .scheduler
+            .create_child(&mut fixture.sessions, creation, DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|error| panic!("creation: {error:?}"));
+        let task_path = Arc::from(
+            fixture
+                .scheduler
+                .state()
+                .task(created.task_id)
+                .unwrap_or_else(|| panic!("created task"))
+                .task_path(),
+        );
+        let mut child = Machine::new_concurrent_task_body_with_context(
+            Arc::clone(&fixture.program),
+            &body_id,
+            std::slice::from_ref(&capture),
+            fixture.execution,
+            created.task_id,
+            task_path,
+            machine_limits(),
+            fixture.budget.clone(),
+            None,
+            Some(created.base_session_id),
+        )
+        .unwrap_or_else(|error| panic!("child: {error:?}"));
+        assert!(matches!(child.step(), MachineStep::Transition(_)));
+        assert!(matches!(child.step(), MachineStep::Transition(_)));
+        fixture
+            .scheduler
+            .resolve_submission(created.task_id, Ok(child))
+            .unwrap_or_else(|error| panic!("submission: {error:?}"));
+        fixture
+            .foreground
+            .complete_spawn(&suspension, created.handle_id)
+            .unwrap_or_else(|error| panic!("spawn: {error:?}"));
+        let checkpoint = ConcurrentDurableCheckpointV4::capture(
+            &fixture.foreground,
+            &fixture.scheduler,
+            &fixture.sessions,
+        )
+        .unwrap_or_else(|error| panic!("changed child value remains valid: {error:?}"));
+        let decoded = ConcurrentDurableCheckpointV4::decode_compatible(
+            &fixture.program,
+            &checkpoint.canonical_bytes(),
+        )
+        .unwrap_or_else(|error| panic!("positive decode: {error:?}"));
+        let mut recovered = decoded
+            .recover(Arc::clone(&fixture.program))
+            .unwrap_or_else(|error| panic!("positive recovery: {error:?}"));
+        assert_eq!(
+            recovered
+                .scheduler()
+                .state()
+                .task(created.task_id)
+                .unwrap_or_else(|| panic!("retained creation"))
+                .captures()["count"]
+                .value(),
+            &initial
+        );
+        let changed = recovered
+            .scheduler_mut()
+            .machine_mut(created.task_id)
+            .unwrap_or_else(|| panic!("recovered child"));
+        assert_eq!(
+            changed.test_binding_value("count"),
+            Some(LogicalValue::integer(
+                gantry_core::numeric::GantryInt::new(9)
+                    .unwrap_or_else(|| panic!("updated integer")),
+            )),
+            "recovery preserves child mutation independently of creation capture facts"
+        );
+        assert!(matches!(changed.step(), MachineStep::Transition(_)));
+        assert!(matches!(
+            changed.step(),
+            MachineStep::Transition(MachineLabel::TaskSettled(MachineOutcome::Succeeded(_)))
+        ));
+        for variant in 0..4 {
+            let mut invalid = checkpoint.clone();
+            let captures = &mut checkpoint_task_mut(&mut invalid, created.task_id).captures;
+            match variant {
+                0 => captures.clear(),
+                1 => {
+                    captures.clear();
+                    captures.insert(
+                        Arc::from("renamed"),
+                        crate::TaskCaptureV1::new(
+                            Arc::from("renamed"),
+                            TypeDescriptor::INT,
+                            true,
+                            &initial,
+                            DEFAULT_VALUE_LIMITS,
+                        )
+                        .unwrap_or_else(|error| panic!("renamed capture: {error:?}")),
+                    );
+                }
+                2 => {
+                    captures.insert(
+                        Arc::from("count"),
+                        crate::TaskCaptureV1::new(
+                            Arc::from("count"),
+                            TypeDescriptor::BOOL,
+                            true,
+                            &LogicalValue::boolean(true),
+                            DEFAULT_VALUE_LIMITS,
+                        )
+                        .unwrap_or_else(|error| panic!("typed capture: {error:?}")),
+                    );
+                }
+                _ => {
+                    captures.insert(
+                        Arc::from("count"),
+                        crate::TaskCaptureV1::new(
+                            Arc::from("count"),
+                            TypeDescriptor::INT,
+                            false,
+                            &initial,
+                            DEFAULT_VALUE_LIMITS,
+                        )
+                        .unwrap_or_else(|error| panic!("immutable capture: {error:?}")),
+                    );
+                }
+            }
+            assert_eq!(
+                ConcurrentDurableCheckpointV4::decode_compatible(
+                    &fixture.program,
+                    &invalid.canonical_bytes(),
+                )
+                .err(),
+                Some(ConcurrentDurableCheckpointError::InvalidCheckpoint)
+            );
+        }
+    }
+
     #[test]
     fn malformed_scheduler_correspondences_are_rejected_before_publication() {
         let mut fixture = spawned_fixture();
