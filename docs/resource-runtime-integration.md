@@ -885,6 +885,11 @@ cleanup of a partially prepared capture vector on refusal. Preparation retains i
 uncharged suspension and task-local occurrence semantics and publishes no partial spawn.
 Copying, allocation and destruction remain synchronous without a cooperative latency guarantee.
 
+Join, joinall and detach preparation also run outside shared counters, including handle
+validation, consumption and temporary disposal. Uncharged suspension, handle order and empty
+joinall behavior remain unchanged; refusal consumes no handle or publishes a partial suspension.
+This changes neither task ownership authority nor synchronous destruction latency.
+
 Spawned-body completion validates before counter locking and retains consumed operand ownership
 until its existing completion charge unlocks. Invalid-result refusal precedes budget admission;
 failed charging consumes no operand. Outcome and obligation settlement run after unlocking,

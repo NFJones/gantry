@@ -1040,6 +1040,10 @@ portable outcomes, identity, or durable compatibility.
    outside the shared execution-budget mutex. Preparation retains its existing uncharged
    suspension and task-local occurrence behavior; refusal MUST publish no partial spawn.
    This does not make copying cooperative or bound allocation and destruction latency.
+   Join, joinall and detach preparation MUST likewise validate and consume task-local handles
+   outside shared execution counters. Their existing uncharged suspension, handle ordering and
+   empty-joinall behavior MUST remain unchanged. Refusal MUST consume no handle or publish a
+   partial suspension; this adds no ownership authority or destruction-latency guarantee.
    Spawned-body completion MUST validate its result outside shared counters and retain consumed
    operand ownership through its existing charge until mutex release. Invalid-result refusal
    MUST precede budget admission; failed charging MUST consume no operand. Terminal settlement

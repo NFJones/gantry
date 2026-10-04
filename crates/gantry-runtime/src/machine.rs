@@ -3453,6 +3453,31 @@ impl Machine {
         if let InstructionKind::Spawn { handle, body } = instruction.kind.clone() {
             return self.prepare_spawn(workflow, instruction.site, handle, body);
         }
+        #[cfg(feature = "concurrent")]
+        match instruction.kind.clone() {
+            InstructionKind::Join { handles } => {
+                return self.prepare_join(
+                    workflow,
+                    instruction.site,
+                    handles,
+                    instruction.ty,
+                    false,
+                );
+            }
+            InstructionKind::JoinAll { handles } => {
+                return self.prepare_join(
+                    workflow,
+                    instruction.site,
+                    handles,
+                    instruction.ty,
+                    true,
+                );
+            }
+            InstructionKind::Detach { handle } => {
+                return self.prepare_detach(workflow, instruction.site, handle);
+            }
+            _ => {}
+        }
         let execution_budget = self.execution_budget.clone();
         let mut budget_state = execution_budget.lock();
         let site = instruction.site.clone();
@@ -3510,16 +3535,10 @@ impl Machine {
                 return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
             }
             #[cfg(feature = "concurrent")]
-            InstructionKind::Join { handles } => {
-                return self.prepare_join(workflow, site, handles, instruction.ty, false);
-            }
-            #[cfg(feature = "concurrent")]
-            InstructionKind::JoinAll { handles } => {
-                return self.prepare_join(workflow, site, handles, instruction.ty, true);
-            }
-            #[cfg(feature = "concurrent")]
-            InstructionKind::Detach { handle } => {
-                return self.prepare_detach(workflow, site, handle);
+            InstructionKind::Join { .. }
+            | InstructionKind::JoinAll { .. }
+            | InstructionKind::Detach { .. } => {
+                unreachable!("task-control preparation owns handles without shared counters")
             }
             #[cfg(not(feature = "concurrent"))]
             InstructionKind::Join { .. }

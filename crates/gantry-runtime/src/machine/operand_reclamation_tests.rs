@@ -100,6 +100,160 @@ struct Probe {
 
 #[cfg(feature = "concurrent")]
 thread_local! {
+    /// Observes handle disposal only during the task-control regression.
+    static HANDLE_PROBE: RefCell<Option<(ExecutionBudget, Vec<Option<u64>>)>> = const { RefCell::new(None) };
+}
+
+/// Production handles have no destruction observer or integration callback.
+#[cfg(feature = "concurrent")]
+impl Drop for MachineTaskHandle {
+    fn drop(&mut self) {
+        HANDLE_PROBE.with(|cell| {
+            if let Some((budget, observations)) = cell.borrow_mut().as_mut() {
+                observations.push(budget.inner.try_lock().ok().map(|state| state.revision));
+            }
+        });
+    }
+}
+
+/// Uncharged task control must dispose handles unlocked and preserve refusal ownership.
+#[cfg(feature = "concurrent")]
+#[test]
+fn task_control_preparation_reclaims_handles_outside_budget_lock() {
+    for control in 0..3 {
+        for missing in [false, true] {
+            let root =
+                CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("root: {error}"));
+            let site =
+                StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("site: {error}"));
+            let kind = match control {
+                0 => InstructionKind::Join {
+                    handles: vec![Arc::from("a"), Arc::from("b")],
+                },
+                1 => InstructionKind::JoinAll {
+                    handles: vec![Arc::from("a"), Arc::from("b")],
+                },
+                _ => InstructionKind::Detach {
+                    handle: Arc::from("a"),
+                },
+            };
+            let program = Arc::new(
+                MachineProgram::new(vec![gantry_ir::Workflow {
+                    path: root.clone(),
+                    parameters: Vec::new(),
+                    result: TypeDescriptor::UNIT,
+                    effects: gantry_ir::EffectSet::default(),
+                    instructions: vec![
+                        Instruction {
+                            site: site.clone(),
+                            ty: TypeDescriptor::UNIT,
+                            kind,
+                        },
+                        Instruction {
+                            site: StructuralPosition::new(vec![1])
+                                .unwrap_or_else(|error| panic!("site: {error}")),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::Return,
+                        },
+                    ],
+                }])
+                .unwrap_or_else(|error| panic!("program: {error:?}")),
+            );
+            let execution =
+                ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0xa1; 32])
+                    .unwrap_or_else(|error| panic!("execution: {error}"));
+            let limits =
+                MachineLimits::new(8, 1, 1, 1, 8, gantry_core::value::DEFAULT_VALUE_LIMITS)
+                    .unwrap_or_else(|| panic!("limits"));
+            let mut machine = Machine::new(program, &root, Vec::new(), execution, limits)
+                .unwrap_or_else(|error| panic!("machine: {error:?}"));
+            for (index, name) in ["a", "b"].into_iter().enumerate() {
+                if missing && (control == 2 || index == 1) {
+                    continue;
+                }
+                let task = ProtocolIdentity::derive(IdentityKind::Task, &[index as u8 + 1; 32])
+                    .unwrap_or_else(|error| panic!("task: {error}"));
+                machine.frames[0].handle_scopes[0].insert(
+                    Arc::from(name),
+                    MachineTaskHandle {
+                        identity: DynamicTaskHandleIdentity::from_parts(machine.task_id, task),
+                        result_type: TypeDescriptor::UNIT,
+                    },
+                );
+            }
+            let before = machine.execution_budget.snapshot();
+            let scopes = machine.frames[0].handle_scopes.clone();
+            HANDLE_PROBE.with(|cell| {
+                *cell.borrow_mut() = Some((machine.execution_budget.clone(), Vec::new()))
+            });
+            let step = machine.step();
+            let observations = HANDLE_PROBE.with(|cell| {
+                cell.borrow_mut()
+                    .take()
+                    .unwrap_or_else(|| panic!("probe"))
+                    .1
+            });
+            assert!(
+                observations
+                    .iter()
+                    .all(|revision| *revision == Some(before.revision)),
+                "handle destruction must run unlocked: {observations:?}"
+            );
+            assert_eq!(machine.execution_budget.snapshot(), before);
+            assert_eq!(machine.frames[0].pc, 0);
+            if missing {
+                assert!(
+                    matches!(step, MachineStep::Transition(MachineLabel::Failure(failure))
+                    if failure.code == RuntimeCode::InternalInvariant && failure.workflow == root && failure.site == site)
+                );
+                assert_eq!(machine.frames[0].handle_scopes, scopes);
+                assert!(machine.pending_task_control().is_none());
+            } else {
+                assert!(
+                    !observations.is_empty(),
+                    "actual dispatch must reclaim lexical handles"
+                );
+                let label = if control == 2 {
+                    "detach-suspended"
+                } else {
+                    "join-suspended"
+                };
+                assert!(
+                    matches!(step, MachineStep::Transition(MachineLabel::Deterministic { kind, .. })
+                    if kind.as_ref() == label)
+                );
+                assert_eq!(machine.status(), MachineStatus::WaitingTaskControl);
+                if control == 2 {
+                    assert!(machine.task_handle("a").is_none());
+                    assert!(
+                        machine
+                            .pending_task_control()
+                            .and_then(|pending| pending.detach())
+                            .is_some()
+                    );
+                } else {
+                    assert!(machine.task_handle("a").is_none());
+                    assert!(machine.task_handle("b").is_none());
+                    let (join, all) = machine
+                        .pending_task_control()
+                        .and_then(|pending| pending.join())
+                        .unwrap_or_else(|| panic!("join suspension"));
+                    assert_eq!(all, control == 1);
+                    assert_eq!(
+                        join.handles
+                            .iter()
+                            .map(|handle| handle.name())
+                            .collect::<Vec<_>>(),
+                        vec!["a", "b"]
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "concurrent")]
+thread_local! {
     /// Observes partial capture cleanup only in the executing regression thread.
     static CAPTURE_PROBE: RefCell<Option<(ExecutionBudget, Vec<Option<u64>>)>> = const { RefCell::new(None) };
 }
