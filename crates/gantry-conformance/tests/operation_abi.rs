@@ -1862,6 +1862,18 @@ fn compaction_preserves_every_identity_needed_to_redispatch_and_restart_reconstr
     );
 
     // Retention bounds are declared, bounded, and deterministic in their arguments.
+    let foreign_operation = operation_at(&site_at(&[7, 8]));
+    assert_eq!(
+        refusal(DedupRecord::restore(
+            &foreign_operation,
+            current.generation(),
+            DedupRecordState::RejectedStaleOwner,
+            None,
+            owner,
+            bounds(1, 50),
+        )),
+        OperationAbiDiagnosticCode::ForeignOperation
+    );
     assert_eq!(
         refusal(DedupRetentionBounds::new(0, 0)),
         OperationAbiDiagnosticCode::UnboundedRetention

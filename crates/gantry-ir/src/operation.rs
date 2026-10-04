@@ -2462,6 +2462,11 @@ impl DedupRecord {
             }
             (false, None) => {}
         }
+        if generation.operation() != operation {
+            return Err(OperationAbiError::ForeignOperation {
+                operation: Arc::from(generation.operation().as_str()),
+            });
+        }
         Ok(Self {
             operation: operation.clone(),
             generation: generation.clone(),

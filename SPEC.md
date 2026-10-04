@@ -12505,6 +12505,9 @@ owner fences; changed retention bounds MUST NOT turn either into dispatch proof.
 A restart MUST NOT reconstruct an operation identity without the
 settlement that gives it meaning, MUST NOT attach a settlement to a record that
 rejected a stale owner, and MUST refuse a settlement that names another identity.
+Restoration MUST also require the retained resource generation to belong to the
+presented operation, including rejected-stale-owner records without a settlement.
+Mixed operation/generation facts MUST refuse before publishing a restored record.
 Canonical settlement text MUST retain the observed external outcome independently of
 derived resource state. Accepted and rejected outcomes MUST remain distinct even when
 their progress and resulting state coincide; state alone MUST NOT substitute for outcome.

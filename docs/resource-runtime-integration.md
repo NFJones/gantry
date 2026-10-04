@@ -717,6 +717,9 @@ compacted records still require the exact settlement owner. The caller authentic
 retirement facts; restoration supplies no journal authentication or dispatch authority.
 `DedupRecord::compact` preserves retired and rejected-stale-owner refusal states and owner
 fences. Updating retention bounds cannot revive dispatch proof or fabricate missing settlement.
+Restoration also checks that the resource generation belongs to the presented operation,
+including rejected records with no settlement. Mixed identities refuse before record publication;
+this consistency check does not authenticate caller-supplied evidence.
 Registry failure settlement and adapter-failure poisoning likewise require the accompanying binding. Evidence still selects
 its own exact account; the binding must name that operation/generation and match its issuing
 execution/task. `EvidenceSubjectMismatch` and `ForeignSubject` refuse before mutation, while
