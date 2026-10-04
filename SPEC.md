@@ -1031,6 +1031,11 @@ portable outcomes, identity, or durable compatibility.
    consumption obligations, retaining retired callee storage until after unlocking. Invalid
    results MUST refuse before budget admission; failed charging MUST restore no caller or
    remove a frame. Root return remains uncharged. Reclamation remains synchronous.
+   Callable admission MUST validate arguments, receiver arrangement and call depth before
+   shared-counter admission. Callee-frame preparation MUST precede locking; the existing single
+   charge publishes caller position, occurrence and callee ownership atomically. Consumed argument
+   values and origins MUST remain retained until after unlock. Refusal changes no caller state;
+   this changes no receiver authority, semantic release point or reclamation-latency guarantee.
    Spawned-body completion MUST validate its result outside shared counters and retain consumed
    operand ownership through its existing charge until mutex release. Invalid-result refusal
    MUST precede budget admission; failed charging MUST consume no operand. Terminal settlement

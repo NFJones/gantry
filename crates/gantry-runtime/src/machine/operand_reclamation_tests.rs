@@ -216,6 +216,161 @@ fn exited_scope_bindings_are_reclaimed_after_budget_unlock() {
     assert_eq!(machine.execution_budget.snapshot().revision, 1);
 }
 
+/// Callable admission must preserve refusal state and reclaim argument origins unlocked.
+#[test]
+fn call_admission_reclaims_origins_after_unlock_and_preserves_refusals() {
+    for variant in 0..3 {
+        let root =
+            CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("root: {error}"));
+        let callee =
+            CanonicalPath::new("crate::callee").unwrap_or_else(|error| panic!("callee: {error}"));
+        let site = |index| {
+            StructuralPosition::new(vec![index]).unwrap_or_else(|error| panic!("site: {error}"))
+        };
+        let program = Arc::new(
+            MachineProgram::new(vec![
+                gantry_ir::Workflow {
+                    path: callee.clone(),
+                    parameters: vec![Parameter {
+                        name: Arc::from("input"),
+                        ty: TypeDescriptor::STRING,
+                        mutable: false,
+                        receiver_mode: None,
+                    }],
+                    result: TypeDescriptor::UNIT,
+                    effects: gantry_ir::EffectSet::default(),
+                    instructions: vec![
+                        Instruction {
+                            site: site(0),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::Push(LogicalValue::unit()),
+                        },
+                        Instruction {
+                            site: site(1),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::Return,
+                        },
+                    ],
+                },
+                gantry_ir::Workflow {
+                    path: root.clone(),
+                    parameters: Vec::new(),
+                    result: TypeDescriptor::UNIT,
+                    effects: gantry_ir::EffectSet::default(),
+                    instructions: vec![
+                        Instruction {
+                            site: site(0),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::Call {
+                                callee: CanonicalCallableIdentity::free(&callee, &[]),
+                                arguments: 1,
+                            },
+                        },
+                        Instruction {
+                            site: site(1),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::Return,
+                        },
+                    ],
+                },
+            ])
+            .unwrap_or_else(|error| panic!("program: {error:?}")),
+        );
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x9f; 32])
+            .unwrap_or_else(|error| panic!("execution: {error}"));
+        let limits = MachineLimits::new(8, 1, 1, 2, 8, gantry_core::value::DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|| panic!("limits"));
+        let mut machine = Machine::new(program, &root, Vec::new(), execution, limits)
+            .unwrap_or_else(|error| panic!("machine: {error:?}"));
+        let origin: Arc<str> = Arc::from("call-argument-origin");
+        let weak = Arc::downgrade(&origin);
+        let value = if variant == 2 {
+            LogicalValue::unit()
+        } else {
+            LogicalValue::string("é".repeat(10_000), limits.value_limits)
+                .unwrap_or_else(|error| panic!("value: {error:?}"))
+        };
+        machine.push_staged(
+            value,
+            Some(LoadedPlace {
+                root: origin,
+                path: Vec::new(),
+            }),
+        );
+        if variant != 0 {
+            let mut budget = machine.execution_budget.lock();
+            for _ in 0..8 {
+                ExecutionBudget::charge_transition(&mut budget)
+                    .unwrap_or_else(|error| panic!("exhaustion: {error:?}"));
+            }
+        }
+        let before = machine.execution_budget.snapshot();
+        let frames = (variant != 0).then(|| machine.frames.clone());
+        let values = (variant != 0).then(|| machine.values.clone());
+        let occurrences = machine.occurrences.clone();
+        PROBE.with(|cell| {
+            *cell.borrow_mut() = Some(Probe {
+                root: weak.clone(),
+                budget: machine.execution_budget.clone(),
+                observations: Vec::new(),
+            })
+        });
+        let step = machine.step();
+        let observations = PROBE.with(|cell| {
+            cell.borrow_mut()
+                .take()
+                .unwrap_or_else(|| panic!("probe"))
+                .observations
+        });
+        if variant == 0 {
+            assert_eq!(observations, vec![(true, true, Some(1))]);
+            assert!(weak.upgrade().is_none());
+            assert!(
+                matches!(step, MachineStep::Transition(MachineLabel::Deterministic {
+                kind, workflow, site: actual_site,
+            }) if kind.as_ref() == "call" && workflow == root && actual_site == site(0))
+            );
+            assert_eq!(machine.frames.len(), 2);
+            assert_eq!(machine.frames[0].pc, 1);
+            assert_eq!(machine.frames[1].pc, 0);
+            assert_eq!(
+                machine
+                    .binding("input")
+                    .and_then(|binding| binding.value.as_string())
+                    .map(str::len),
+                Some(20_000)
+            );
+            assert!(machine.values.is_empty());
+            assert!(machine.values_places.is_empty());
+            assert_eq!(machine.execution_budget.snapshot().revision, 1);
+        } else {
+            let expected = if variant == 1 {
+                RuntimeCode::DeterministicTransitionBudget
+            } else {
+                RuntimeCode::InternalInvariant
+            };
+            assert!(
+                matches!(step, MachineStep::Transition(MachineLabel::Failure(failure))
+                if failure.code == expected && failure.workflow == root && failure.site == site(0))
+            );
+            assert!(observations.is_empty());
+            assert_eq!(Some(machine.frames.clone()), frames);
+            assert_eq!(Some(machine.values.clone()), values);
+            assert_eq!(machine.occurrences, occurrences);
+            assert_eq!(machine.execution_budget.snapshot(), before);
+            assert!(Weak::ptr_eq(
+                &weak,
+                &Arc::downgrade(
+                    &machine.values_places[0]
+                        .as_ref()
+                        .unwrap_or_else(|| panic!("origin"))
+                        .root
+                )
+            ));
+        }
+    }
+}
+
 /// A real nonroot return must dispose callee bindings after releasing shared counters.
 #[test]
 fn returned_callee_bindings_are_reclaimed_after_budget_unlock() {

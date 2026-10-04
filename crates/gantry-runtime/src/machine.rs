@@ -3418,6 +3418,17 @@ impl Machine {
         if let InstructionKind::Bind { name, ty, mutable } = instruction.kind.clone() {
             return self.execute_binding(name, ty, mutable, workflow, instruction.site);
         }
+        if let InstructionKind::Call { callee, arguments } = instruction.kind.clone() {
+            return self.call(workflow, instruction.site, callee, arguments, None);
+        }
+        if let InstructionKind::ReceiverCall {
+            callee,
+            arguments,
+            source,
+        } = instruction.kind.clone()
+        {
+            return self.call(workflow, instruction.site, callee, arguments, Some(source));
+        }
         if let InstructionKind::Branch {
             when_true,
             when_false,
@@ -3480,22 +3491,8 @@ impl Machine {
                 source_limit,
             } => self.enter_loop(&workflow, &site, phase, source_limit, &mut budget_state),
             InstructionKind::LeaveOccurrence => self.leave_occurrence(&mut budget_state),
-            InstructionKind::Call { callee, arguments } => {
-                return self.call(workflow, site, callee, arguments, None, &mut budget_state);
-            }
-            InstructionKind::ReceiverCall {
-                callee,
-                arguments,
-                source,
-            } => {
-                return self.call(
-                    workflow,
-                    site,
-                    callee,
-                    arguments,
-                    Some(source),
-                    &mut budget_state,
-                );
+            InstructionKind::Call { .. } | InstructionKind::ReceiverCall { .. } => {
+                unreachable!("calls own private frame preparation and charged publication")
             }
             InstructionKind::Return => {
                 unreachable!("return owns its validation and publication lock")
@@ -4907,6 +4904,8 @@ impl Machine {
         Ok(())
     }
 
+    /// Prepares a validated callee frame before charging and reclaims consumed origins unlocked.
+    /// Receiver and call-depth refusals retain their precedence; publication uses one transition.
     fn call(
         &mut self,
         workflow: CanonicalPath,
@@ -4914,7 +4913,6 @@ impl Machine {
         callee: CanonicalCallableIdentity,
         arguments: usize,
         receiver_source: Option<ReceiverSource>,
-        budget_state: &mut ExecutionBudgetState,
     ) -> MachineStep {
         if self
             .limits
@@ -5033,13 +5031,6 @@ impl Machine {
         {
             return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
         }
-        if let Err(code) = self.charge_transition(budget_state) {
-            return self.fail_at(code, workflow, site);
-        }
-        let occurrence = self.next_occurrence("call", &workflow, &site, None);
-        self.truncate_operands(stack_arguments);
-        self.advance_pc();
-        self.occurrences.push(occurrence);
         let mut scope = Scope::new();
         for (parameter, value) in parameters.iter().zip(values) {
             scope.insert(
@@ -5051,14 +5042,14 @@ impl Machine {
                 },
             );
         }
-        self.frames.push(WorkflowFrame {
+        let frame = WorkflowFrame {
             workflow: callee_index,
             pc: 0,
             scopes: vec![scope],
             #[cfg(feature = "concurrent")]
             handle_scopes: vec![HandleScope::new()],
-            stack_base: self.values.len(),
-            occurrence_base: self.occurrences.len(),
+            stack_base: self.values.len() - stack_arguments,
+            occurrence_base: self.occurrences.len() + 1,
             agent_stack_base: self.agent_stack.len(),
             agent_at_entry: self.agent.clone(),
             session_stack_base: self.session_stack.len(),
@@ -5070,7 +5061,26 @@ impl Machine {
                 .map(|(root, path)| ConsumptionObligation { root, path })
                 .into_iter()
                 .collect(),
-        });
+        };
+        let mut consumed = Vec::with_capacity(stack_arguments);
+        let execution_budget = self.execution_budget.clone();
+        {
+            let mut budget_state = execution_budget.lock();
+            if let Err(code) = self.charge_transition(&mut budget_state) {
+                drop(budget_state);
+                return self.fail_at(code, workflow, site);
+            }
+            let occurrence = self.next_occurrence("call", &workflow, &site, None);
+            for _ in 0..stack_arguments {
+                consumed.push(self.pop_staged().unwrap_or_else(|| {
+                    unreachable!("call preparation validated the operand count")
+                }));
+            }
+            self.advance_pc();
+            self.occurrences.push(occurrence);
+            self.frames.push(frame);
+        }
+        drop(consumed);
         self.finish_deterministic(workflow, site, Arc::from("call"))
     }
 
@@ -5746,11 +5756,6 @@ impl Machine {
             .checked_sub(count)
             .ok_or(RuntimeCode::InternalInvariant)?;
         Ok(&self.values[start..])
-    }
-
-    fn truncate_operands(&mut self, count: usize) {
-        let length = self.values.len().saturating_sub(count);
-        self.truncate_staged(length);
     }
 
     /// Pushes one staged value together with the place it was loaded from, when known.

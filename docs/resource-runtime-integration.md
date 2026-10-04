@@ -874,6 +874,12 @@ facts and consumption obligations. Invalid-result refusal precedes budget admiss
 charging changes no frame or caller context. Root return remains uncharged. This relocates
 reclamation, not semantic release or synchronous destruction latency.
 
+Callable admission prepares and validates arguments, receiver arrangement and the callee frame
+before locking shared counters. Its existing single charge publishes caller position, occurrence
+and callee ownership; consumed arguments and origins remain retained until after unlock. Refusal
+preserves caller state. Receiver authority, semantic release and quota charges remain unchanged;
+frame construction and destruction remain synchronous without a latency guarantee.
+
 Spawned-body completion validates before counter locking and retains consumed operand ownership
 until its existing completion charge unlocks. Invalid-result refusal precedes budget admission;
 failed charging consumes no operand. Outcome and obligation settlement run after unlocking,
