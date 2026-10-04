@@ -47,6 +47,10 @@ with accounting policy and records preserved in the scheduler rather than silent
 Replayed capture validates machines against the scheduler's actual shared budget owner, not
 merely equal counter snapshots. Independent scheduler ownership refuses before any consuming
 recovery route can expose components that charge separate execution budgets.
+Journal-first staging checks that live foreground and child machines share one budget owner
+before rebinding private clones. Equal snapshots cannot normalize independently charged children;
+refusal changes no machine or coordinator facts and reserves no publication. The coordinator's
+committed budget projection remains separately checked as the predecessor frontier.
 Capture also requires identical executable content in foreground and child machines before
 checkpoint construction. Shared immutable programs take a fast path; independent identical
 copies remain eligible. Matching body names or budgets cannot authorize changed instructions.

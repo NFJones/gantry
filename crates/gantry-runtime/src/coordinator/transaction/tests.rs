@@ -587,6 +587,29 @@ fn durable_resource_handoff_preserves_exact_graph_and_task_eligibility() {
         gantry_core::portable::RuntimeErrorCategory::ExecutorFailure,
     )
     .unwrap_or_else(|error| panic!("settle: {error:?}"));
+    let child_before = children[&created.task_id].checkpoint();
+    let independent_budget = ExecutionBudget::recover_from_checkpoint(root.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("independent child budget: {error:?}"));
+    assert!(!independent_budget.same_owner(&root.execution_budget()));
+    let independent_child = Machine::recover_from_checkpoint(
+        Arc::clone(&program),
+        child_before.clone(),
+        independent_budget,
+    )
+    .unwrap_or_else(|error| panic!("independent child: {error:?}"));
+    let authoritative_child = children
+        .insert(created.task_id, independent_child)
+        .unwrap_or_else(|| panic!("authoritative child"));
+    let before_split_budget = coordinator.snapshot();
+    assert_eq!(
+        coordinator.stage_graph(&mut root, &mut children).err(),
+        Some(TaskStateError::InvalidTaskMachine),
+        "staging must not normalize independently charged child ownership"
+    );
+    assert_eq!(coordinator.snapshot(), before_split_budget);
+    assert_eq!(children[&created.task_id].checkpoint(), child_before);
+    assert!(!lock(&coordinator.inner.state).durable_publication_reserved);
+    children.insert(created.task_id, authoritative_child);
     let previous = coordinator
         .capture_checkpoint(&root, &children)
         .unwrap_or_else(|error| panic!("capture: {error:?}"));

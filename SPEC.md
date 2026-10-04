@@ -1106,6 +1106,11 @@ portable outcomes, identity, or durable compatibility.
    Replayed capture and consuming recovery validation MUST require foreground, child
    and scheduler budgets to share one actual owner. Equal counter snapshots MUST NOT
    substitute for shared ownership or permit independently charged recovery components.
+   Journal-first staging MUST require the live foreground and child machines to share
+   one budget owner before cloning them onto a private staging budget. Equal projections
+   MUST NOT silently normalize independently charged children; refusal MUST reserve no
+   publication and change no machine or coordinator facts. The coordinator's committed
+   budget projection remains independently validated as the predecessor frontier.
    Graph capture MUST also require identical executable program content across foreground
    and child machines before constructing a checkpoint. Matching body identities and budgets
    MUST NOT authorize different instructions; independent copies of identical programs remain

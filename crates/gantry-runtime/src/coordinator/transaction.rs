@@ -93,10 +93,11 @@ impl ExecutionCoordinator {
         let successor_budget = foreground.budget_checkpoint();
         validate_budget_successor(&original_budget, &successor_budget)
             .map_err(|_| TaskStateError::InvalidTaskMachine)?;
-        if children
-            .values()
-            .any(|machine| machine.budget_checkpoint() != successor_budget)
-        {
+        let foreground_budget = foreground.execution_budget();
+        if children.values().any(|machine| {
+            !machine.execution_budget().same_owner(&foreground_budget)
+                || machine.budget_checkpoint() != successor_budget
+        }) {
             return Err(TaskStateError::InvalidTaskMachine);
         }
         let budget = ExecutionBudget::recover_from_checkpoint(successor_budget)
