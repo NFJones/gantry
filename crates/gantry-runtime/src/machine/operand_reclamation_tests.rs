@@ -446,12 +446,143 @@ fn discarded_operand_origins_are_reclaimed_after_budget_unlock() {
     assert_consumed_origin_reclamation(ReclamationOperation::Discard);
 }
 
+/// Binding must retain the consumed origin until its charged publication releases counters.
+#[test]
+fn bound_operand_origins_are_reclaimed_after_budget_unlock() {
+    assert_consumed_origin_reclamation(ReclamationOperation::Binding);
+}
+
+/// Structural binding refusals precede exhausted counters and preserve staged ownership.
+#[test]
+fn refused_binding_preserves_operands_scopes_and_precedence() {
+    for variant in 0..5 {
+        let root =
+            CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("root: {error:?}"));
+        let site =
+            StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("site: {error:?}"));
+        let program = Arc::new(
+            MachineProgram::new(vec![gantry_ir::Workflow {
+                path: root.clone(),
+                parameters: Vec::new(),
+                result: TypeDescriptor::UNIT,
+                effects: gantry_ir::EffectSet::default(),
+                instructions: vec![
+                    Instruction {
+                        site: site.clone(),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::Bind {
+                            name: Arc::from("bound"),
+                            ty: TypeDescriptor::STRING,
+                            mutable: false,
+                        },
+                    },
+                    Instruction {
+                        site: StructuralPosition::new(vec![1])
+                            .unwrap_or_else(|error| panic!("site: {error:?}")),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::Return,
+                    },
+                ],
+            }])
+            .unwrap_or_else(|error| panic!("program: {error:?}")),
+        );
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x99; 32])
+            .unwrap_or_else(|error| panic!("execution: {error:?}"));
+        let limits = MachineLimits::new(8, 1, 1, 1, 8, gantry_core::value::DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|| panic!("limits"));
+        let mut machine = Machine::new(program, &root, Vec::new(), execution, limits)
+            .unwrap_or_else(|error| panic!("machine: {error:?}"));
+        let origin: Arc<str> = Arc::from("refused-binding-origin");
+        let weak = Arc::downgrade(&origin);
+        if variant != 3 {
+            let value = if variant == 2 {
+                LogicalValue::unit()
+            } else {
+                LogicalValue::string("retained input", limits.value_limits)
+                    .unwrap_or_else(|error| panic!("value: {error:?}"))
+            };
+            machine.push_staged(
+                value,
+                Some(LoadedPlace {
+                    root: origin,
+                    path: Vec::new(),
+                }),
+            );
+        } else {
+            drop(origin);
+        }
+        if variant == 1 {
+            machine.frames[0].scopes[0].insert(
+                Arc::from("bound"),
+                Binding {
+                    value: LogicalValue::unit(),
+                    ty: TypeDescriptor::UNIT,
+                    mutable: false,
+                },
+            );
+        }
+        if variant == 4 {
+            machine.frames[0].scopes.clear();
+        }
+        {
+            let mut budget = machine.execution_budget.lock();
+            for _ in 0..8 {
+                ExecutionBudget::charge_transition(&mut budget)
+                    .unwrap_or_else(|error| panic!("exhaustion: {error:?}"));
+            }
+        }
+        let before = machine.execution_budget.snapshot();
+        let values = machine.values.clone();
+        let scopes = machine.frames[0].scopes.clone();
+        let origin_count = machine.values_places.len();
+        PROBE.with(|cell| {
+            *cell.borrow_mut() = Some(Probe {
+                root: weak.clone(),
+                budget: machine.execution_budget.clone(),
+                observations: Vec::new(),
+            })
+        });
+        let step = machine.step();
+        let observations = PROBE.with(|cell| {
+            cell.borrow_mut()
+                .take()
+                .unwrap_or_else(|| panic!("probe"))
+                .observations
+        });
+        let expected = if variant == 0 {
+            RuntimeCode::DeterministicTransitionBudget
+        } else {
+            RuntimeCode::InternalInvariant
+        };
+        assert!(
+            matches!(step, MachineStep::Transition(MachineLabel::Failure(failure))
+            if failure.code == expected && failure.workflow == root && failure.site == site)
+        );
+        assert!(
+            observations.is_empty(),
+            "refusal must not dispose the origin"
+        );
+        assert_eq!(machine.execution_budget.snapshot(), before);
+        assert_eq!(machine.values, values);
+        assert_eq!(machine.frames[0].scopes, scopes);
+        assert_eq!(machine.frames[0].pc, 0);
+        assert_eq!(machine.values_places.len(), origin_count);
+        if variant != 3 {
+            let held = machine.values_places[0]
+                .as_ref()
+                .unwrap_or_else(|| panic!("origin"));
+            assert!(Weak::ptr_eq(&weak, &Arc::downgrade(&held.root)));
+        }
+    }
+}
+
 /// Dispatch variants sharing the same independently observed consumed origin.
 #[derive(Clone, Copy)]
 enum ReclamationOperation {
     Primitive,
     Aggregate,
     Discard,
+    Binding,
 }
 
 /// Exercises the actual publication dispatch with an independently observed unique origin.
@@ -464,6 +595,7 @@ fn assert_consumed_origin_reclamation(operation: ReclamationOperation) {
         }
         ReclamationOperation::Primitive => TypeDescriptor::INT,
         ReclamationOperation::Discard => TypeDescriptor::UNIT,
+        ReclamationOperation::Binding => TypeDescriptor::UNIT,
     };
     let program = Arc::new(
         MachineProgram::new(vec![gantry_ir::Workflow {
@@ -484,6 +616,11 @@ fn assert_consumed_origin_reclamation(operation: ReclamationOperation) {
                             InstructionKind::Primitive(Primitive::ListLength)
                         }
                         ReclamationOperation::Discard => InstructionKind::Pop,
+                        ReclamationOperation::Binding => InstructionKind::Bind {
+                            name: Arc::from("bound"),
+                            ty: TypeDescriptor::list(TypeDescriptor::UNIT),
+                            mutable: false,
+                        },
                     },
                 },
                 Instruction {
@@ -558,6 +695,15 @@ fn assert_consumed_origin_reclamation(operation: ReclamationOperation) {
     if matches!(operation, ReclamationOperation::Discard) {
         assert!(machine.values.is_empty());
         assert!(machine.values_places.is_empty());
+    } else if matches!(operation, ReclamationOperation::Binding) {
+        assert!(machine.values.is_empty());
+        assert!(machine.values_places.is_empty());
+        assert_eq!(
+            machine
+                .binding("bound")
+                .map(|binding| binding.value.aggregate_len()),
+            Some(Some(10_000))
+        );
     } else {
         assert_eq!(machine.values_places, vec![None]);
     }

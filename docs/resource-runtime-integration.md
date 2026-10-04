@@ -877,6 +877,12 @@ all validated values and clears the same moved-out/consumption facts as before. 
 and superseded values are retained until after unlocking. Refusal changes no assignment target;
 this does not establish cooperative construction or bounded publication bookkeeping.
 
+Lexical binding validates name availability, operand type and target scope before counter
+admission. Its existing single charge publishes the binding and PC, retaining consumed values
+and place origins until after unlocking. Refusal changes no operand, scope or PC, and the
+`binding` transition label is unchanged. Reclamation remains synchronous; semantic release
+points and quota charges do not move.
+
 Direct String equality, inequality, prefix and suffix matching compare at most 4096 UTF-8 octets per machine call
 before requesting a scheduling-only executor yield. Operands and program position remain
 unchanged until the Boolean result commits with the existing single transition charge.

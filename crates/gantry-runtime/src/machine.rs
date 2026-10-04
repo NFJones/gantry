@@ -3395,6 +3395,9 @@ impl Machine {
         {
             return self.execute_assignment(&name, &path, &target_type, workflow, instruction.site);
         }
+        if let InstructionKind::Bind { name, ty, mutable } = instruction.kind.clone() {
+            return self.execute_binding(name, ty, mutable, workflow, instruction.site);
+        }
         let execution_budget = self.execution_budget.clone();
         let mut budget_state = execution_budget.lock();
         let site = instruction.site.clone();
@@ -3402,8 +3405,8 @@ impl Machine {
         let result = match instruction.kind {
             InstructionKind::Push(value) => self.push_value(value, &mut budget_state),
             InstructionKind::Load(name) => self.load_binding(&name, &mut budget_state),
-            InstructionKind::Bind { name, ty, mutable } => {
-                self.bind_value(name, ty, mutable, &mut budget_state)
+            InstructionKind::Bind { .. } => {
+                unreachable!("binding owns validation and deferred reclamation")
             }
             InstructionKind::Assign { .. } => {
                 unreachable!("assignment owns private staging and charged publication")
@@ -3556,33 +3559,51 @@ impl Machine {
         Ok(())
     }
 
-    fn bind_value(
+    /// Validates binding admission before charging and reclaims consumed origins after unlock.
+    /// Refusal preserves the operand, scopes and PC; publication retains the existing label.
+    fn execute_binding(
         &mut self,
         name: Arc<str>,
         ty: TypeDescriptor,
         mutable: bool,
-        budget_state: &mut ExecutionBudgetState,
-    ) -> Result<(), RuntimeCode> {
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+    ) -> MachineStep {
         if self.binding(&name).is_some() {
-            return Err(RuntimeCode::InternalInvariant);
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
         }
-        let value = self
-            .values
-            .last()
-            .cloned()
-            .ok_or(RuntimeCode::InternalInvariant)?;
+        let Some(value) = self.values.last().cloned() else {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        };
         if !value_matches_type(&value, &ty) {
-            return Err(RuntimeCode::InternalInvariant);
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
         }
-        self.charge_transition(budget_state)?;
-        self.pop_staged();
-        self.frames
-            .last_mut()
-            .and_then(|frame| frame.scopes.last_mut())
-            .ok_or(RuntimeCode::InternalInvariant)?
-            .insert(name, Binding { value, ty, mutable });
-        self.advance_pc();
-        Ok(())
+        if self
+            .frames
+            .last()
+            .and_then(|frame| frame.scopes.last())
+            .is_none()
+        {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        }
+        let execution_budget = self.execution_budget.clone();
+        let consumed;
+        {
+            let mut budget_state = execution_budget.lock();
+            if let Err(code) = self.charge_transition(&mut budget_state) {
+                drop(budget_state);
+                return self.fail_at(code, workflow, site);
+            }
+            consumed = self.pop_staged();
+            self.frames
+                .last_mut()
+                .and_then(|frame| frame.scopes.last_mut())
+                .unwrap_or_else(|| unreachable!("binding admission validated the target scope"))
+                .insert(name, Binding { value, ty, mutable });
+            self.advance_pc();
+        }
+        drop(consumed);
+        self.finish_deterministic(workflow, site, Arc::from("binding"))
     }
 
     /// Validates and constructs replacement paths without locking shared execution counters.

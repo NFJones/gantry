@@ -1040,6 +1040,11 @@ portable outcomes, identity, or durable compatibility.
    admission. One charged update MUST publish all candidates and preserve existing moved-out
    and consumption-obligation rules. Superseded values and consumed operands MUST remain owned
    until unlocking. Refusal MUST publish no partial assignment; construction remains synchronous.
+   Lexical binding MUST validate name availability, operand type and target scope before
+   budget admission. One existing transition MUST publish the binding and PC atomically,
+   retaining consumed values and place origins until after shared-counter unlock. Failed
+   admission MUST preserve operands, scopes and PC; the deterministic label remains `binding`.
+   This changes no semantic release point or quota charge and promises no bounded reclamation latency.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.
