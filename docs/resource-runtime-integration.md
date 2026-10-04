@@ -777,6 +777,13 @@ checking the operand type. It avoids rescanning the input; shared copies retain 
 Length conversion and transition charging remain unchanged. This optimization does not establish
 complete semantic-work metering or cancellation-safe execution of other String primitives.
 
+Primitive result evaluation and final logical-value construction run outside the shared
+execution-budget mutex. Their existing deterministic and result-limit failures still precede
+transition-budget refusal. A validated private result acquires the mutex only for its existing
+single transition charge and atomic operand/program-position publication; recomputable scratch
+is discarded afterward outside that lock. This removes shared-counter contention during pure
+construction, not synchronous construction latency or allocation cost, and adds no source stop point.
+
 Direct String equality, inequality, prefix and suffix matching compare at most 4096 UTF-8 octets per machine call
 before requesting a scheduling-only executor yield. Operands and program position remain
 unchanged until the Boolean result commits with the existing single transition charge.

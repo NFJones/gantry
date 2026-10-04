@@ -991,6 +991,11 @@ portable outcomes, identity, or durable compatibility.
    mutex, caching only a private numeric result. Logical-result limits and the existing transition
    charge MUST still precede atomic publication. Conversion and logical construction remain
    synchronous and outside this grammar-only work bound. Scratch MAY be recomputed after recovery.
+   Primitive result evaluation and logical-value construction MUST occur outside the shared
+   execution-budget mutex. Deterministic evaluation and result-limit refusals MUST retain
+   precedence over transition-budget exhaustion. Only a complete validated private result
+   MAY acquire the mutex for the existing single transition charge and atomic operand/PC
+   publication. This lock separation supplies no additional source stop point or latency bound.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

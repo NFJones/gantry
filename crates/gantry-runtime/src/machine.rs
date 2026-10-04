@@ -3256,6 +3256,9 @@ impl Machine {
     }
 
     fn execute(&mut self, instruction: Instruction, workflow: CanonicalPath) -> MachineStep {
+        if let InstructionKind::Primitive(primitive) = &instruction.kind {
+            return self.execute_primitive(*primitive, workflow, instruction.site);
+        }
         let execution_budget = self.execution_budget.clone();
         let mut budget_state = execution_budget.lock();
         let site = instruction.site.clone();
@@ -3284,8 +3287,8 @@ impl Machine {
             InstructionKind::Project(projection) => {
                 self.project_value(projection, &mut budget_state)
             }
-            InstructionKind::Primitive(primitive) => {
-                self.apply_primitive(primitive, &mut budget_state)
+            InstructionKind::Primitive(_) => {
+                unreachable!("primitives use private result construction")
             }
             InstructionKind::EnterScope => self.enter_scope(&mut budget_state),
             InstructionKind::ExitScope => self.exit_scope(&mut budget_state),
@@ -3700,11 +3703,9 @@ impl Machine {
         Ok(())
     }
 
-    fn apply_primitive(
-        &mut self,
-        primitive: Primitive,
-        budget_state: &mut ExecutionBudgetState,
-    ) -> Result<(), RuntimeCode> {
+    /// Constructs and validates a private primitive result without acquiring shared counters.
+    /// Existing deterministic failures retain precedence over transition-budget exhaustion.
+    fn primitive_result(&self, primitive: Primitive) -> Result<LogicalValue, RuntimeCode> {
         let arity = primitive.arity();
         let operands = self.peek_operands(arity)?;
         let result = if primitive == Primitive::StringParseFloat
@@ -3824,7 +3825,33 @@ impl Machine {
         } else {
             evaluate_primitive(primitive, operands, self.limits.value_limits)?
         };
-        self.charge_transition(budget_state)?;
+        Ok(result)
+    }
+
+    /// Charges and publishes one fully validated result, with no integration or construction
+    /// inside the shared budget lock. Exclusive machine ownership protects operands and PC.
+    fn execute_primitive(
+        &mut self,
+        primitive: Primitive,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+    ) -> MachineStep {
+        let result = match self.primitive_result(primitive) {
+            Ok(result) => result,
+            Err(code) => return self.fail_at(code, workflow, site),
+        };
+        let execution_budget = self.execution_budget.clone();
+        {
+            let mut budget_state = execution_budget.lock();
+            if let Err(code) = self.charge_transition(&mut budget_state) {
+                drop(budget_state);
+                return self.fail_at(code, workflow, site);
+            }
+            self.truncate_operands(primitive.arity());
+            self.push_staged(result, None);
+            self.advance_pc();
+        }
+        // Recomputable scratch destruction is separate from budget publication too.
         self.string_equality_work = None;
         self.string_search_work = None;
         self.string_trim_work = None;
@@ -3835,10 +3862,7 @@ impl Machine {
         self.string_replace_work = None;
         self.string_split_work = None;
         self.string_float_work = None;
-        self.truncate_operands(arity);
-        self.push_staged(result, None);
-        self.advance_pc();
-        Ok(())
+        self.finish_deterministic(workflow, site, Arc::from("primitive"))
     }
 
     /// Compares a bounded octet chunk without changing logical state or holding the budget lock.
@@ -6522,6 +6546,33 @@ mod bounded_string_tests {
                 GantryFloat::new(1.0).unwrap_or_else(|| panic!("finite fixture"))
             ))
         );
+        let expected = LogicalValue::some(
+            LogicalValue::float(GantryFloat::new(1.0).unwrap_or_else(|| panic!("finite fixture"))),
+            DEFAULT_STRING_TEST_LIMITS,
+        )
+        .unwrap_or_else(|error| panic!("expected numeric result: {error:?}"));
+        assert_eq!(
+            machine.primitive_result(Primitive::StringParseFloat),
+            Ok(expected)
+        );
+        // Final String construction, not just incremental scanning, must also run unlocked.
+        machine.values.clear();
+        machine.values_places.clear();
+        let left = LogicalValue::string("é".repeat(10_000), DEFAULT_STRING_TEST_LIMITS)
+            .unwrap_or_else(|error| panic!("left: {error:?}"));
+        let right = LogicalValue::string("😀".repeat(10_000), DEFAULT_STRING_TEST_LIMITS)
+            .unwrap_or_else(|error| panic!("right: {error:?}"));
+        machine.push_staged(left.clone(), None);
+        machine.push_staged(right.clone(), None);
+        let expected = LogicalValue::string(
+            format!("{}{}", "é".repeat(10_000), "😀".repeat(10_000)),
+            DEFAULT_STRING_TEST_LIMITS,
+        )
+        .unwrap_or_else(|error| panic!("expected String: {error:?}"));
+        assert_eq!(machine.primitive_result(Primitive::Add), Ok(expected));
+        assert_eq!(machine.values, vec![left, right]);
+        assert_eq!(machine.frames[0].pc, pc);
+        assert_eq!(*held, before);
         drop(held);
     }
 
