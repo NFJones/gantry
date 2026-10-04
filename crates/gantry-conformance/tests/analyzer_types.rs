@@ -1104,6 +1104,22 @@ fn executable_aggregate_types_are_retained_for_capability_queries() {
         package.type_capabilities(&TypeDescriptor::list(TypeDescriptor::INT), policy),
         Err(TypeCapabilityQueryError::TypeNotRetained)
     );
+    for (depth, steps) in [(1, 100), (64, 1)] {
+        let bounded = FrontendLimits::new(
+            4, 65_536, 65_536, 65_536, 64, 65_536, 65_536, 65_536, 65_536, depth, 64, steps,
+        )
+        .unwrap_or_else(|error| panic!("bounded executable query policy: {error:?}"));
+        let result = package.type_capabilities(&ty, bounded);
+        assert!(
+            matches!(result, Err(TypeCapabilityQueryError::ResourceLimit(_))),
+            "{result:?}"
+        );
+        assert_eq!(package.type_capabilities(&ty, policy), Ok(properties));
+        assert_eq!(
+            program.aggregate_resource_class(&ty),
+            Some(ValueResourceClass::NonLiveResource)
+        );
+    }
 }
 
 /// Standard containers fold stored sealed members without changing v1 value axes.
