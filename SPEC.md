@@ -1045,6 +1045,10 @@ portable outcomes, identity, or durable compatibility.
    retaining consumed values and place origins until after shared-counter unlock. Failed
    admission MUST preserve operands, scopes and PC; the deterministic label remains `binding`.
    This changes no semantic release point or quota charge and promises no bounded reclamation latency.
+   Boolean/Decision branch validation MUST precede shared-counter admission. Its existing single
+   charge MUST publish the branch occurrence and target atomically, retaining consumed value/origin
+   ownership until after unlock. Refusal MUST change no operand, occurrence or PC; the `branch`
+   label and semantic release remain unchanged. This supplies no bounded destruction latency.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

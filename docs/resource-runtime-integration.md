@@ -883,6 +883,11 @@ and place origins until after unlocking. Refusal changes no operand, scope or PC
 `binding` transition label is unchanged. Reclamation remains synchronous; semantic release
 points and quota charges do not move.
 
+Boolean/Decision branching validates the condition before counter admission and publishes the
+existing occurrence and target with one charge. Consumed values and origins remain owned until
+after unlocking; refusal changes no operands, occurrence or PC. The `branch` label is preserved.
+This relocates reclamation, not semantic release or synchronous destruction latency.
+
 Direct String equality, inequality, prefix and suffix matching compare at most 4096 UTF-8 octets per machine call
 before requesting a scheduling-only executor yield. Operands and program position remain
 unchanged until the Boolean result commits with the existing single transition charge.

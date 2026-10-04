@@ -3398,6 +3398,13 @@ impl Machine {
         if let InstructionKind::Bind { name, ty, mutable } = instruction.kind.clone() {
             return self.execute_binding(name, ty, mutable, workflow, instruction.site);
         }
+        if let InstructionKind::Branch {
+            when_true,
+            when_false,
+        } = instruction.kind
+        {
+            return self.execute_branch(workflow, instruction.site, when_true, when_false);
+        }
         let execution_budget = self.execution_budget.clone();
         let mut budget_state = execution_budget.lock();
         let site = instruction.site.clone();
@@ -3423,10 +3430,9 @@ impl Machine {
             InstructionKind::ExitScope => unreachable!("scope exit retains ownership until unlock"),
             InstructionKind::Jump(target) => self.jump(target, &mut budget_state),
             InstructionKind::Panic => Err(RuntimeCode::SourcePanic),
-            InstructionKind::Branch {
-                when_true,
-                when_false,
-            } => self.branch(&workflow, &site, when_true, when_false, &mut budget_state),
+            InstructionKind::Branch { .. } => {
+                unreachable!("Boolean branches own validation and deferred reclamation")
+            }
             InstructionKind::BranchOption {
                 when_some,
                 when_none,
@@ -4550,34 +4556,45 @@ impl Machine {
         Ok(())
     }
 
-    fn branch(
+    /// Validates a condition before charging and reclaims consumed ownership after unlock.
+    /// Occurrence identity, target publication and the existing branch label remain unchanged.
+    fn execute_branch(
         &mut self,
-        workflow: &CanonicalPath,
-        site: &StructuralPosition,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
         when_true: usize,
         when_false: usize,
-        budget_state: &mut ExecutionBudgetState,
-    ) -> Result<(), RuntimeCode> {
-        let condition = self
-            .values
-            .last()
-            .and_then(condition_value)
-            .ok_or(RuntimeCode::InternalInvariant)?;
+    ) -> MachineStep {
+        let Some(condition) = self.values.last().and_then(condition_value) else {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        };
+        if self.frames.is_empty() {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        }
         let arm = usize::from(!condition);
         let target = if condition { when_true } else { when_false };
         let occurrence = Arc::from(format!(
             "branch:{}:{}:{arm}",
             workflow.as_str(),
-            position_key(site)
+            position_key(&site)
         ));
-        self.charge_transition(budget_state)?;
-        self.pop_staged();
-        self.occurrences.push(occurrence);
-        self.frames
-            .last_mut()
-            .ok_or(RuntimeCode::InternalInvariant)?
-            .pc = target;
-        Ok(())
+        let execution_budget = self.execution_budget.clone();
+        let consumed;
+        {
+            let mut budget_state = execution_budget.lock();
+            if let Err(code) = self.charge_transition(&mut budget_state) {
+                drop(budget_state);
+                return self.fail_at(code, workflow, site);
+            }
+            consumed = self.pop_staged();
+            self.occurrences.push(occurrence);
+            self.frames
+                .last_mut()
+                .unwrap_or_else(|| unreachable!("branch admission validated the frame"))
+                .pc = target;
+        }
+        drop(consumed);
+        self.finish_deterministic(workflow, site, Arc::from("branch"))
     }
 
     fn branch_option(
