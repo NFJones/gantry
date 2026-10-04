@@ -948,7 +948,11 @@ portable outcomes, identity, or durable compatibility.
    at most 4096 comparison/fallback work units per call, counting fallback without input advance.
    Private search scratch MAY retain at most one prefix entry per pattern octet; it is recomputable,
    not a logical checkpoint fact or a total-allocation/latency guarantee. Substring search MUST
-   preserve exact UTF-8 matching and avoid repeated-prefix quadratic rescanning. All these paths MUST
+   preserve exact UTF-8 matching and avoid repeated-prefix quadratic rescanning.
+   String trimming boundary scans MUST classify at most 4096 scalars per call before yielding
+   when more scan work remains, retaining only private scalar-boundary offsets. This bounds
+   boundary scanning, not final String construction, allocation or total primitive latency.
+   All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.
    Recomputable comparison scratch is not a logical checkpoint fact; recovery MAY restart

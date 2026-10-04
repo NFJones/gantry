@@ -795,6 +795,13 @@ one transition, with cancellation observed at existing driver yields. Replay acc
 finite linear search work separately. Prefix-table allocation and cloning are not bounded-latency
 or total-allocation guarantees, and this supplies no complete semantic-work metering contract.
 
+Trimming scans leading/trailing boundaries in chunks of at most 4096 scalars using pinned
+Unicode whitespace rules. Private scalar-boundary offsets survive scheduling yields, not
+checkpoint recovery; restart recomputes them from unchanged operands. Cancellation and the
+single transition charge retain their existing boundaries. This bounds whitespace scanning
+only: final substring copying, logical-value construction and allocation remain synchronous
+and do not establish total primitive latency or complete cancellation-safe construction.
+
 Concatenation, replacement and list joining check each next output piece's Unicode-scalar contribution before
 appending it to private construction state. Over-limit pieces are not allocated or appended;
 only the complete logical value is published. Replacement stays nonoverlapping and never rescans

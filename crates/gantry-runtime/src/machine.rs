@@ -25,9 +25,11 @@ use gantry_ir::{ExecutableTaskHandle, TaskBodyIdentity};
 use crate::resource::ResourceSubjectBinding;
 use crate::session::SessionCreationModeV1;
 mod string_search;
+mod string_trim;
 #[cfg(feature = "concurrent")]
 use crate::task::{DynamicTaskHandleIdentity, JoinResolutionV1, TaskCaptureV1, TaskJoinFailureV1};
 use string_search::StringSearchWork;
+use string_trim::StringTrimWork;
 
 #[cfg(feature = "durable")]
 pub(crate) mod checkpoint_codec;
@@ -1818,6 +1820,8 @@ pub struct Machine {
     string_equality_work: Option<StringEqualityWork>,
     /// Recomputable bounded substring-search progress over unchanged operands.
     string_search_work: Option<StringSearchWork>,
+    /// Private scalar-boundary offsets for cooperative whitespace scanning.
+    string_trim_work: Option<StringTrimWork>,
     #[cfg(feature = "concurrent")]
     pending_task_control: Option<PendingTaskControl>,
     pending_labels: VecDeque<MachineLabel>,
@@ -2110,6 +2114,7 @@ impl Machine {
             resource_admission_tracker: None,
             string_equality_work: None,
             string_search_work: None,
+            string_trim_work: None,
             pending_task_control: None,
             pending_labels: VecDeque::new(),
             cancellation: None,
@@ -2220,6 +2225,7 @@ impl Machine {
             resource_admission_tracker: None,
             string_equality_work: None,
             string_search_work: None,
+            string_trim_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: None,
             pending_labels: VecDeque::new(),
@@ -2628,6 +2634,7 @@ impl Machine {
             resource_admission_tracker: None,
             string_equality_work: None,
             string_search_work: None,
+            string_trim_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: checkpoint.pending_task_control,
             pending_labels: checkpoint.pending_labels,
@@ -3121,6 +3128,15 @@ impl Machine {
             {
                 return MachineStep::YieldRequired;
             }
+            if let InstructionKind::Primitive(
+                primitive @ (Primitive::StringTrim
+                | Primitive::StringTrimStart
+                | Primitive::StringTrimEnd),
+            ) = instruction.kind
+                && self.prepare_string_trim(primitive)
+            {
+                return MachineStep::YieldRequired;
+            }
             return self.execute(instruction, workflow);
         }
     }
@@ -3595,7 +3611,16 @@ impl Machine {
     ) -> Result<(), RuntimeCode> {
         let arity = primitive.arity();
         let operands = self.peek_operands(arity)?;
-        let result = if primitive == Primitive::StringContains
+        let result = if matches!(
+            primitive,
+            Primitive::StringTrim | Primitive::StringTrimStart | Primitive::StringTrimEnd
+        ) && let Some(work) =
+            self.string_trim_work.as_ref().filter(|work| work.complete)
+        {
+            let source = string_operand(operands, 0)?;
+            LogicalValue::string(&source[work.start..work.end], self.limits.value_limits)
+                .map_err(map_string_value_error)?
+        } else if primitive == Primitive::StringContains
             && let Some(found) = self
                 .string_search_work
                 .as_ref()
@@ -3624,6 +3649,7 @@ impl Machine {
         self.charge_transition(budget_state)?;
         self.string_equality_work = None;
         self.string_search_work = None;
+        self.string_trim_work = None;
         self.truncate_operands(arity);
         self.push_staged(result, None);
         self.advance_pc();
@@ -3695,6 +3721,35 @@ impl Machine {
                     .as_bytes(),
                 STRING_EQUALITY_WORK_QUANTUM,
             );
+        if pending {
+            self.status = MachineStatus::YieldRequired;
+        }
+        pending
+    }
+
+    /// Advances private Unicode whitespace boundary work without holding the budget lock.
+    /// Final String construction still follows ordinary value-limit and transition admission.
+    fn prepare_string_trim(&mut self, primitive: Primitive) -> bool {
+        let Ok(operands) = self.peek_operands(1) else {
+            return false;
+        };
+        if operands[0].as_string().is_none() {
+            return false;
+        }
+        let source = operands[0].clone();
+        let text = source
+            .as_string()
+            .unwrap_or_else(|| unreachable!("validated String"));
+        let pending = self
+            .string_trim_work
+            .get_or_insert_with(|| {
+                StringTrimWork::new(
+                    text.len(),
+                    primitive != Primitive::StringTrimEnd,
+                    primitive != Primitive::StringTrimStart,
+                )
+            })
+            .advance(text, STRING_EQUALITY_WORK_QUANTUM);
         if pending {
             self.status = MachineStatus::YieldRequired;
         }
@@ -4639,6 +4694,7 @@ impl Machine {
     fn finish_outcome(&mut self, outcome: MachineOutcome) -> MachineStep {
         self.string_equality_work = None;
         self.string_search_work = None;
+        self.string_trim_work = None;
         self.settle_consumption_obligations();
         self.status = match outcome {
             MachineOutcome::Succeeded(_) => MachineStatus::Succeeded,
