@@ -1594,6 +1594,84 @@ fn shared_operation_alias_completion_refuses_authoritative_cancellation() {
     assert_eq!(alias.checkpoint().canonical_bytes(), checkpoint);
 }
 
+/// Concurrent aliases must select one terminal winner without changing the losing machine.
+#[cfg(feature = "concurrent")]
+#[test]
+fn simultaneous_shared_operation_settlement_has_one_unchanged_loser() {
+    for failure_contender in [false, true] {
+        let root = workflow(
+            "crate::main",
+            Vec::new(),
+            TypeDescriptor::UNIT,
+            EffectSet::default(),
+            vec![
+                instruction(0, TypeDescriptor::UNIT, InstructionKind::Operation),
+                instruction(1, TypeDescriptor::UNIT, InstructionKind::Return),
+            ],
+        );
+        let mut machine = new_machine(
+            program(vec![root]),
+            "crate::main",
+            Vec::new(),
+            limits(8, 1, 1, 1, 8),
+        );
+        let operation = match machine.step() {
+            MachineStep::Transition(MachineLabel::OperationPrepared(operation)) => {
+                operation.identity
+            }
+            other => panic!("operation: {other:?}"),
+        };
+        let budget = machine.execution_budget();
+        let budget_before = budget.snapshot();
+        let machines = [machine.clone(), machine];
+        let barrier = Arc::new(Barrier::new(2));
+        let contenders = machines
+            .into_iter()
+            .enumerate()
+            .map(|(index, mut machine)| {
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    let before = machine.test_instruction_state();
+                    barrier.wait();
+                    let result = if failure_contender && index == 1 {
+                        machine.fail_operation_with_code(operation, RuntimeCode::InternalInvariant)
+                    } else {
+                        machine.complete_operation(operation, LogicalValue::unit())
+                    };
+                    (
+                        result,
+                        before,
+                        machine.test_instruction_state(),
+                        machine.status(),
+                        machine.outcome().cloned(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        let results = contenders
+            .into_iter()
+            .map(|handle| {
+                handle
+                    .join()
+                    .unwrap_or_else(|_| panic!("settlement contender panicked"))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            results.iter().filter(|(result, ..)| result.is_ok()).count(),
+            1
+        );
+        let losers = results
+            .iter()
+            .filter(|(result, ..)| *result == Err(OperationCompletionError::NotWaiting))
+            .collect::<Vec<_>>();
+        assert_eq!(losers.len(), 1);
+        assert_eq!(losers[0].1, losers[0].2);
+        assert_eq!(losers[0].3, MachineStatus::WaitingOperation);
+        assert_eq!(losers[0].4, None);
+        assert_eq!(budget.snapshot(), budget_before);
+    }
+}
+
 #[test]
 fn operation_results_enforce_nested_types_and_captured_value_limits() {
     let expected = TypeDescriptor::list(TypeDescriptor::INT);
