@@ -797,6 +797,11 @@ Invalid indexes and moved-out places retain their refusal precedence. Atomic pub
 the projected origin and the existing single charge; consumed source storage and temporary origins
 are disposed after unlocking. Lookup remains synchronous and grants no new authority or stop point.
 
+Discard likewise retains its consumed value and place origin until the existing charged stack/PC
+update releases the shared budget mutex. Empty-stack refusal still precedes budget admission;
+failed charging leaves the stack unchanged. Reclamation remains synchronous, with no changed
+semantic release point, quota charge or latency guarantee.
+
 Direct String equality, inequality, prefix and suffix matching compare at most 4096 UTF-8 octets per machine call
 before requesting a scheduling-only executor yield. Operands and program position remain
 unchanged until the Boolean result commits with the existing single transition charge.

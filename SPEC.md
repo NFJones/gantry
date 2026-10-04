@@ -1008,6 +1008,10 @@ portable outcomes, identity, or durable compatibility.
    locking. Invalid-index and moved-out-place refusals MUST retain precedence over budget refusal.
    The projected value and its exact origin MUST publish with one charge, retaining consumed
    source ownership until after unlocking. This adds no authority, stop point or latency bound.
+   Discard MUST retain consumed value and place-origin ownership through its existing charged
+   stack/PC update and reclaim them only after shared-counter unlocking. Empty-stack refusal
+   MUST precede budget admission; failed charging MUST change no stack or program position.
+   This changes neither semantic release nor quota charges and adds no latency guarantee.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

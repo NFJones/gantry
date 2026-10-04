@@ -49,23 +49,39 @@ impl Drop for LoadedPlace {
 /// Old locked truncation drops this origin while try_lock fails; deferred disposal must not.
 #[test]
 fn consumed_operand_origins_are_reclaimed_after_budget_unlock() {
-    assert_consumed_origin_reclamation(false);
+    assert_consumed_origin_reclamation(ReclamationOperation::Primitive);
 }
 
 /// Aggregate publication must release consumed origins after unlocking, just like primitives.
 #[test]
 fn aggregate_operand_origins_are_reclaimed_after_budget_unlock() {
-    assert_consumed_origin_reclamation(true);
+    assert_consumed_origin_reclamation(ReclamationOperation::Aggregate);
+}
+
+/// Discard must release consumed values and origins only after counter publication unlocks.
+#[test]
+fn discarded_operand_origins_are_reclaimed_after_budget_unlock() {
+    assert_consumed_origin_reclamation(ReclamationOperation::Discard);
+}
+
+/// Dispatch variants sharing the same independently observed consumed origin.
+#[derive(Clone, Copy)]
+enum ReclamationOperation {
+    Primitive,
+    Aggregate,
+    Discard,
 }
 
 /// Exercises the actual publication dispatch with an independently observed unique origin.
-fn assert_consumed_origin_reclamation(aggregate: bool) {
+fn assert_consumed_origin_reclamation(operation: ReclamationOperation) {
     let root = CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("root: {error:?}"));
     let site = StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("site: {error:?}"));
-    let result_type = if aggregate {
-        TypeDescriptor::list(TypeDescriptor::list(TypeDescriptor::UNIT))
-    } else {
-        TypeDescriptor::INT
+    let result_type = match operation {
+        ReclamationOperation::Aggregate => {
+            TypeDescriptor::list(TypeDescriptor::list(TypeDescriptor::UNIT))
+        }
+        ReclamationOperation::Primitive => TypeDescriptor::INT,
+        ReclamationOperation::Discard => TypeDescriptor::UNIT,
     };
     let program = Arc::new(
         MachineProgram::new(vec![gantry_ir::Workflow {
@@ -77,13 +93,15 @@ fn assert_consumed_origin_reclamation(aggregate: bool) {
                 Instruction {
                     site: site.clone(),
                     ty: result_type.clone(),
-                    kind: if aggregate {
-                        InstructionKind::Aggregate {
+                    kind: match operation {
+                        ReclamationOperation::Aggregate => InstructionKind::Aggregate {
                             kind: AggregateKind::List,
                             operands: 1,
+                        },
+                        ReclamationOperation::Primitive => {
+                            InstructionKind::Primitive(Primitive::ListLength)
                         }
-                    } else {
-                        InstructionKind::Primitive(Primitive::ListLength)
+                        ReclamationOperation::Discard => InstructionKind::Pop,
                     },
                 },
                 Instruction {
@@ -140,14 +158,14 @@ fn assert_consumed_origin_reclamation(aggregate: bool) {
         "the consumed origin must actually be reclaimed"
     );
     assert_eq!(machine.frames[0].pc, 1);
-    if aggregate {
+    if matches!(operation, ReclamationOperation::Aggregate) {
         assert_eq!(machine.values.len(), 1);
         assert_eq!(machine.values[0].view(), LogicalValueView::List(1));
         assert_eq!(
             machine.values[0].member(0).map(|value| value.kind()),
             Some(gantry_core::value::ValueKind::List)
         );
-    } else {
+    } else if matches!(operation, ReclamationOperation::Primitive) {
         assert_eq!(
             machine.values,
             vec![LogicalValue::integer(
@@ -155,7 +173,12 @@ fn assert_consumed_origin_reclamation(aggregate: bool) {
             )]
         );
     }
-    assert_eq!(machine.values_places, vec![None]);
+    if matches!(operation, ReclamationOperation::Discard) {
+        assert!(machine.values.is_empty());
+        assert!(machine.values_places.is_empty());
+    } else {
+        assert_eq!(machine.values_places, vec![None]);
+    }
     assert_eq!(machine.execution_budget.snapshot().revision, 1);
 }
 

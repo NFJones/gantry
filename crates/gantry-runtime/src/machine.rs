@@ -3276,6 +3276,9 @@ impl Machine {
         if let InstructionKind::Project(projection) = instruction.kind.clone() {
             return self.execute_projection(projection, workflow, instruction.site);
         }
+        if matches!(instruction.kind, InstructionKind::Pop) {
+            return self.execute_discard(workflow, instruction.site);
+        }
         let execution_budget = self.execution_budget.clone();
         let mut budget_state = execution_budget.lock();
         let site = instruction.site.clone();
@@ -3291,7 +3294,7 @@ impl Machine {
                 path,
                 target_type,
             } => self.assign_value(&name, &path, &target_type, &mut budget_state),
-            InstructionKind::Pop => self.pop_value(&mut budget_state),
+            InstructionKind::Pop => unreachable!("discard retains consumed ownership until unlock"),
             InstructionKind::Aggregate { .. } => {
                 unreachable!("aggregates use private result construction")
             }
@@ -3608,14 +3611,29 @@ impl Machine {
         Ok(())
     }
 
-    fn pop_value(&mut self, budget_state: &mut ExecutionBudgetState) -> Result<(), RuntimeCode> {
+    /// Removes one staged value with its existing charge, then reclaims it after unlocking.
+    /// Empty-stack refusal precedes budget admission; failed charging changes no stack state.
+    fn execute_discard(
+        &mut self,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+    ) -> MachineStep {
         if self.values.is_empty() {
-            return Err(RuntimeCode::InternalInvariant);
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
         }
-        self.charge_transition(budget_state)?;
-        self.pop_staged();
-        self.advance_pc();
-        Ok(())
+        let execution_budget = self.execution_budget.clone();
+        let consumed = {
+            let mut budget_state = execution_budget.lock();
+            if let Err(code) = self.charge_transition(&mut budget_state) {
+                drop(budget_state);
+                return self.fail_at(code, workflow, site);
+            }
+            let consumed = self.pop_staged();
+            self.advance_pc();
+            consumed
+        };
+        drop(consumed);
+        self.finish_deterministic(workflow, site, Arc::from("discard"))
     }
 
     /// Constructs one private aggregate candidate, retaining all operand and limit checks.
