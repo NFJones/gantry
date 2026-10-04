@@ -965,6 +965,173 @@ fn result_branch_preserves_payload_origins_and_unlocked_reclamation() {
     }
 }
 
+/// Enum dispatch preserves selected payload origins and reclaims all temporaries unlocked.
+#[test]
+fn enum_branch_preserves_payload_origins_and_unlocked_reclamation() {
+    for variant in 0..7 {
+        let root =
+            CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("root: {error:?}"));
+        let site =
+            StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("site: {error:?}"));
+        let program = Arc::new(
+            MachineProgram::new(vec![gantry_ir::Workflow {
+                path: root.clone(),
+                parameters: Vec::new(),
+                result: TypeDescriptor::UNIT,
+                effects: gantry_ir::EffectSet::default(),
+                instructions: vec![
+                    Instruction {
+                        site: site.clone(),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::BranchEnum {
+                            arms: vec![(Arc::from("A"), 1), (Arc::from("B"), 2)],
+                        },
+                    },
+                    Instruction {
+                        site: StructuralPosition::new(vec![1])
+                            .unwrap_or_else(|error| panic!("site: {error:?}")),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::Return,
+                    },
+                    Instruction {
+                        site: StructuralPosition::new(vec![2])
+                            .unwrap_or_else(|error| panic!("site: {error:?}")),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::Return,
+                    },
+                ],
+            }])
+            .unwrap_or_else(|error| panic!("program: {error:?}")),
+        );
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x9d; 32])
+            .unwrap_or_else(|error| panic!("execution: {error:?}"));
+        let limits = MachineLimits::new(8, 1, 1, 1, 8, gantry_core::value::DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|| panic!("limits"));
+        let mut machine = Machine::new(program, &root, Vec::new(), execution, limits)
+            .unwrap_or_else(|error| panic!("machine: {error:?}"));
+        let origin: Arc<str> = Arc::from("enum-origin");
+        let weak = Arc::downgrade(&origin);
+        if variant != 6 {
+            let value = if variant == 5 {
+                LogicalValue::unit()
+            } else {
+                LogicalValue::enumeration(
+                    "crate::Choice",
+                    if variant == 4 {
+                        "Unknown"
+                    } else if variant == 1 || variant == 3 {
+                        "B"
+                    } else {
+                        "A"
+                    },
+                    if variant == 1 || variant == 3 {
+                        None
+                    } else {
+                        Some(LogicalValue::unit())
+                    },
+                    limits.value_limits,
+                )
+                .unwrap_or_else(|error| panic!("enum: {error:?}"))
+            };
+            machine.push_staged(
+                value,
+                Some(LoadedPlace {
+                    root: origin,
+                    path: vec![ValuePathSegment::ListItem(0)],
+                }),
+            );
+        } else {
+            drop(origin);
+        }
+        if variant >= 2 {
+            let mut budget = machine.execution_budget.lock();
+            for _ in 0..8 {
+                ExecutionBudget::charge_transition(&mut budget)
+                    .unwrap_or_else(|error| panic!("exhaustion: {error:?}"));
+            }
+        }
+        let before = machine.execution_budget.snapshot();
+        let values = machine.values.clone();
+        let places = machine.values_places.clone();
+        let occurrences = machine.occurrences.clone();
+        PROBE.with(|cell| {
+            *cell.borrow_mut() = Some(Probe {
+                root: weak,
+                budget: machine.execution_budget.clone(),
+                observations: Vec::new(),
+            })
+        });
+        let step = machine.step();
+        let observations = PROBE.with(|cell| {
+            cell.borrow_mut()
+                .take()
+                .unwrap_or_else(|| panic!("probe"))
+                .observations
+        });
+        assert!(
+            observations.iter().all(|(_, unlocked, _)| *unlocked),
+            "Enum temporary/consumed origins must be reclaimed unlocked: {observations:?}"
+        );
+        if variant < 2 {
+            assert!(
+                !observations.is_empty(),
+                "actual dispatch must dispose consumed origins"
+            );
+            assert!(
+                observations
+                    .iter()
+                    .all(|(_, _, revision)| *revision == Some(1))
+            );
+            assert!(
+                matches!(step, MachineStep::Transition(MachineLabel::Deterministic {
+                workflow, site: actual_site, kind,
+            }) if workflow == root && actual_site == site && kind.as_ref() == "branch")
+            );
+            assert_eq!(machine.frames[0].pc, if variant == 0 { 1 } else { 2 });
+            assert_eq!(
+                machine.occurrences.last().map(|value| value.as_ref()),
+                Some(if variant == 0 {
+                    "branch:crate::main:0:0"
+                } else {
+                    "branch:crate::main:0:1"
+                })
+            );
+            if variant == 0 {
+                assert_eq!(machine.values, vec![LogicalValue::unit()]);
+                assert_eq!(
+                    machine.values_places,
+                    vec![Some(LoadedPlace {
+                        root: Arc::from("enum-origin"),
+                        path: vec![ValuePathSegment::ListItem(0), ValuePathSegment::EnumPayload],
+                    })]
+                );
+            } else {
+                assert!(machine.values.is_empty());
+                assert!(machine.values_places.is_empty());
+            }
+            assert_eq!(
+                machine.execution_budget.snapshot().revision,
+                before.revision + 1
+            );
+        } else {
+            let expected = if variant < 4 {
+                RuntimeCode::DeterministicTransitionBudget
+            } else {
+                RuntimeCode::InternalInvariant
+            };
+            assert!(
+                matches!(step, MachineStep::Transition(MachineLabel::Failure(failure))
+                if failure.code == expected && failure.workflow == root && failure.site == site)
+            );
+            assert_eq!(machine.values, values);
+            assert_eq!(machine.values_places, places);
+            assert_eq!(machine.occurrences, occurrences);
+            assert_eq!(machine.frames[0].pc, 0);
+            assert_eq!(machine.execution_budget.snapshot(), before);
+        }
+    }
+}
+
 /// Dispatch variants sharing the same independently observed consumed origin.
 #[derive(Clone, Copy)]
 enum ReclamationOperation {

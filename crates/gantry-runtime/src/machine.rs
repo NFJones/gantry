@@ -3415,6 +3415,9 @@ impl Machine {
         if let InstructionKind::BranchResult { when_ok, when_err } = instruction.kind {
             return self.execute_result_branch(workflow, instruction.site, when_ok, when_err);
         }
+        if let InstructionKind::BranchEnum { arms } = &instruction.kind {
+            return self.execute_enum_branch(workflow, instruction.site, arms);
+        }
         let execution_budget = self.execution_budget.clone();
         let mut budget_state = execution_budget.lock();
         let site = instruction.site.clone();
@@ -3449,8 +3452,8 @@ impl Machine {
             InstructionKind::BranchResult { .. } => {
                 unreachable!("Result branches own preparation and deferred reclamation")
             }
-            InstructionKind::BranchEnum { arms } => {
-                self.branch_enum(&workflow, &site, &arms, &mut budget_state)
+            InstructionKind::BranchEnum { .. } => {
+                unreachable!("Enum branches own preparation and deferred reclamation")
             }
             InstructionKind::EnterLoop {
                 phase,
@@ -4673,60 +4676,82 @@ impl Machine {
         self.finish_deterministic(workflow, site, Arc::from("branch"))
     }
 
-    fn branch_enum(
+    /// Prepares variant, payload and origin facts before charging; reclaims ownership unlocked.
+    /// Invalid variants retain precedence over budget refusal and publish no partial branch.
+    fn execute_enum_branch(
         &mut self,
-        workflow: &CanonicalPath,
-        site: &StructuralPosition,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
         arms: &[(Arc<str>, usize)],
-        budget_state: &mut ExecutionBudgetState,
-    ) -> Result<(), RuntimeCode> {
-        let value = self
-            .values
-            .last()
-            .cloned()
-            .ok_or(RuntimeCode::InternalInvariant)?;
-        let place = self
-            .values_places
-            .last()
-            .cloned()
-            .ok_or(RuntimeCode::InternalInvariant)?;
+    ) -> MachineStep {
+        let Some(value) = self.values.last().cloned() else {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        };
+        let Some(place) = self.values_places.last().cloned() else {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        };
         let LogicalValueView::Enum {
             variant,
             has_payload,
             ..
         } = value.view()
         else {
-            return Err(RuntimeCode::InternalInvariant);
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
         };
-        let (arm, target) = arms
-            .iter()
-            .enumerate()
-            .find_map(|(index, (candidate, target))| {
-                (candidate.as_ref() == variant).then_some((index, *target))
-            })
-            .ok_or(RuntimeCode::InternalInvariant)?;
-        let payload = has_payload
-            .then(|| value.payload().ok_or(RuntimeCode::InternalInvariant))
-            .transpose()?;
+        let Some((arm, target)) =
+            arms.iter()
+                .enumerate()
+                .find_map(|(index, (candidate, target))| {
+                    (candidate.as_ref() == variant).then_some((index, *target))
+                })
+        else {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        };
+        let payload = if has_payload {
+            let Some(payload) = value.payload() else {
+                return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+            };
+            Some(payload)
+        } else {
+            None
+        };
+        if self.frames.is_empty() {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        }
+        let payload_place = if has_payload {
+            place
+                .as_ref()
+                .map(|place| place.extended(ValuePathSegment::EnumPayload))
+        } else {
+            None
+        };
         let occurrence = Arc::from(format!(
             "branch:{}:{}:{arm}",
             workflow.as_str(),
-            position_key(site)
+            position_key(&site)
         ));
-        self.charge_transition(budget_state)?;
-        self.pop_staged();
-        if let Some(payload) = payload {
-            self.push_staged(
-                payload,
-                place.map(|place| place.extended(ValuePathSegment::EnumPayload)),
-            );
+        let execution_budget = self.execution_budget.clone();
+        let consumed;
+        {
+            let mut budget_state = execution_budget.lock();
+            if let Err(code) = self.charge_transition(&mut budget_state) {
+                drop(budget_state);
+                return self.fail_at(code, workflow, site);
+            }
+            consumed = self.pop_staged();
+            if let Some(payload) = payload {
+                self.push_staged(payload, payload_place);
+            }
+            self.occurrences.push(occurrence);
+            self.frames
+                .last_mut()
+                .unwrap_or_else(|| unreachable!("Enum branch admission validated the frame"))
+                .pc = target;
         }
-        self.occurrences.push(occurrence);
-        self.frames
-            .last_mut()
-            .ok_or(RuntimeCode::InternalInvariant)?
-            .pc = target;
-        Ok(())
+        drop(consumed);
+        drop(place);
+        drop(value);
+        self.finish_deterministic(workflow, site, Arc::from("branch"))
     }
 
     /// Prepares Result payload/origin facts before charging and reclaims ownership after unlock.

@@ -1059,6 +1059,11 @@ portable outcomes, identity, or durable compatibility.
    Invalid Result refusal MUST precede budget exhaustion; one existing charge atomically publishes
    payload, occurrence and target. Rejected publication changes no operand, occurrence or PC.
    This preserves the `branch` label and supplies no new release point or destruction-latency bound.
+   Enum branches MUST prepare variant selection, optional payload and exact extended origin
+   before shared-counter admission. Invalid values and unmatched variants MUST refuse before
+   budget exhaustion. One existing charge atomically publishes payload, occurrence and target;
+   consumed and temporary ownership MUST be reclaimed only after unlock. Rejected publication
+   preserves operands, occurrences and PC, without changing labels, release points or quota charges.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

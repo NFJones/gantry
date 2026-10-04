@@ -900,6 +900,12 @@ unlock. Invalid Result refusal precedes budget exhaustion; the existing single c
 payload, occurrence and target. Refusal preserves staged state and the `branch` label is unchanged.
 This relocates reclamation without changing semantic release or bounding destruction latency.
 
+Enum branches prepare variant selection, optional payload and exact extended origin before
+counter admission. Invalid values and unmatched variants retain refusal precedence over exhausted
+budgets. One existing charge publishes payload, occurrence and target, and consumed/temporary
+ownership is reclaimed after unlock. Labels, release points and quota charges remain unchanged;
+this is not a cooperative or bounded-latency destruction guarantee.
+
 Direct String equality, inequality, prefix and suffix matching compare at most 4096 UTF-8 octets per machine call
 before requesting a scheduling-only executor yield. Operands and program position remain
 unchanged until the Boolean result commits with the existing single transition charge.
