@@ -36,6 +36,9 @@ sites in different workflows cannot substitute for one another. An independently
 site cannot substitute merely by keeping the same task identity, path and budget.
 Legacy workflow children without a task-body fact keep their existing checks. This is
 structural correspondence, not authentication of caller-supplied checkpoint evidence.
+Consuming replacement-driver admission revalidates the actual graph after mutable recovery
+access, even with no resource records. Prior decoding cannot authorize a substituted child;
+invalid correspondence refuses before exposing coordinator-backed replacement ownership.
 
 The version-six combined graph wire (`GNTCDP06`) retains enabled empty resource-accounting
 policy as two independently optional ceilings. Legacy v4/v5 graph encodings remain unchanged.

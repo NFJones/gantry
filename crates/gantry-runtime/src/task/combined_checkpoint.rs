@@ -1362,14 +1362,13 @@ impl RecoveredConcurrentDurableExecutionV1 {
     ///
     /// This consumes only process-local scheduler ownership. Task semantics,
     /// sessions, shared budget state, and every machine suspension are moved
-    /// unchanged into the returned coordinator-backed graph.
+    /// unchanged into the returned coordinator-backed graph after revalidating mutable
+    /// recovery access, including record-free graphs. Refusal publishes no driver owner.
     pub fn into_driver_admission(
         self,
     ) -> Result<RecoveredConcurrentDriverAdmissionV1, super::TaskStateError> {
-        if !self.scheduler.resource_records.is_empty() {
-            self.capture_replayed_checkpoint()
-                .map_err(|_| super::TaskStateError::InvalidTaskMachine)?;
-        }
+        self.capture_replayed_checkpoint()
+            .map_err(|_| super::TaskStateError::InvalidTaskMachine)?;
         let Self {
             foreground,
             scheduler,
@@ -2562,6 +2561,25 @@ mod tests {
         let replacement = replacement.checkpoint();
         assert!(
             crate::MachineCheckpointV3::decode(&program, &replacement.canonical_bytes()).is_ok()
+        );
+        let mut recovered = checkpoint
+            .clone()
+            .recover(Arc::clone(&program))
+            .unwrap_or_else(|error| panic!("valid recovery: {error:?}"));
+        let replacement_machine = Machine::recover_from_checkpoint(
+            Arc::clone(&program),
+            replacement.clone(),
+            recovered.foreground().execution_budget(),
+        )
+        .unwrap_or_else(|error| panic!("shared-budget replacement: {error:?}"));
+        *recovered
+            .scheduler_mut()
+            .machine_mut(child.task_id())
+            .unwrap_or_else(|| panic!("recovered child")) = replacement_machine;
+        assert_eq!(
+            recovered.into_driver_admission().err(),
+            Some(TaskStateError::InvalidTaskMachine),
+            "mutable record-free recovery must revalidate before driver admission"
         );
         let mut substituted = checkpoint;
         substituted.machines.insert(child.task_id(), replacement);

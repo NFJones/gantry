@@ -1067,6 +1067,9 @@ portable outcomes, identity, or durable compatibility.
    task identity, path and budget MUST NOT authorize substitution of another spawn
    body. Legacy workflow-based child machines without a task-body fact remain
    subject to their existing correspondence checks; this grants no artifact authentication.
+   Consuming replacement-driver admission MUST revalidate the actual recovered graph
+   after mutable access, including record-free graphs. Prior decode validation alone
+   MUST NOT authorize substituted child machines; refusal MUST expose no driver owner.
 <a id="GNT-3.7"></a>
 
 7. An implementation claiming the durable-runtime profile MUST make Gantry
