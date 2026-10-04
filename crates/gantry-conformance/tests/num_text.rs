@@ -105,7 +105,7 @@ fn canonical_numeric_text_round_trips_exactly() {
             "`{text}` round-trips"
         );
         assert!(
-            !text.starts_with('+') && !(text.len() > 1 && text.starts_with('0')),
+            !(text.starts_with('+') || (text.len() > 1 && text.starts_with('0'))),
             "`{text}` is canonical"
         );
     }

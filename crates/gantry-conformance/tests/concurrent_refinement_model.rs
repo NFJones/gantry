@@ -1476,7 +1476,7 @@ fn apply_lifecycle(
             if state.root_settled {
                 return Err(RejectionReason::RootAlreadySettled);
             }
-            if !state.detached && !(state.joined && state.semantic_settled) {
+            if !(state.detached || (state.joined && state.semantic_settled)) {
                 return Err(RejectionReason::AttachedChildPending);
             }
             state.root_settled = true;

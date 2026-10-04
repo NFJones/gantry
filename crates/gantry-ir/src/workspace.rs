@@ -375,10 +375,10 @@ fn canonical_version(text: &str) -> bool {
             let mut bytes = component.bytes();
             let leading = bytes.next();
             let second = bytes.next();
-            !component.is_empty()
-                && !component.starts_with('+')
-                && !component.ends_with('+')
-                && !(leading == Some(b'0') && second.is_some_and(|byte| byte.is_ascii_digit()))
+            !(component.is_empty()
+                || component.starts_with('+')
+                || component.ends_with('+')
+                || (leading == Some(b'0') && second.is_some_and(|byte| byte.is_ascii_digit())))
                 && component
                     .bytes()
                     .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'+' | b'_'))

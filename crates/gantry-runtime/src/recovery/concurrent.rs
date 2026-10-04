@@ -2966,34 +2966,32 @@ pub fn recover_concurrent_authoritative_prefix(
                         }
                     }
                 }
-            } else {
-                if let Some(start) = &execution_start {
-                    if evidence.execution_id() != start.execution_id()
-                        || evidence.checkpoint().root_task_id() != start.task_id()
-                    {
-                        return Err(DurableEvidenceError::InvalidState);
-                    }
-                    let valid_first_cut = match evidence.cut() {
-                        DurableCommitCutV1::Checkpoint => {
-                            evidence.task_id() == start.task_id()
-                                && evidence.checkpoint().created_task_count() == 1
-                        }
-                        DurableCommitCutV1::TaskCreation => {
-                            evidence.task_id() != start.task_id()
-                                && evidence.checkpoint().created_task_count() == 2
-                        }
-                        _ => false,
-                    };
-                    if !valid_first_cut {
-                        return Err(DurableEvidenceError::InvalidState);
-                    }
-                    validate_budget_successor(
-                        &start.state().budget,
-                        &evidence.checkpoint().execution_budget(),
-                    )?;
-                } else if evidence.cut() != DurableCommitCutV1::Checkpoint {
+            } else if let Some(start) = &execution_start {
+                if evidence.execution_id() != start.execution_id()
+                    || evidence.checkpoint().root_task_id() != start.task_id()
+                {
                     return Err(DurableEvidenceError::InvalidState);
                 }
+                let valid_first_cut = match evidence.cut() {
+                    DurableCommitCutV1::Checkpoint => {
+                        evidence.task_id() == start.task_id()
+                            && evidence.checkpoint().created_task_count() == 1
+                    }
+                    DurableCommitCutV1::TaskCreation => {
+                        evidence.task_id() != start.task_id()
+                            && evidence.checkpoint().created_task_count() == 2
+                    }
+                    _ => false,
+                };
+                if !valid_first_cut {
+                    return Err(DurableEvidenceError::InvalidState);
+                }
+                validate_budget_successor(
+                    &start.state().budget,
+                    &evidence.checkpoint().execution_budget(),
+                )?;
+            } else if evidence.cut() != DurableCommitCutV1::Checkpoint {
+                return Err(DurableEvidenceError::InvalidState);
             }
             if evidence.cut() == DurableCommitCutV1::TaskCreation {
                 task_creation_causes.insert(evidence.task_id(), envelope.evidence_id);

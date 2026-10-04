@@ -77,12 +77,10 @@ fn runtime_string_work_yields_observe_public_cancellation() {
                 } else {
                     " ".repeat(10_000)
                 }
+            } else if expression == "value.parse_float()" {
+                "1.0".to_owned()
             } else {
-                if expression == "value.parse_float()" {
-                    "1.0".to_owned()
-                } else {
-                    " ".to_owned()
-                }
+                " ".to_owned()
             })
             .unwrap_or_else(|error| panic!("input: {error:?}"));
             let selection = selection();

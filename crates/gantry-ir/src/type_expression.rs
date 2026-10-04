@@ -478,10 +478,10 @@ impl<'a> ExpressionParser<'a> {
             return Err(TypeExpressionError::InvalidCanonicalString);
         }
         if matches!(frame.container, ExpressionContainer::Callable)
-            && !frame
+            && frame
                 .members
                 .first()
-                .is_some_and(|member| member.kind == TypeExpressionKind::Callable)
+                .is_none_or(|member| member.kind != TypeExpressionKind::Callable)
         {
             return Err(TypeExpressionError::InvalidCanonicalString);
         }

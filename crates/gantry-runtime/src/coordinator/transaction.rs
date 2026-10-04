@@ -392,10 +392,10 @@ impl DurableGraphTransaction<'_> {
             || event.kind() != gantry_core::portable::EventKind::Cancellation
             || !event.protected_references().is_empty()
             || checkpoint.cancellation_reason().is_none()
-            || !self
+            || self
                 .original_checkpoint
                 .task_checkpoint(task)
-                .is_some_and(|old| old.cancellation_reason().is_none())
+                .is_none_or(|old| old.cancellation_reason().is_some())
         {
             return Err(DurableCommitError::InvalidState);
         }
