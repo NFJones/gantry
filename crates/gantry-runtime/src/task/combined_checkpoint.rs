@@ -1003,6 +1003,7 @@ impl ConcurrentDurableCheckpointV4 {
 
     /// Resolves retained source bodies against their task creation's containing workflow.
     /// Matching lexical sites alone cannot identify bodies in different closed callables.
+    /// Retained creation captures must match the executable's names, types and mutability.
     /// Legacy workflow children have no body fact and retain their existing validation.
     fn validate_task_body_workflows(
         &self,
@@ -1013,11 +1014,28 @@ impl ConcurrentDurableCheckpointV4 {
                 .machines
                 .get(&task.task_id)
                 .and_then(MachineCheckpointV3::task_body_enclosing_callable)
-                && program
+            {
+                if program
                     .callable(callable)
                     .is_none_or(|workflow| workflow.path != task.workflow)
-            {
-                return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+                {
+                    return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+                }
+                let identity =
+                    gantry_ir::TaskBodyIdentity::new(callable.clone(), task.spawn_site.clone());
+                let body = program
+                    .task_body(&identity)
+                    .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
+                if body.captures().len() != task.captures.len()
+                    || body.captures().iter().any(|expected| {
+                        task.captures.get(expected.name()).is_none_or(|capture| {
+                            capture.ty() != expected.ty()
+                                || capture.is_mutable() != expected.is_mutable()
+                        })
+                    })
+                {
+                    return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+                }
             }
         }
         Ok(())
@@ -2389,6 +2407,28 @@ mod tests {
             &fixture.sessions,
         )
         .unwrap_or_else(|error| panic!("checkpoint capture failed: {error:?}"));
+
+        let mut extra_capture = checkpoint.clone();
+        let capture = crate::TaskCaptureV1::new(
+            Arc::from("unexpected"),
+            TypeDescriptor::UNIT,
+            false,
+            &LogicalValue::unit(),
+            DEFAULT_VALUE_LIMITS,
+        )
+        .unwrap_or_else(|error| panic!("valid extra capture: {error:?}"));
+        checkpoint_task_mut(&mut extra_capture, created.task_id)
+            .captures
+            .insert(Arc::from("unexpected"), capture);
+        assert_eq!(
+            ConcurrentDurableCheckpointV4::decode_compatible(
+                &fixture.program,
+                &extra_capture.canonical_bytes(),
+            )
+            .err(),
+            Some(ConcurrentDurableCheckpointError::InvalidCheckpoint),
+            "valid values cannot invent an executable capture contract",
+        );
 
         let mut duplicate_runnable = checkpoint.clone();
         duplicate_runnable.runnable.push_back(created.task_id);

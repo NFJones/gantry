@@ -51,6 +51,10 @@ Capture also requires identical executable content in foreground and child machi
 checkpoint construction. Shared immutable programs take a fast path; independent identical
 copies remain eligible. Matching body names or budgets cannot authorize changed instructions.
 This check establishes consistency, not authentication or bounded comparison latency.
+For retained source-body children, creation captures also match the executable's exact names,
+types and mutability. Extra, missing or altered declarations refuse even when their values are
+individually valid. Mutable child-local values are not compared with original capture snapshots;
+this is contract correspondence, not a prohibition on admitted child mutation.
 
 The version-six combined graph wire (`GNTCDP06`) retains enabled empty resource-accounting
 policy as two independently optional ceilings. Legacy v4/v5 graph encodings remain unchanged.

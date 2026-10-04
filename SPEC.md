@@ -1083,6 +1083,10 @@ portable outcomes, identity, or durable compatibility.
    and child machines before constructing a checkpoint. Matching body identities and budgets
    MUST NOT authorize different instructions; independent copies of identical programs remain
    eligible. This consistency check does not authenticate the program's provenance.
+   For retained source-body child machines, immutable creation captures MUST exactly match
+   the executable body's capture names, types and mutability. Valid logical values MUST NOT
+   authorize extra or missing capture declarations. Child-local mutable values need not equal
+   original capture snapshots; this check compares contracts, not historical value contents.
 <a id="GNT-3.7"></a>
 
 7. An implementation claiming the durable-runtime profile MUST make Gantry
