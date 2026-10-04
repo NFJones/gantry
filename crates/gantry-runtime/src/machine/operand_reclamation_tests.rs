@@ -1,4 +1,4 @@
-//! Test-only observation of place-origin destruction during real primitive publication.
+//! Test-only observation of place-origin destruction during real value publication.
 //!
 //! Logical values are dropped before their paired origins. A thread-local observer avoids
 //! global test races and adds no fields, callbacks or destruction behavior to production builds.
@@ -49,24 +49,47 @@ impl Drop for LoadedPlace {
 /// Old locked truncation drops this origin while try_lock fails; deferred disposal must not.
 #[test]
 fn consumed_operand_origins_are_reclaimed_after_budget_unlock() {
+    assert_consumed_origin_reclamation(false);
+}
+
+/// Aggregate publication must release consumed origins after unlocking, just like primitives.
+#[test]
+fn aggregate_operand_origins_are_reclaimed_after_budget_unlock() {
+    assert_consumed_origin_reclamation(true);
+}
+
+/// Exercises the actual publication dispatch with an independently observed unique origin.
+fn assert_consumed_origin_reclamation(aggregate: bool) {
     let root = CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("root: {error:?}"));
     let site = StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("site: {error:?}"));
+    let result_type = if aggregate {
+        TypeDescriptor::list(TypeDescriptor::list(TypeDescriptor::UNIT))
+    } else {
+        TypeDescriptor::INT
+    };
     let program = Arc::new(
         MachineProgram::new(vec![gantry_ir::Workflow {
             path: root.clone(),
             parameters: Vec::new(),
-            result: TypeDescriptor::INT,
+            result: result_type.clone(),
             effects: gantry_ir::EffectSet::default(),
             instructions: vec![
                 Instruction {
                     site: site.clone(),
-                    ty: TypeDescriptor::INT,
-                    kind: InstructionKind::Primitive(Primitive::ListLength),
+                    ty: result_type.clone(),
+                    kind: if aggregate {
+                        InstructionKind::Aggregate {
+                            kind: AggregateKind::List,
+                            operands: 1,
+                        }
+                    } else {
+                        InstructionKind::Primitive(Primitive::ListLength)
+                    },
                 },
                 Instruction {
                     site: StructuralPosition::new(vec![1])
                         .unwrap_or_else(|error| panic!("site: {error:?}")),
-                    ty: TypeDescriptor::INT,
+                    ty: result_type,
                     kind: InstructionKind::Return,
                 },
             ],
@@ -117,12 +140,21 @@ fn consumed_operand_origins_are_reclaimed_after_budget_unlock() {
         "the consumed origin must actually be reclaimed"
     );
     assert_eq!(machine.frames[0].pc, 1);
-    assert_eq!(
-        machine.values,
-        vec![LogicalValue::integer(
-            GantryInt::new(10_000).unwrap_or_else(|| panic!("canonical length"))
-        )]
-    );
+    if aggregate {
+        assert_eq!(machine.values.len(), 1);
+        assert_eq!(machine.values[0].view(), LogicalValueView::List(1));
+        assert_eq!(
+            machine.values[0].member(0).map(|value| value.kind()),
+            Some(gantry_core::value::ValueKind::List)
+        );
+    } else {
+        assert_eq!(
+            machine.values,
+            vec![LogicalValue::integer(
+                GantryInt::new(10_000).unwrap_or_else(|| panic!("canonical length"))
+            )]
+        );
+    }
     assert_eq!(machine.values_places, vec![None]);
     assert_eq!(machine.execution_budget.snapshot().revision, 1);
 }

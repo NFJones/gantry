@@ -787,6 +787,11 @@ does not release their values inside the critical section. Semantic release and 
 are unchanged. This removes shared-counter contention during pure
 construction, not synchronous construction latency or allocation cost, and adds no source stop point.
 
+Ordinary aggregate construction uses the same private-candidate and single-charge publication
+boundary. Live-resource classification still refuses before operand copying; result limits retain
+precedence over counter exhaustion. Consumed values and origins are reclaimed after unlocking.
+This does not make aggregate construction cooperative or grant live-handle transport.
+
 Direct String equality, inequality, prefix and suffix matching compare at most 4096 UTF-8 octets per machine call
 before requesting a scheduling-only executor yield. Operands and program position remain
 unchanged until the Boolean result commits with the existing single transition charge.

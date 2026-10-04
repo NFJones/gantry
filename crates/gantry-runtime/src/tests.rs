@@ -1925,6 +1925,74 @@ fn long_string_equality_yields_before_atomic_publication_and_cancellation() {
     }
 }
 
+/// Aggregate limit refusals retain precedence, and valid candidates publish exactly once.
+#[test]
+fn aggregate_candidates_preserve_limit_and_publication_boundaries() {
+    for (maximum_items, transitions, expected) in [
+        (
+            1,
+            2,
+            Some(RuntimeCode::Deterministic(
+                DeterministicEvaluationCode::ListSizeLimit,
+            )),
+        ),
+        (2, 2, Some(RuntimeCode::DeterministicTransitionBudget)),
+        (2, 3, None),
+    ] {
+        let ty = TypeDescriptor::list(TypeDescriptor::INT);
+        let value =
+            LogicalValue::integer(GantryInt::new(7).unwrap_or_else(|| panic!("canonical integer")));
+        let root = workflow(
+            "crate::main",
+            vec![],
+            ty.clone(),
+            EffectSet::default(),
+            vec![
+                instruction(0, TypeDescriptor::INT, InstructionKind::Push(value.clone())),
+                instruction(1, TypeDescriptor::INT, InstructionKind::Push(value.clone())),
+                instruction(
+                    2,
+                    ty.clone(),
+                    InstructionKind::Aggregate {
+                        kind: gantry_ir::AggregateKind::List,
+                        operands: 2,
+                    },
+                ),
+                instruction(3, ty, InstructionKind::Return),
+            ],
+        );
+        let value_limits = ValueLimits::new(8, 16, 10, maximum_items)
+            .unwrap_or_else(|| panic!("positive value limits"));
+        let limits = MachineLimits::new(transitions, 1, 1, 1, 8, value_limits)
+            .unwrap_or_else(|| panic!("positive machine limits"));
+        let mut machine = new_machine(program(vec![root]), "crate::main", vec![], limits);
+        for _ in 0..2 {
+            assert!(matches!(machine.step(), MachineStep::Transition(_)));
+        }
+        let before = machine.execution_budget().snapshot();
+        let outcome = drive(&mut machine);
+        if let Some(code) = expected {
+            assert!(
+                matches!(&outcome, MachineOutcome::Failed(failure) if failure.code == code),
+                "items={maximum_items}, transitions={transitions}: {outcome:?}"
+            );
+            assert_eq!(machine.execution_budget().snapshot(), before);
+        } else {
+            assert_eq!(
+                outcome,
+                MachineOutcome::Succeeded(
+                    LogicalValue::list(vec![value.clone(), value], value_limits)
+                        .unwrap_or_else(|error| panic!("expected: {error:?}"))
+                )
+            );
+            assert_eq!(
+                machine.execution_budget().snapshot().revision,
+                before.revision + 1
+            );
+        }
+    }
+}
+
 /// Evaluation and result limits still refuse before an exhausted publication budget.
 #[test]
 fn primitive_evaluation_refusals_precede_publication_budget_exhaustion() {

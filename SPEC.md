@@ -999,6 +999,11 @@ portable outcomes, identity, or durable compatibility.
    so physical value reclamation cannot extend the shared-counter critical section. This lock
    separation supplies no additional source stop point or latency bound and changes no semantic
    release point or quota charge.
+   Ordinary aggregate candidates MUST likewise be constructed and validated outside the shared
+   execution-budget mutex, preserving result-limit refusal before transition-budget refusal.
+   Authenticated live-resource aggregation MUST still refuse before operand copying. Only a
+   complete candidate MAY publish with its existing single charge; consumed ownership MUST
+   remain retained until mutex release. Aggregate construction remains synchronous.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

@@ -3261,6 +3261,18 @@ impl Machine {
         if let InstructionKind::Primitive(primitive) = &instruction.kind {
             return self.execute_primitive(*primitive, workflow, instruction.site);
         }
+        if let InstructionKind::Aggregate { kind, operands } = instruction.kind.clone() {
+            if self.program.aggregate_resource_class(&instruction.ty)
+                == Some(gantry_ir::ValueResourceClass::LiveResource)
+            {
+                return self.fail_at(
+                    RuntimeCode::UnsupportedLiveResourceTransport,
+                    workflow,
+                    instruction.site,
+                );
+            }
+            return self.execute_aggregate(kind, operands, workflow, instruction.site);
+        }
         let execution_budget = self.execution_budget.clone();
         let mut budget_state = execution_budget.lock();
         let site = instruction.site.clone();
@@ -3277,14 +3289,8 @@ impl Machine {
                 target_type,
             } => self.assign_value(&name, &path, &target_type, &mut budget_state),
             InstructionKind::Pop => self.pop_value(&mut budget_state),
-            InstructionKind::Aggregate { kind, operands } => {
-                if self.program.aggregate_resource_class(&instruction.ty)
-                    == Some(gantry_ir::ValueResourceClass::LiveResource)
-                {
-                    Err(RuntimeCode::UnsupportedLiveResourceTransport)
-                } else {
-                    self.construct_aggregate(kind, operands, &mut budget_state)
-                }
+            InstructionKind::Aggregate { .. } => {
+                unreachable!("aggregates use private result construction")
             }
             InstructionKind::Project(projection) => {
                 self.project_value(projection, &mut budget_state)
@@ -3611,12 +3617,13 @@ impl Machine {
         Ok(())
     }
 
-    fn construct_aggregate(
-        &mut self,
+    /// Constructs one private aggregate candidate, retaining all operand and limit checks.
+    /// The caller must first enforce the authenticated live-resource transport gate.
+    fn aggregate_result(
+        &self,
         kind: AggregateKind,
         operands: usize,
-        budget_state: &mut ExecutionBudgetState,
-    ) -> Result<(), RuntimeCode> {
+    ) -> Result<LogicalValue, RuntimeCode> {
         let values = self.peek_operands(operands)?.to_vec();
         let candidate = match kind {
             AggregateKind::List => LogicalValue::list(values, self.limits.value_limits),
@@ -3646,11 +3653,26 @@ impl Machine {
             AggregateKind::Err => LogicalValue::err(values[0].clone(), self.limits.value_limits),
         }
         .map_err(map_value_error)?;
-        self.charge_transition(budget_state)?;
-        self.truncate_operands(operands);
-        self.push_staged(candidate, None);
-        self.advance_pc();
-        Ok(())
+        Ok(candidate)
+    }
+
+    /// Publishes an ordinary aggregate only after private construction succeeds.
+    /// Result-limit refusals precede counter admission; no partial aggregate is exposed.
+    fn execute_aggregate(
+        &mut self,
+        kind: AggregateKind,
+        operands: usize,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+    ) -> MachineStep {
+        let candidate = match self.aggregate_result(kind, operands) {
+            Ok(candidate) => candidate,
+            Err(code) => return self.fail_at(code, workflow, site),
+        };
+        if let Err(code) = self.publish_constructed_result(candidate, operands) {
+            return self.fail_at(code, workflow, site);
+        }
+        self.finish_deterministic(workflow, site, Arc::from("aggregate"))
     }
 
     fn project_value(
@@ -3842,25 +3864,9 @@ impl Machine {
             Ok(result) => result,
             Err(code) => return self.fail_at(code, workflow, site),
         };
-        // Primitive arity is closed at one to three operands. Allocate before locking,
-        // then move ownership without destruction while publishing the charged result.
-        let mut consumed = Vec::with_capacity(primitive.arity());
-        let execution_budget = self.execution_budget.clone();
-        {
-            let mut budget_state = execution_budget.lock();
-            if let Err(code) = self.charge_transition(&mut budget_state) {
-                drop(budget_state);
-                return self.fail_at(code, workflow, site);
-            }
-            for _ in 0..primitive.arity() {
-                consumed.push(self.pop_staged().unwrap_or_else(|| {
-                    unreachable!("private result construction validated primitive operands")
-                }));
-            }
-            self.push_staged(result, None);
-            self.advance_pc();
+        if let Err(code) = self.publish_constructed_result(result, primitive.arity()) {
+            return self.fail_at(code, workflow, site);
         }
-        drop(consumed);
         // Recomputable scratch destruction is separate from budget publication too.
         self.string_equality_work = None;
         self.string_search_work = None;
@@ -3873,6 +3879,31 @@ impl Machine {
         self.string_split_work = None;
         self.string_float_work = None;
         self.finish_deterministic(workflow, site, Arc::from("primitive"))
+    }
+
+    /// Charges once and publishes a private candidate over already-validated operands.
+    /// Ownership storage is allocated before locking; consumed values/origins are disposed
+    /// after unlocking. Failed charging leaves operands, PC and counters unchanged.
+    fn publish_constructed_result(
+        &mut self,
+        result: LogicalValue,
+        operands: usize,
+    ) -> Result<(), RuntimeCode> {
+        let mut consumed = Vec::with_capacity(operands);
+        let execution_budget = self.execution_budget.clone();
+        {
+            let mut budget_state = execution_budget.lock();
+            self.charge_transition(&mut budget_state)?;
+            for _ in 0..operands {
+                consumed.push(self.pop_staged().unwrap_or_else(|| {
+                    unreachable!("private result construction validated operands")
+                }));
+            }
+            self.push_staged(result, None);
+            self.advance_pc();
+        }
+        drop(consumed);
+        Ok(())
     }
 
     /// Compares a bounded octet chunk without changing logical state or holding the budget lock.
@@ -6581,6 +6612,15 @@ mod bounded_string_tests {
         .unwrap_or_else(|error| panic!("expected String: {error:?}"));
         assert_eq!(machine.primitive_result(Primitive::Add), Ok(expected));
         assert_eq!(machine.values, vec![left, right]);
+        assert_eq!(machine.frames[0].pc, pc);
+        assert_eq!(*held, before);
+        let expected = LogicalValue::list(machine.values.clone(), DEFAULT_STRING_TEST_LIMITS)
+            .unwrap_or_else(|error| panic!("aggregate candidate: {error:?}"));
+        assert_eq!(
+            machine.aggregate_result(AggregateKind::List, 2),
+            Ok(expected)
+        );
+        assert_eq!(machine.values.len(), 2);
         assert_eq!(machine.frames[0].pc, pc);
         assert_eq!(*held, before);
         drop(held);
