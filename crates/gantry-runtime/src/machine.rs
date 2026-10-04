@@ -3285,6 +3285,10 @@ impl Machine {
         if matches!(instruction.kind, InstructionKind::Return) {
             return self.return_value(workflow, instruction.site);
         }
+        #[cfg(feature = "concurrent")]
+        if matches!(instruction.kind, InstructionKind::TaskComplete) {
+            return self.complete_task_body(workflow, instruction.site);
+        }
         let execution_budget = self.execution_budget.clone();
         let mut budget_state = execution_budget.lock();
         let site = instruction.site.clone();
@@ -3379,7 +3383,7 @@ impl Machine {
             }
             #[cfg(feature = "concurrent")]
             InstructionKind::TaskComplete => {
-                return self.complete_task_body(workflow, site, &mut budget_state);
+                unreachable!("task completion owns its publication lock")
             }
             #[cfg(not(feature = "concurrent"))]
             InstructionKind::TaskComplete => {
@@ -4934,12 +4938,13 @@ impl Machine {
         Some(handles)
     }
 
+    /// Validates a spawned result before locking, retaining consumed ownership until unlock.
+    /// The existing completion charge precedes outcome settlement; refusal consumes no operand.
     #[cfg(feature = "concurrent")]
     fn complete_task_body(
         &mut self,
         workflow: CanonicalPath,
         site: StructuralPosition,
-        budget_state: &mut ExecutionBudgetState,
     ) -> MachineStep {
         let Some(body_identity) = self.task_body.as_ref() else {
             return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
@@ -4953,10 +4958,16 @@ impl Machine {
         if self.frames.len() != 1 || !value_matches_type(&value, body.result_type()) {
             return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
         }
-        if let Err(code) = self.charge_transition(budget_state) {
-            return self.fail_at(code, workflow, site);
-        }
-        self.pop_staged();
+        let execution_budget = self.execution_budget.clone();
+        let consumed = {
+            let mut budget_state = execution_budget.lock();
+            if let Err(code) = self.charge_transition(&mut budget_state) {
+                drop(budget_state);
+                return self.fail_at(code, workflow, site);
+            }
+            self.pop_staged()
+        };
+        drop(consumed);
         self.finish_outcome(MachineOutcome::Succeeded(value))
     }
 

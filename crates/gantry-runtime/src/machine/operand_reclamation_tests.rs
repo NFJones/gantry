@@ -657,3 +657,175 @@ fn projection_source_and_temporary_origins_are_disposed_after_budget_unlock() {
     drop(machine);
     assert!(weak.upgrade().is_none());
 }
+
+/// Spawned-body completion must release consumed origins only after counter unlocking.
+#[cfg(feature = "concurrent")]
+#[test]
+fn completed_task_operand_origins_are_reclaimed_after_budget_unlock() {
+    assert_task_completion_reclamation(8, false, None);
+    assert_task_completion_reclamation(1, false, Some(RuntimeCode::DeterministicTransitionBudget));
+    assert_task_completion_reclamation(1, true, Some(RuntimeCode::InternalInvariant));
+}
+
+/// Drives actual spawned completion with success and conflicting refusal controls.
+#[cfg(feature = "concurrent")]
+fn assert_task_completion_reclamation(
+    transitions: u64,
+    invalid_result: bool,
+    expected: Option<RuntimeCode>,
+) {
+    let root = CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("root: {error:?}"));
+    let caller = CanonicalCallableIdentity::free(&root, &[]);
+    let site = |index| {
+        StructuralPosition::new(vec![index]).unwrap_or_else(|error| panic!("site: {error:?}"))
+    };
+    let body_id = gantry_ir::TaskBodyIdentity::new(caller.clone(), site(0));
+    let body = gantry_ir::ExecutableTaskBody::new(
+        body_id.clone(),
+        TypeDescriptor::UNIT,
+        Vec::new(),
+        gantry_ir::ExecutableTaskContext::v1(),
+        vec![
+            Instruction {
+                site: site(0),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Push(LogicalValue::unit()),
+            },
+            Instruction {
+                site: site(1),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::TaskComplete,
+            },
+        ],
+    )
+    .unwrap_or_else(|error| panic!("body: {error:?}"));
+    let program = Arc::new(
+        MachineProgram::with_task_bodies(
+            vec![(
+                caller,
+                gantry_ir::Workflow {
+                    path: root.clone(),
+                    parameters: Vec::new(),
+                    result: TypeDescriptor::UNIT,
+                    effects: gantry_ir::EffectSet::default(),
+                    instructions: vec![
+                        Instruction {
+                            site: site(0),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::Spawn {
+                                handle: gantry_ir::ExecutableTaskHandle::new(
+                                    Arc::from("child"),
+                                    TypeDescriptor::UNIT,
+                                )
+                                .unwrap_or_else(|error| panic!("handle: {error:?}")),
+                                body: body_id.clone(),
+                            },
+                        },
+                        Instruction {
+                            site: site(1),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::Push(LogicalValue::unit()),
+                        },
+                        Instruction {
+                            site: site(2),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::Return,
+                        },
+                    ],
+                },
+            )],
+            vec![body],
+        )
+        .unwrap_or_else(|error| panic!("program: {error:?}")),
+    );
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x99; 32])
+        .unwrap_or_else(|error| panic!("execution: {error:?}"));
+    let task_path: Arc<[Arc<str>]> = Arc::from([Arc::from("spawn:crate::main:0:0")]);
+    let task = expected_task_identity(execution, &task_path)
+        .unwrap_or_else(|error| panic!("task: {error:?}"));
+    let limits = MachineLimits::new(
+        transitions,
+        1,
+        1,
+        1,
+        8,
+        gantry_core::value::DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|| panic!("limits"));
+    let budget = ExecutionBudget::new(execution, limits);
+    let mut machine = Machine::new_concurrent_task_body_with_context(
+        program,
+        &body_id,
+        &[],
+        execution,
+        task,
+        task_path,
+        limits,
+        budget,
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("child machine: {error:?}"));
+    assert!(matches!(machine.step(), MachineStep::Transition(_)));
+    let origin: Arc<str> = Arc::from("completed-task-origin");
+    let weak = Arc::downgrade(&origin);
+    machine.values_places[0] = Some(LoadedPlace {
+        root: origin,
+        path: Vec::new(),
+    });
+    let before = machine.execution_budget.snapshot();
+    if invalid_result {
+        machine.values[0] = LogicalValue::boolean(true);
+    }
+    let frames = expected.map(|_| machine.frames.clone());
+    let values = expected.map(|_| machine.values.clone());
+    let places = expected.map(|_| machine.values_places.clone());
+    PROBE.with(|cell| {
+        *cell.borrow_mut() = Some(Probe {
+            root: weak.clone(),
+            budget: machine.execution_budget.clone(),
+            observations: Vec::new(),
+        })
+    });
+    let step = machine.step();
+    let observations = PROBE.with(|cell| {
+        cell.borrow_mut()
+            .take()
+            .unwrap_or_else(|| panic!("probe exists"))
+            .observations
+    });
+    if let Some(code) = expected {
+        assert!(
+            matches!(step, MachineStep::Transition(MachineLabel::Failure(failure))
+            if failure.code == code && failure.workflow == root && failure.site == site(1))
+        );
+        assert!(
+            observations.is_empty(),
+            "refused completion must retain operand origins"
+        );
+        assert_eq!(Some(machine.frames.clone()), frames);
+        assert_eq!(Some(machine.values.clone()), values);
+        assert_eq!(Some(machine.values_places.clone()), places);
+        assert_eq!(machine.execution_budget.snapshot(), before);
+        assert!(weak.upgrade().is_some());
+        return;
+    }
+    assert_eq!(observations, vec![(true, true, Some(before.revision + 1))]);
+    assert_eq!(
+        step,
+        MachineStep::Transition(MachineLabel::TaskSettled(MachineOutcome::Succeeded(
+            LogicalValue::unit()
+        )))
+    );
+    assert!(weak.upgrade().is_none());
+    assert!(machine.values.is_empty());
+    assert!(machine.values_places.is_empty());
+    assert_eq!(
+        machine.execution_budget.snapshot().revision,
+        before.revision + 1
+    );
+    assert_eq!(
+        machine.step(),
+        MachineStep::Complete(MachineOutcome::Succeeded(LogicalValue::unit()))
+    );
+}

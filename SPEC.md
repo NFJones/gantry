@@ -1021,6 +1021,10 @@ portable outcomes, identity, or durable compatibility.
    consumption obligations, retaining retired callee storage until after unlocking. Invalid
    results MUST refuse before budget admission; failed charging MUST restore no caller or
    remove a frame. Root return remains uncharged. Reclamation remains synchronous.
+   Spawned-body completion MUST validate its result outside shared counters and retain consumed
+   operand ownership through its existing charge until mutex release. Invalid-result refusal
+   MUST precede budget admission; failed charging MUST consume no operand. Terminal settlement
+   follows unlocking, preserving its existing outcome and consumption-obligation evidence.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

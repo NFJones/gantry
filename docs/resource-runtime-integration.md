@@ -813,6 +813,11 @@ facts and consumption obligations. Invalid-result refusal precedes budget admiss
 charging changes no frame or caller context. Root return remains uncharged. This relocates
 reclamation, not semantic release or synchronous destruction latency.
 
+Spawned-body completion validates before counter locking and retains consumed operand ownership
+until its existing completion charge unlocks. Invalid-result refusal precedes budget admission;
+failed charging consumes no operand. Outcome and obligation settlement run after unlocking,
+without changing terminal semantics or claiming bounded destruction latency.
+
 Direct String equality, inequality, prefix and suffix matching compare at most 4096 UTF-8 octets per machine call
 before requesting a scheduling-only executor yield. Operands and program position remain
 unchanged until the Boolean result commits with the existing single transition charge.
