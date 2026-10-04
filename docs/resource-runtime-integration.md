@@ -870,6 +870,13 @@ from retained operands. Replay grants a finite separate yield allowance from adm
 This covers direct String operands only, not nested aggregate equality, other primitives or complete
 semantic-work metering. The comparison does not hold the execution-budget lock across its chunks.
 
+Flat String-list equality and inequality additionally share 4096 work units across member
+admission and byte comparison per machine call. Even empty members spend admission work.
+Private offsets preserve exact ordered results without early publication or extra semantic
+charges, and recovery restarts from the retained operands. Replay budgets include the admitted
+maximum String length per List member. Non-String members retain general equality semantics;
+this does not bound nested aggregate equality, allocation, cloning or destruction latency.
+
 Substring containment builds its prefix table and searches incrementally, performing at most
 4096 comparison/fallback work units per call. Fallback counts even when input does not advance,
 so repeated-prefix patterns do not cause quadratic rescanning or monopolize comparison work.

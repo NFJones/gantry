@@ -942,6 +942,13 @@ portable outcomes, identity, or durable compatibility.
    per-task counter resets after any such await or explicit scheduler yield.
    The yield quantum MUST be nonzero and finite, and Gantry MUST observe
    cancellation immediately before and after the yield.
+   Flat String-list equality and inequality MUST share a quantum of at most 4096
+   member-admission and UTF-8-octet comparison units per machine call. Empty members
+   consume admission work. Operands and program position MUST remain unchanged until
+   the complete Boolean publishes with the existing single transition charge. Scratch
+   is recomputable and MUST NOT become a logical checkpoint fact. Other member kinds
+   retain general equality semantics; allocation, cloning and destruction latency,
+   nested aggregate equality and complete semantic-work metering remain outside this guarantee.
    Direct String equality, inequality, prefix and suffix matching MUST compare at most 4096 UTF-8 octets before
    returning a scheduling-only yield when more comparison work remains. Such work MUST
    also apply to substring containment: prefix-table construction and matching MUST perform

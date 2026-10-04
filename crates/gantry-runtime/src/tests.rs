@@ -1925,6 +1925,78 @@ fn long_string_equality_yields_before_atomic_publication_and_cancellation() {
     }
 }
 
+/// Large String lists must yield without publishing or spending a semantic transition.
+#[test]
+fn string_list_equality_yields_before_publication_and_restarts_after_recovery() {
+    for primitive in [Primitive::Equal, Primitive::NotEqual] {
+        let item = LogicalValue::string("é".repeat(5_000), DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|error| panic!("item: {error:?}"));
+        let value = LogicalValue::list(vec![item.clone(), item], DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|error| panic!("list: {error:?}"));
+        let ty = TypeDescriptor::list(TypeDescriptor::STRING);
+        let root = workflow(
+            "crate::main",
+            vec![],
+            TypeDescriptor::BOOL,
+            EffectSet::default(),
+            vec![
+                instruction(0, ty.clone(), InstructionKind::Push(value.clone())),
+                instruction(1, ty, InstructionKind::Push(value)),
+                instruction(
+                    2,
+                    TypeDescriptor::BOOL,
+                    InstructionKind::Primitive(primitive),
+                ),
+                instruction(3, TypeDescriptor::BOOL, InstructionKind::Return),
+            ],
+        );
+        let mut machine = new_machine(
+            program(vec![root]),
+            "crate::main",
+            vec![],
+            limits(8, 1, 1, 1, 8),
+        );
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+        let before = machine.execution_budget().snapshot();
+        assert_eq!(machine.step(), MachineStep::YieldRequired);
+        assert_eq!(machine.execution_budget().snapshot(), before);
+        let mut completing = machine.clone();
+        #[cfg(feature = "durable")]
+        {
+            let bytes = machine.checkpoint().canonical_bytes();
+            let decoded = crate::MachineCheckpointV3::decode(&machine.program_arc(), &bytes)
+                .unwrap_or_else(|error| panic!("checkpoint: {error:?}"));
+            let budget = ExecutionBudget::recover_from_checkpoint(before)
+                .unwrap_or_else(|error| panic!("budget: {error:?}"));
+            let mut recovered =
+                Machine::recover_from_checkpoint(machine.program_arc(), decoded, budget)
+                    .unwrap_or_else(|error| panic!("recovery: {error:?}"));
+            assert_eq!(recovered.checkpoint().canonical_bytes(), bytes);
+            assert!(recovered.resume_after_yield());
+            assert_eq!(
+                drive(&mut recovered),
+                MachineOutcome::Succeeded(LogicalValue::boolean(primitive == Primitive::Equal))
+            );
+            assert_eq!(
+                recovered.execution_budget().snapshot().revision,
+                before.revision + 1
+            );
+        }
+        assert!(completing.resume_after_yield());
+        assert_eq!(
+            drive(&mut completing),
+            MachineOutcome::Succeeded(LogicalValue::boolean(primitive == Primitive::Equal))
+        );
+        assert_eq!(
+            completing.execution_budget().snapshot().revision,
+            before.revision + 1
+        );
+        assert!(machine.cancel("list comparison cancelled").is_some());
+        assert!(matches!(drive(&mut machine), MachineOutcome::Cancelled(_)));
+    }
+}
+
 /// Aggregate limit refusals retain precedence, and valid candidates publish exactly once.
 #[test]
 fn aggregate_candidates_preserve_limit_and_publication_boundaries() {

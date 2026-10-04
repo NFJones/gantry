@@ -4507,12 +4507,22 @@ mod tests {
     /// Scheduling-only comparison yields do not consume the semantic replay-step allowance.
     #[test]
     fn long_string_comparison_replay_reaches_operation_with_semantic_step_bound() {
-        for primitive in [
-            gantry_ir::Primitive::Equal,
-            gantry_ir::Primitive::StringContains,
+        for (primitive, list) in [
+            (gantry_ir::Primitive::Equal, false),
+            (gantry_ir::Primitive::StringContains, false),
+            (gantry_ir::Primitive::Equal, true),
         ] {
             let text = LogicalValue::string("é".repeat(10_000), DEFAULT_VALUE_LIMITS)
                 .unwrap_or_else(|error| panic!("text: {error:?}"));
+            let (text, ty) = if list {
+                (
+                    LogicalValue::list(vec![text.clone(), text], DEFAULT_VALUE_LIMITS)
+                        .unwrap_or_else(|error| panic!("list: {error:?}")),
+                    TypeDescriptor::list(TypeDescriptor::STRING),
+                )
+            } else {
+                (text, TypeDescriptor::STRING)
+            };
             let program = Arc::new(
                 MachineProgram::new(vec![Workflow {
                     path: path("crate::main"),
@@ -4522,12 +4532,12 @@ mod tests {
                     instructions: vec![
                         Instruction {
                             site: position(0),
-                            ty: TypeDescriptor::STRING,
+                            ty: ty.clone(),
                             kind: InstructionKind::Push(text.clone()),
                         },
                         Instruction {
                             site: position(1),
-                            ty: TypeDescriptor::STRING,
+                            ty,
                             kind: InstructionKind::Push(text),
                         },
                         Instruction {

@@ -46,6 +46,7 @@ fn interpreter(
 fn runtime_string_work_yields_observe_public_cancellation() {
     for expression in [
         "value == value",
+        "[value, value] == [value, value]",
         "value.starts_with(value)",
         "value.ends_with(value)",
         "value.contains(\"missing\")",

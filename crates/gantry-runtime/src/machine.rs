@@ -29,6 +29,7 @@ mod operand_reclamation_tests;
 mod string_concat;
 mod string_float;
 mod string_join;
+mod string_list_equality;
 mod string_lowercase;
 mod string_replace;
 mod string_search;
@@ -40,6 +41,7 @@ use crate::task::{DynamicTaskHandleIdentity, JoinResolutionV1, TaskCaptureV1, Ta
 use string_concat::StringConcatWork;
 use string_float::StringFloatWork;
 use string_join::StringJoinWork;
+use string_list_equality::StringListEqualityWork;
 use string_lowercase::StringLowercaseWork;
 use string_replace::StringReplaceWork;
 use string_search::StringSearchWork;
@@ -1840,6 +1842,8 @@ pub struct Machine {
     resource_admission_tracker: Option<Arc<Mutex<ResourceAdmissionTracker>>>,
     /// Recomputable scratch; operands and PC remain unchanged until comparison commits.
     string_equality_work: Option<StringEqualityWork>,
+    /// Private flat String-list comparison progress, never a logical checkpoint fact.
+    string_list_equality_work: Option<StringListEqualityWork>,
     /// Recomputable bounded substring-search progress over unchanged operands.
     string_search_work: Option<StringSearchWork>,
     /// Private scalar-boundary offsets for cooperative whitespace scanning.
@@ -2149,6 +2153,7 @@ impl Machine {
             pending_operation: None,
             resource_admission_tracker: None,
             string_equality_work: None,
+            string_list_equality_work: None,
             string_search_work: None,
             string_trim_work: None,
             string_uppercase_work: None,
@@ -2267,6 +2272,7 @@ impl Machine {
             pending_operation: None,
             resource_admission_tracker: None,
             string_equality_work: None,
+            string_list_equality_work: None,
             string_search_work: None,
             string_trim_work: None,
             string_uppercase_work: None,
@@ -2733,6 +2739,7 @@ impl Machine {
             }),
             resource_admission_tracker: None,
             string_equality_work: None,
+            string_list_equality_work: None,
             string_search_work: None,
             string_trim_work: None,
             string_uppercase_work: None,
@@ -3217,6 +3224,13 @@ impl Machine {
             if matches!(instruction.kind, InstructionKind::CancellationCheck) {
                 self.advance_pc();
                 continue;
+            }
+            if matches!(
+                instruction.kind,
+                InstructionKind::Primitive(Primitive::Equal | Primitive::NotEqual)
+            ) && self.prepare_string_list_comparison()
+            {
+                return MachineStep::YieldRequired;
             }
             if let InstructionKind::Primitive(
                 primitive @ (Primitive::Equal
@@ -3966,6 +3980,17 @@ impl Machine {
                 .and_then(|work| work.result)
         {
             LogicalValue::boolean(found)
+        } else if matches!(primitive, Primitive::Equal | Primitive::NotEqual)
+            && let Some(equal) = self
+                .string_list_equality_work
+                .as_ref()
+                .and_then(|work| work.result)
+        {
+            LogicalValue::boolean(if primitive == Primitive::NotEqual {
+                !equal
+            } else {
+                equal
+            })
         } else if matches!(
             primitive,
             Primitive::Equal
@@ -4005,6 +4030,7 @@ impl Machine {
         }
         // Recomputable scratch destruction is separate from budget publication too.
         self.string_equality_work = None;
+        self.string_list_equality_work = None;
         self.string_search_work = None;
         self.string_trim_work = None;
         self.string_uppercase_work = None;
@@ -4041,6 +4067,29 @@ impl Machine {
         }
         drop(consumed);
         Ok(())
+    }
+
+    /// Compares flat String-list members with a shared admission/octet quantum.
+    /// Other member kinds retain general equality; all progress is private and recomputable.
+    fn prepare_string_list_comparison(&mut self) -> bool {
+        let Ok(operands) = self.peek_operands(2) else {
+            return false;
+        };
+        if !matches!(operands[0].view(), LogicalValueView::List(_))
+            || !matches!(operands[1].view(), LogicalValueView::List(_))
+        {
+            return false;
+        }
+        let left = operands[0].clone();
+        let right = operands[1].clone();
+        let work = self
+            .string_list_equality_work
+            .get_or_insert_with(StringListEqualityWork::default);
+        let pending = work.advance(&left, &right, STRING_EQUALITY_WORK_QUANTUM);
+        if pending {
+            self.status = MachineStatus::YieldRequired;
+        }
+        pending
     }
 
     /// Compares a bounded octet chunk without changing logical state or holding the budget lock.
@@ -4353,7 +4402,8 @@ impl Machine {
     /// Numeric grammar steps are also bounded by the admitted String octet count.
     /// Contextual lowercase uses three scalar passes, also covered by this allowance.
     /// Four UTF-8 octets per scalar and sixteen conservative passes cover search and construction;
-    /// List framing covers empty segments. One extra yield covers the
+    /// List framing covers empty segments; flat String-list equality additionally compares
+    /// up to one admitted maximum String per List member. One extra yield covers the
     /// ordinary transition quantum. Saturation remains finite and never changes charges.
     #[cfg(all(feature = "concurrent", feature = "durable"))]
     pub(crate) fn replay_yield_allowance(&self, steps: u64) -> u64 {
@@ -4368,6 +4418,13 @@ impl Machine {
                     .value_limits
                     .maximum_list_items()
                     .saturating_mul(8),
+            )
+            .saturating_add(
+                self.limits
+                    .value_limits
+                    .maximum_list_items()
+                    .saturating_mul(self.limits.value_limits.maximum_string_scalars())
+                    .saturating_mul(4),
             )
             .div_ceil(STRING_EQUALITY_WORK_QUANTUM as u64);
         chunks
@@ -5354,6 +5411,7 @@ impl Machine {
 
     fn finish_outcome(&mut self, outcome: MachineOutcome) -> MachineStep {
         self.string_equality_work = None;
+        self.string_list_equality_work = None;
         self.string_search_work = None;
         self.string_trim_work = None;
         self.string_uppercase_work = None;
