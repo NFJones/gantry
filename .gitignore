@@ -42,3 +42,7 @@ node_modules/
 
 # Planning docs
 docs/reference/
+
+# Python
+__pycache__
+*.pyc
