@@ -104,24 +104,35 @@ fn generic_refinement_arguments_cover_every_profile_requirement() {
 fn generic_refinement_evidence_rejects_incomplete_profile_arguments() {
     let root = workspace_root();
     let manifest: ProofManifest = read_json(&root.join(MANIFEST_PATH));
+    let review: RequirementReview = read_json(&root.join("protocol/requirements/reviewed-v1.json"));
 
-    let mut missing_negative = manifest.clone();
-    missing_negative.profile_arguments[0]
-        .negative_evidence
-        .clear();
-    assert!(matches!(
-        validate_manifest(&root, &missing_negative),
-        Err(message) if message.contains("positive and negative")
-    ));
+    // Structural refusal coverage must reach its owner independently of the currency gate.
+    // The full manifest test above still requires current reviewed qualification.
+    for argument in &manifest.profile_arguments {
+        assert_eq!(
+            validate_profile_argument(&root, &review, &manifest, argument),
+            Ok(())
+        );
 
-    let mut missing_requirement = manifest;
-    missing_requirement.profile_arguments[0]
-        .preservation_requirements
-        .pop();
-    assert!(matches!(
-        validate_manifest(&root, &missing_requirement),
-        Err(message) if message.contains("does not classify every reviewed requirement")
-    ));
+        let mut missing_negative = argument.clone();
+        missing_negative.negative_evidence.clear();
+        assert!(matches!(
+            validate_profile_argument(&root, &review, &manifest, &missing_negative),
+            Err(message) if message.contains("positive and negative")
+        ));
+
+        let mut missing_requirement = argument.clone();
+        assert!(
+            missing_requirement
+                .preservation_requirements
+                .pop()
+                .is_some()
+        );
+        assert!(matches!(
+            validate_profile_argument(&root, &review, &manifest, &missing_requirement),
+            Err(message) if message.contains("does not classify every reviewed requirement")
+        ));
+    }
 }
 
 fn validate_manifest(root: &Path, manifest: &ProofManifest) -> Result<(), String> {
