@@ -4588,6 +4588,89 @@ mod tests {
         }
     }
 
+    /// Numeric grammar yields must not exhaust the semantic allowance before an operation cut.
+    #[test]
+    fn long_float_token_replay_reaches_operation_with_semantic_step_bound() {
+        let result = TypeDescriptor::option(TypeDescriptor::FLOAT)
+            .unwrap_or_else(|error| panic!("option: {error:?}"));
+        for suffix in ["", "e+", "x"] {
+            let text = LogicalValue::string(
+                format!("1.{}{suffix}", "0".repeat(20_000)),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("token: {error:?}"));
+            let program = Arc::new(
+                MachineProgram::new(vec![Workflow {
+                    path: path("crate::main"),
+                    parameters: Vec::new(),
+                    result: result.clone(),
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        Instruction {
+                            site: position(0),
+                            ty: TypeDescriptor::STRING,
+                            kind: InstructionKind::Push(text),
+                        },
+                        Instruction {
+                            site: position(1),
+                            ty: result.clone(),
+                            kind: InstructionKind::Primitive(
+                                gantry_ir::Primitive::StringParseFloat,
+                            ),
+                        },
+                        Instruction {
+                            site: position(2),
+                            ty: result.clone(),
+                            kind: InstructionKind::Operation,
+                        },
+                        Instruction {
+                            site: position(3),
+                            ty: result.clone(),
+                            kind: InstructionKind::Return,
+                        },
+                    ],
+                }])
+                .unwrap_or_else(|error| panic!("program: {error:?}")),
+            );
+            let execution =
+                ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [93; 32])
+                    .unwrap_or_else(|error| panic!("execution: {error}"));
+            let machine = Machine::new(
+                Arc::clone(&program),
+                &path("crate::main"),
+                Vec::new(),
+                execution,
+                machine_limits(),
+            )
+            .unwrap_or_else(|error| panic!("machine: {error:?}"));
+            let task = machine.task_id();
+            let tasks = ConcurrentTaskStateV1::new(execution, task, 4)
+                .unwrap_or_else(|error| panic!("tasks: {error:?}"));
+            let scheduler = ConcurrentSchedulerV1::new(tasks, machine.execution_budget())
+                .unwrap_or_else(|error| panic!("scheduler: {error:?}"));
+            let session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [94; 32])
+                .unwrap_or_else(|error| panic!("session: {error}"));
+            let sessions = LogicalSessionRegistryV1::new(
+                execution,
+                session,
+                SessionCreationModeV1::GantryRoot,
+                CanonicalTranscriptV1::empty(),
+            )
+            .unwrap_or_else(|error| panic!("sessions: {error:?}"));
+            let checkpoint =
+                ConcurrentDurableCheckpointV4::capture(&machine, &scheduler, &sessions)
+                    .unwrap_or_else(|error| panic!("capture: {error:?}"));
+            let mut recovered = checkpoint
+                .recover(program)
+                .unwrap_or_else(|error| panic!("recovery: {error:?}"));
+            assert!(matches!(
+                super::advance_to_checkpoint_boundary(&mut recovered, task, 2)
+                    .unwrap_or_else(|error| panic!("numeric replay: {suffix:?}: {error:?}")),
+                Some(super::CheckpointMachineBoundary::Operation(_))
+            ));
+        }
+    }
+
     /// Attempted live-resource failure replay retains the exact handle-free error cut.
     #[test]
     fn attempted_live_resource_failure_replays_the_exact_error_cut() {
