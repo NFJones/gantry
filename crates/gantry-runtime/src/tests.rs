@@ -1925,6 +1925,77 @@ fn long_string_equality_yields_before_atomic_publication_and_cancellation() {
     }
 }
 
+/// Evaluation and result limits still refuse before an exhausted publication budget.
+#[test]
+fn primitive_evaluation_refusals_precede_publication_budget_exhaustion() {
+    let text = |value| {
+        LogicalValue::string(value, DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|error| panic!("text: {error:?}"))
+    };
+    let integer = |value| {
+        LogicalValue::integer(
+            GantryInt::new(value).unwrap_or_else(|| panic!("canonical fixture integer")),
+        )
+    };
+    let tight = ValueLimits::new(8, 16, 3, 8).unwrap_or_else(|| panic!("positive limits"));
+    for (primitive, ty, operands, value_limits, expected) in [
+        (
+            Primitive::Divide,
+            TypeDescriptor::INT,
+            [integer(1), integer(0)],
+            DEFAULT_VALUE_LIMITS,
+            RuntimeCode::Deterministic(DeterministicEvaluationCode::IntegerDivisionByZero),
+        ),
+        (
+            Primitive::Add,
+            TypeDescriptor::STRING,
+            [text("éa"), text("😀b")],
+            tight,
+            RuntimeCode::Deterministic(DeterministicEvaluationCode::StringSizeLimit),
+        ),
+        (
+            Primitive::Add,
+            TypeDescriptor::STRING,
+            [text("é"), text("😀")],
+            tight,
+            RuntimeCode::DeterministicTransitionBudget,
+        ),
+        (
+            Primitive::Divide,
+            TypeDescriptor::INT,
+            [integer(4), integer(2)],
+            DEFAULT_VALUE_LIMITS,
+            RuntimeCode::DeterministicTransitionBudget,
+        ),
+    ] {
+        let [left, right] = operands;
+        let root = workflow(
+            "crate::main",
+            vec![],
+            ty.clone(),
+            EffectSet::default(),
+            vec![
+                instruction(0, ty.clone(), InstructionKind::Push(left)),
+                instruction(1, ty.clone(), InstructionKind::Push(right)),
+                instruction(2, ty.clone(), InstructionKind::Primitive(primitive)),
+                instruction(3, ty, InstructionKind::Return),
+            ],
+        );
+        let limits = MachineLimits::new(2, 1, 1, 1, 8, value_limits)
+            .unwrap_or_else(|| panic!("positive machine limits"));
+        let mut machine = new_machine(program(vec![root]), "crate::main", vec![], limits);
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+        let before = machine.execution_budget().snapshot();
+        let outcome = drive(&mut machine);
+        assert!(
+            matches!(&outcome, MachineOutcome::Failed(failure) if failure.code == expected),
+            "{primitive:?}: {outcome:?}"
+        );
+        assert_eq!(machine.execution_budget().snapshot(), before);
+    }
+}
+
 /// Cached numeric conversion preserves transparent Option metrics and result-transition admission.
 #[test]
 fn float_conversion_preserves_publication_refusal_precedence() {
