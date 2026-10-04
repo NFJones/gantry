@@ -952,6 +952,11 @@ portable outcomes, identity, or durable compatibility.
    String trimming boundary scans MUST classify at most 4096 scalars per call before yielding
    when more scan work remains, retaining only private scalar-boundary offsets. This bounds
    boundary scanning, not final String construction, allocation or total primitive latency.
+   Uppercase mapping MUST process at most 4096 input scalars per call before yielding when
+   more mapping work remains. Each complete pinned expansion MUST pass the captured output
+   bound before private accumulation. Recovery MAY recompute this private output from retained
+   operands; final logical-value construction, copying and allocation remain outside this
+   mapping-work bound. No partial output or additional semantic transition MAY be published.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

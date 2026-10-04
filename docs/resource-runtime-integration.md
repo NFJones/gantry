@@ -802,6 +802,13 @@ single transition charge retain their existing boundaries. This bounds whitespac
 only: final substring copying, logical-value construction and allocation remain synchronous
 and do not establish total primitive latency or complete cancellation-safe construction.
 
+Uppercase mapping accumulates private output in chunks of at most 4096 input scalars,
+using pinned full mappings and checking each complete expansion before accumulation.
+Cancellation discards scratch; checkpoint recovery recomputes it from unchanged operands.
+Only the completed logical result publishes with the existing single transition charge.
+Final logical construction/copying and allocation remain synchronous, so this bounds mapping
+work rather than total primitive latency. Contextual lowercase mapping remains a separate path.
+
 Concatenation, replacement and list joining check each next output piece's Unicode-scalar contribution before
 appending it to private construction state. Over-limit pieces are not allocated or appended;
 only the complete logical value is published. Replacement stays nonoverlapping and never rescans

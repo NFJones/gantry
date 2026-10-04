@@ -26,10 +26,12 @@ use crate::resource::ResourceSubjectBinding;
 use crate::session::SessionCreationModeV1;
 mod string_search;
 mod string_trim;
+mod string_uppercase;
 #[cfg(feature = "concurrent")]
 use crate::task::{DynamicTaskHandleIdentity, JoinResolutionV1, TaskCaptureV1, TaskJoinFailureV1};
 use string_search::StringSearchWork;
 use string_trim::StringTrimWork;
+use string_uppercase::StringUppercaseWork;
 
 #[cfg(feature = "durable")]
 pub(crate) mod checkpoint_codec;
@@ -1822,6 +1824,8 @@ pub struct Machine {
     string_search_work: Option<StringSearchWork>,
     /// Private scalar-boundary offsets for cooperative whitespace scanning.
     string_trim_work: Option<StringTrimWork>,
+    /// Private bounded uppercase accumulation, never partial logical publication.
+    string_uppercase_work: Option<StringUppercaseWork>,
     #[cfg(feature = "concurrent")]
     pending_task_control: Option<PendingTaskControl>,
     pending_labels: VecDeque<MachineLabel>,
@@ -2115,6 +2119,7 @@ impl Machine {
             string_equality_work: None,
             string_search_work: None,
             string_trim_work: None,
+            string_uppercase_work: None,
             pending_task_control: None,
             pending_labels: VecDeque::new(),
             cancellation: None,
@@ -2226,6 +2231,7 @@ impl Machine {
             string_equality_work: None,
             string_search_work: None,
             string_trim_work: None,
+            string_uppercase_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: None,
             pending_labels: VecDeque::new(),
@@ -2635,6 +2641,7 @@ impl Machine {
             string_equality_work: None,
             string_search_work: None,
             string_trim_work: None,
+            string_uppercase_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: checkpoint.pending_task_control,
             pending_labels: checkpoint.pending_labels,
@@ -3137,6 +3144,13 @@ impl Machine {
             {
                 return MachineStep::YieldRequired;
             }
+            if matches!(
+                instruction.kind,
+                InstructionKind::Primitive(Primitive::StringUppercase)
+            ) && self.prepare_string_uppercase()
+            {
+                return MachineStep::YieldRequired;
+            }
             return self.execute(instruction, workflow);
         }
     }
@@ -3611,11 +3625,23 @@ impl Machine {
     ) -> Result<(), RuntimeCode> {
         let arity = primitive.arity();
         let operands = self.peek_operands(arity)?;
-        let result = if matches!(
+        let result = if primitive == Primitive::StringUppercase
+            && let Some(work) = self.string_uppercase_work.as_ref()
+        {
+            if work.failed {
+                return Err(RuntimeCode::Deterministic(
+                    DeterministicEvaluationCode::StringSizeLimit,
+                ));
+            }
+            if !work.complete {
+                return Err(RuntimeCode::InternalInvariant);
+            }
+            LogicalValue::string(work.output.as_str(), self.limits.value_limits)
+                .map_err(map_string_value_error)?
+        } else if matches!(
             primitive,
             Primitive::StringTrim | Primitive::StringTrimStart | Primitive::StringTrimEnd
-        ) && let Some(work) =
-            self.string_trim_work.as_ref().filter(|work| work.complete)
+        ) && let Some(work) = self.string_trim_work.as_ref().filter(|work| work.complete)
         {
             let source = string_operand(operands, 0)?;
             LogicalValue::string(&source[work.start..work.end], self.limits.value_limits)
@@ -3650,6 +3676,7 @@ impl Machine {
         self.string_equality_work = None;
         self.string_search_work = None;
         self.string_trim_work = None;
+        self.string_uppercase_work = None;
         self.truncate_operands(arity);
         self.push_staged(result, None);
         self.advance_pc();
@@ -3750,6 +3777,32 @@ impl Machine {
                 )
             })
             .advance(text, STRING_EQUALITY_WORK_QUANTUM);
+        if pending {
+            self.status = MachineStatus::YieldRequired;
+        }
+        pending
+    }
+
+    /// Builds private uppercase output outside the shared execution-budget lock.
+    /// Final value construction and limit/error precedence remain in primitive publication.
+    fn prepare_string_uppercase(&mut self) -> bool {
+        let Ok(operands) = self.peek_operands(1) else {
+            return false;
+        };
+        if operands[0].as_string().is_none() {
+            return false;
+        }
+        let source = operands[0].clone();
+        let pending = self
+            .string_uppercase_work
+            .get_or_insert_with(StringUppercaseWork::default)
+            .advance(
+                source
+                    .as_string()
+                    .unwrap_or_else(|| unreachable!("validated String")),
+                self.limits.value_limits.maximum_string_scalars(),
+                STRING_EQUALITY_WORK_QUANTUM,
+            );
         if pending {
             self.status = MachineStatus::YieldRequired;
         }
@@ -4695,6 +4748,7 @@ impl Machine {
         self.string_equality_work = None;
         self.string_search_work = None;
         self.string_trim_work = None;
+        self.string_uppercase_work = None;
         self.settle_consumption_obligations();
         self.status = match outcome {
             MachineOutcome::Succeeded(_) => MachineStatus::Succeeded,
