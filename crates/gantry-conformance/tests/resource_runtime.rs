@@ -6189,7 +6189,92 @@ fn owned_host_resource_binding_refuses_machine_cancellation_without_mutation() {
     assert_eq!(returned_value.value, 17);
     assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
     assert!(machine.checkpoint().pending_operation().is_some());
+    let invalid = [Charge {
+        owner: QuotaOwner::Owner,
+        family: QuotaFamily::Handles,
+        amount: 1,
+    }];
+    let (error, returned_account, returned_value) = *OwnedHostResource::bind_with_charges(
+        returned_account,
+        returned_value,
+        (ResourceAction::Move, &invalid),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("charged cancellation must precede quota refusal"));
+    assert_eq!(error, HostResourceError::CancellationRequested);
+    assert_eq!(returned_account.durable_record(), before);
+    assert_eq!(returned_account.subject(), &subject);
+    assert_eq!(returned_value.value, 17);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
     drop(returned_value);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+/// Affine acquisition returns refused ownership and charges only the complete admitted vector.
+#[test]
+fn charged_owned_binding_preserves_inputs_and_admits_accounting_atomically() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    let account = admitted_active();
+    let before = account.durable_record();
+    let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let value = TransportValue {
+        drops: Arc::clone(&drops),
+        panic_on_drop: false,
+        value: 17,
+    };
+    let charge = |family, amount| Charge {
+        owner: QuotaOwner::Owner,
+        family,
+        amount,
+    };
+    let invalid = [
+        charge(QuotaFamily::Bytes, 3),
+        charge(QuotaFamily::Handles, 1),
+    ];
+    let (error, account, value) =
+        *OwnedHostResource::bind_with_charges(account, value, (ResourceAction::Move, &invalid))
+            .err()
+            .unwrap_or_else(|| panic!("undeclared tail must refuse"));
+    assert_eq!(
+        error,
+        HostResourceError::Model(ResourceError::UndeclaredQuota)
+    );
+    assert_eq!(account.durable_record(), before);
+    assert_eq!(value.value, 17);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let (error, account, value) = *OwnedHostResource::bind_with_charges(
+        account,
+        value,
+        (ResourceAction::Move, &[charge(QuotaFamily::Bytes, 9)]),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("exhaustion must refuse"));
+    assert_eq!(
+        error,
+        HostResourceError::Model(ResourceError::QuotaExhausted)
+    );
+    assert_eq!(account.durable_record(), before);
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let mut resource = OwnedHostResource::bind_with_charges(
+        account,
+        value,
+        (ResourceAction::Move, &[charge(QuotaFamily::Bytes, 3)]),
+    )
+    .unwrap_or_else(|_| panic!("complete vector admits"));
+    assert_eq!(
+        resource
+            .account()
+            .remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
+        Some(5)
+    );
+    assert_eq!(resource.account().ledger().lifetime(), before.lifetime());
+    assert_eq!(resource.account().ledger().owner(), before.owner());
+    assert_eq!(
+        resource.invoke(OwnerGeneration::new(4), |value| Ok(value.value)),
+        Ok(17)
+    );
+    assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 0);
+    drop(resource);
     assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 

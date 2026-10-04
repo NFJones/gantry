@@ -86,6 +86,28 @@ impl<T> OwnedHostResource<T> {
         account: AdmittedResource,
         value: T,
     ) -> Result<Self, Box<(HostResourceError, AdmittedResource, T)>> {
+        Self::bind_using(account, value, None)
+    }
+
+    /// Atomically admits a complete explicit charge vector with physical binding.
+    ///
+    /// Active/open eligibility and cancellation precede charging under the account lease.
+    /// Refusal returns both owned inputs unchanged; success changes only declared quota use
+    /// and physical ownership. This infers no charges, authority or source transport.
+    pub fn bind_with_charges(
+        account: AdmittedResource,
+        value: T,
+        accounting: (gantry_ir::ResourceAction, &[gantry_ir::Charge]),
+    ) -> Result<Self, Box<(HostResourceError, AdmittedResource, T)>> {
+        Self::bind_using(account, value, Some(accounting))
+    }
+
+    /// Shares acquisition ordering while leaving legacy binding uncharged.
+    fn bind_using(
+        mut account: AdmittedResource,
+        value: T,
+        accounting: Option<(gantry_ir::ResourceAction, &[gantry_ir::Charge])>,
+    ) -> Result<Self, Box<(HostResourceError, AdmittedResource, T)>> {
         let lifetime = account.ledger().lifetime();
         if lifetime != ResourceLifetimeState::Active {
             return Err(Box::new((
@@ -117,6 +139,11 @@ impl<T> OwnedHostResource<T> {
                 account,
                 value,
             )));
+        }
+        if let Some((action, charges)) = accounting
+            && let Err(error) = account.charge(account.ledger().owner(), action, charges)
+        {
+            return Err(Box::new((HostResourceError::Model(error), account, value)));
         }
         let bound = Self {
             account,

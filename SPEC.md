@@ -15764,7 +15764,13 @@ active lifetime first, then open operation state; a non-open operation state MUS
 the consumed account's machine lease and refuse recorded cancellation with `CancellationRequested`,
 returning both inputs untouched. An unreadable lease MUST refuse with `PendingOperation` rather
 than authorize acquisition. The check and physical binding MUST linearize against cancellation
-under that lease; binding MUST NOT close pending settlement or change accounting facts. Invocation MUST
+under that lease; ordinary binding MUST NOT close pending settlement or change accounting facts.
+`bind_with_charges` MAY additionally admit one explicit Section 28 action and complete charge vector.
+Active/open eligibility and cancellation MUST precede quota admission under the same account lease.
+Quota refusal MUST return both owned inputs unchanged, spending nothing. Successful charging and
+physical binding MUST commit together with no remaining fallible acquisition step. Other accounting
+facts and pending settlement MUST remain unchanged; legacy binding stays uncharged, and physical
+size supplies no implicit charge or authority. Invocation MUST
 check current ownership and active lifetime before running a bounded synchronous callback.
 Fresh direct invocation MUST then check the admitted account's cancellation lease and refuse
 recorded cancellation with `CancellationRequested`, or an unreadable lease with `PendingOperation`.

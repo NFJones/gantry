@@ -562,7 +562,11 @@ supplies authority. After active lifetime, binding checks open operation state a
 states with `IllegalLifetimeTransition` before acquisition. Binding holds the consumed account's machine lease through physical acquisition;
 recorded cancellation refuses with `CancellationRequested`, and an unreadable lease refuses with
 `PendingOperation`. Both inputs and accounting facts remain untouched on refusal; binding never
-settles pending work. `invoke` fences the current owner and active lifetime before a bounded
+settles pending work. `bind_with_charges(account, value, (action, charges))` additionally admits an
+explicit whole vector after eligibility and cancellation, under the same lease as physical binding.
+Refusal returns both owned inputs unchanged; success publishes charged quota use and physical
+ownership together, without inferred physical-size charges or authority. Legacy binding is uncharged.
+`invoke` fences the current owner and active lifetime before a bounded
 synchronous callback, using existing `gantry-host` unwind containment. A panic poisons this
 transport boundary, not the accounting lifetime. `invoke_with_charges` additionally admits an
 explicit whole update-charge vector under the cancellation lease after eligibility and adapter
