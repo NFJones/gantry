@@ -1925,6 +1925,97 @@ fn long_string_equality_yields_before_atomic_publication_and_cancellation() {
     }
 }
 
+/// Long prefix and suffix matching yields before publishing its exact Boolean result.
+#[test]
+fn long_string_prefix_and_suffix_yield_before_publication() {
+    for primitive in [Primitive::StringStartsWith, Primitive::StringEndsWith] {
+        let pattern = "é".repeat(10_000);
+        let source = if primitive == Primitive::StringStartsWith {
+            format!("{pattern}tail")
+        } else {
+            format!("head{pattern}")
+        };
+        let root = workflow(
+            "crate::main",
+            vec![],
+            TypeDescriptor::BOOL,
+            EffectSet::default(),
+            vec![
+                instruction(
+                    0,
+                    TypeDescriptor::STRING,
+                    InstructionKind::Push(
+                        LogicalValue::string(source, DEFAULT_VALUE_LIMITS)
+                            .unwrap_or_else(|error| panic!("source: {error:?}")),
+                    ),
+                ),
+                instruction(
+                    1,
+                    TypeDescriptor::STRING,
+                    InstructionKind::Push(
+                        LogicalValue::string(pattern, DEFAULT_VALUE_LIMITS)
+                            .unwrap_or_else(|error| panic!("pattern: {error:?}")),
+                    ),
+                ),
+                instruction(
+                    2,
+                    TypeDescriptor::BOOL,
+                    InstructionKind::Primitive(primitive),
+                ),
+                instruction(3, TypeDescriptor::BOOL, InstructionKind::Return),
+            ],
+        );
+        let mut machine = new_machine(
+            program(vec![root]),
+            "crate::main",
+            vec![],
+            limits(8, 1, 1, 1, 8),
+        );
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+        let before = machine.execution_budget().snapshot();
+        assert_eq!(machine.step(), MachineStep::YieldRequired);
+        assert_eq!(machine.execution_budget().snapshot(), before);
+        let mut cancelled = machine.clone();
+        assert!(cancelled.cancel("matching cancelled").is_some());
+        assert!(matches!(
+            drive(&mut cancelled),
+            MachineOutcome::Cancelled(_)
+        ));
+        assert_eq!(cancelled.execution_budget().snapshot(), before);
+        #[cfg(feature = "durable")]
+        {
+            let bytes = machine.checkpoint().canonical_bytes();
+            let checkpoint = crate::MachineCheckpointV3::decode(&machine.program_arc(), &bytes)
+                .unwrap_or_else(|error| panic!("matching checkpoint: {error:?}"));
+            let budget = ExecutionBudget::recover_from_checkpoint(before)
+                .unwrap_or_else(|error| panic!("matching budget: {error:?}"));
+            let mut recovered =
+                Machine::recover_from_checkpoint(machine.program_arc(), checkpoint, budget)
+                    .unwrap_or_else(|error| panic!("matching recovery: {error:?}"));
+            assert_eq!(recovered.checkpoint().canonical_bytes(), bytes);
+            assert!(recovered.resume_after_yield());
+            assert_eq!(
+                drive(&mut recovered),
+                MachineOutcome::Succeeded(LogicalValue::boolean(true))
+            );
+            assert_eq!(
+                recovered.execution_budget().snapshot().revision,
+                before.revision + 1
+            );
+        }
+        assert!(machine.resume_after_yield());
+        assert_eq!(
+            drive(&mut machine),
+            MachineOutcome::Succeeded(LogicalValue::boolean(true))
+        );
+        assert_eq!(
+            machine.execution_budget().snapshot().revision,
+            before.revision + 1
+        );
+    }
+}
+
 /// Cooperative chunks do not spend transition budget or bypass final-publication refusal.
 #[test]
 fn cooperative_string_comparison_preserves_budget_and_quantum_boundaries() {
@@ -2002,6 +2093,8 @@ fn cooperative_string_comparison_preserves_budget_and_quantum_boundaries() {
 fn cooperative_string_comparison_preserves_unequal_and_boundary_results() {
     for (left, right) in [
         (String::new(), String::new()),
+        (String::new(), "x".to_owned()),
+        ("x".to_owned(), String::new()),
         ("a".repeat(4096), "a".repeat(4096)),
         ("a".repeat(4097), "a".repeat(4096)),
         (
@@ -2013,11 +2106,18 @@ fn cooperative_string_comparison_preserves_unequal_and_boundary_results() {
             format!("{}c", "a".repeat(10_000)),
         ),
     ] {
-        for primitive in [Primitive::Equal, Primitive::NotEqual] {
-            let expected = if primitive == Primitive::Equal {
-                left == right
-            } else {
-                left != right
+        for primitive in [
+            Primitive::Equal,
+            Primitive::NotEqual,
+            Primitive::StringStartsWith,
+            Primitive::StringEndsWith,
+        ] {
+            let expected = match primitive {
+                Primitive::Equal => left == right,
+                Primitive::NotEqual => left != right,
+                Primitive::StringStartsWith => left.starts_with(&right),
+                Primitive::StringEndsWith => left.ends_with(&right),
+                _ => unreachable!("closed comparison fixture"),
             };
             let root = workflow(
                 "crate::main",

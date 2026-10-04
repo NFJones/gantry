@@ -942,7 +942,7 @@ portable outcomes, identity, or durable compatibility.
    per-task counter resets after any such await or explicit scheduler yield.
    The yield quantum MUST be nonzero and finite, and Gantry MUST observe
    cancellation immediately before and after the yield.
-   Direct String equality and inequality MUST compare at most 4096 UTF-8 octets before
+   Direct String equality, inequality, prefix and suffix matching MUST compare at most 4096 UTF-8 octets before
    returning a scheduling-only yield when more comparison work remains. Such work MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

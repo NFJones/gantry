@@ -3097,10 +3097,13 @@ impl Machine {
                 self.advance_pc();
                 continue;
             }
-            if matches!(
-                instruction.kind,
-                InstructionKind::Primitive(Primitive::Equal | Primitive::NotEqual)
-            ) && self.prepare_string_equality()
+            if let InstructionKind::Primitive(
+                primitive @ (Primitive::Equal
+                | Primitive::NotEqual
+                | Primitive::StringStartsWith
+                | Primitive::StringEndsWith),
+            ) = instruction.kind
+                && self.prepare_string_comparison(primitive)
             {
                 return MachineStep::YieldRequired;
             }
@@ -3578,16 +3581,21 @@ impl Machine {
     ) -> Result<(), RuntimeCode> {
         let arity = primitive.arity();
         let operands = self.peek_operands(arity)?;
-        let result = if matches!(primitive, Primitive::Equal | Primitive::NotEqual)
-            && let Some(equal) = self
-                .string_equality_work
-                .as_ref()
-                .and_then(|work| work.result)
+        let result = if matches!(
+            primitive,
+            Primitive::Equal
+                | Primitive::NotEqual
+                | Primitive::StringStartsWith
+                | Primitive::StringEndsWith
+        ) && let Some(equal) = self
+            .string_equality_work
+            .as_ref()
+            .and_then(|work| work.result)
         {
-            LogicalValue::boolean(if primitive == Primitive::Equal {
-                equal
-            } else {
+            LogicalValue::boolean(if primitive == Primitive::NotEqual {
                 !equal
+            } else {
+                equal
             })
         } else {
             evaluate_primitive(primitive, operands, self.limits.value_limits)?
@@ -3601,15 +3609,25 @@ impl Machine {
     }
 
     /// Compares a bounded octet chunk without changing logical state or holding the budget lock.
-    /// UTF-8 byte equality is exact String equality; chunk boundaries need not split at scalars
+    /// UTF-8 byte comparison is exact for equality, prefixes and suffixes; chunks need not split at scalars
     /// because no chunk is exposed as text. Recovery discards progress and restarts this pure work.
     /// Returns true only when another executor yield is required before publication.
-    fn prepare_string_equality(&mut self) -> bool {
+    fn prepare_string_comparison(&mut self, primitive: Primitive) -> bool {
         let Ok(operands) = self.peek_operands(2) else {
             return false;
         };
         let (Some(left), Some(right)) = (operands[0].as_string(), operands[1].as_string()) else {
             return false;
+        };
+        let (length_matches, length, base) = match primitive {
+            Primitive::Equal | Primitive::NotEqual => (left.len() == right.len(), left.len(), 0),
+            Primitive::StringStartsWith => (left.len() >= right.len(), right.len(), 0),
+            Primitive::StringEndsWith => (
+                left.len() >= right.len(),
+                right.len(),
+                left.len().saturating_sub(right.len()),
+            ),
+            _ => return false,
         };
         let offset = self
             .string_equality_work
@@ -3617,10 +3635,10 @@ impl Machine {
             .map_or(0, |work| work.offset);
         let end = offset
             .saturating_add(STRING_EQUALITY_WORK_QUANTUM)
-            .min(left.len());
-        let equal = left.len() == right.len()
-            && left.as_bytes()[offset..end] == right.as_bytes()[offset..end];
-        let pending = equal && end < left.len();
+            .min(length);
+        let equal = length_matches
+            && left.as_bytes()[base + offset..base + end] == right.as_bytes()[offset..end];
+        let pending = equal && end < length;
         self.string_equality_work = Some(StringEqualityWork {
             offset: end,
             result: (!pending).then_some(equal),

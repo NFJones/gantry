@@ -777,7 +777,7 @@ checking the operand type. It avoids rescanning the input; shared copies retain 
 Length conversion and transition charging remain unchanged. This optimization does not establish
 complete semantic-work metering or cancellation-safe execution of other String primitives.
 
-Direct String equality and inequality compare at most 4096 UTF-8 octets per machine call
+Direct String equality, inequality, prefix and suffix matching compare at most 4096 UTF-8 octets per machine call
 before requesting a scheduling-only executor yield. Operands and program position remain
 unchanged until the Boolean result commits with the existing single transition charge.
 Cancellation is checked by the existing yield/driver boundary; this adds no source cooperative-stop
