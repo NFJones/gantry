@@ -817,6 +817,12 @@ Every full expansion is admitted before accumulation; only a completed logical v
 with one transition charge. Allocation, cloning, disposal and final construction remain outside
 the mapping-work guarantee; complete semantic-work metering is still outstanding.
 
+Concatenation admits its complete output scalar count from immutable String metrics before
+copying private chunks of at most 4096 scalars. Numeric addition remains unchanged. Cancellation
+discards private output, and recovery recomputes it from retained operands; the result publishes
+atomically with the existing single transition charge. Final logical construction, allocation,
+cloning and disposal remain outside this copy-work guarantee.
+
 Concatenation, replacement and list joining check each next output piece's Unicode-scalar contribution before
 appending it to private construction state. Over-limit pieces are not allocated or appended;
 only the complete logical value is published. Replacement stays nonoverlapping and never rescans

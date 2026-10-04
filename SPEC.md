@@ -963,6 +963,11 @@ portable outcomes, identity, or durable compatibility.
    context flag per input scalar plus output admitted under the captured String bound;
    recovery MAY recompute these private facts. Allocation, cloning and final construction
    remain outside this work bound, and no partial result or extra transition is admitted.
+   String concatenation MUST admit the complete scalar count before copying, then copy at
+   most 4096 scalars per call before yielding when more copy work remains. Immutable String
+   metrics MAY supply that count. Numeric addition MUST retain its existing path. Private
+   concatenation output MAY be recomputed on recovery; final logical construction and allocation
+   remain outside the copy-work bound, with no partial publication or extra transition charge.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.
