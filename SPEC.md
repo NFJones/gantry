@@ -12512,7 +12512,12 @@ evidence it does not have, and a stale owner MUST NOT advance it. A retired reco
 carries the advanced owner generation and fences every owner generation that does
 not succeed it: a fenced stale owner MUST be refused rather than admitted as a new
 invocation through that record, while a genuinely advanced owner is admitted as a
-fresh invocation. Fencing is not deletion: the settlement, the retirement evidence,
+fresh invocation. Recovery MUST preserve that advanced fence independently of the
+historical settlement owner. A restored retired record MUST carry a fence strictly
+newer than its settlement owner; equality or regression MUST refuse. Authoritative
+and compacted records still require their exact settlement owner. Restoration does
+not authenticate caller-supplied retirement evidence or authorize a new invocation.
+Fencing is not deletion: the settlement, the retirement evidence,
 and the fence category remain, and a fenced generation MUST NOT be reopened, reused,
 or reinstated.
 

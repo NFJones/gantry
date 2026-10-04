@@ -1911,6 +1911,52 @@ fn retirement_requires_durable_settlement_and_an_advanced_owner_generation_and_f
             .map(OperationSettlement::canonical_text),
         record.settlement().map(OperationSettlement::canonical_text)
     );
+    let restored_retired = DedupRecord::restore(
+        retired.operation(),
+        retired.generation(),
+        retired.state(),
+        retired.settlement().cloned(),
+        retired.owner(),
+        retired.bounds(),
+    )
+    .unwrap_or_else(|error| panic!("retirement fence must survive recovery: {error:?}"));
+    assert_eq!(restored_retired, retired);
+    assert!(restored_retired.fences(owner.advanced()));
+
+    let historical_owner = OwnerGeneration::new(2);
+    let historical = settlement(
+        &current,
+        historical_owner,
+        ExternalOutcome::Accepted,
+        ProgressObservation::CommittedProgress,
+        10,
+    );
+    for fence in [OwnerGeneration::new(1), historical_owner] {
+        assert_eq!(
+            DedupRecord::restore(
+                current.operation(),
+                current.generation(),
+                DedupRecordState::Retired,
+                Some(historical.clone()),
+                fence,
+                bounds(1, 100),
+            ),
+            Err(OperationAbiError::RetirementWithoutAdvancedOwner {
+                settled: historical_owner,
+                presented: fence,
+            })
+        );
+    }
+    assert_eq!(
+        admit_dispatch(
+            &current,
+            DurableOperationCut::Admitted,
+            OperationCancellation::NotRequested,
+            Some(&restored_retired),
+            owner.advanced().advanced(),
+        ),
+        Ok(DispatchAdmission::Fresh)
+    );
 
     // The retired record fences the stale owner and admits no invocation through it.
     assert!(retired.fences(owner));

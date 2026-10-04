@@ -2411,12 +2411,11 @@ impl DedupRecord {
     /// Every state that carries a durable settlement must be restored with one, so a
     /// restart never reconstructs an operation's identity without the settlement that
     /// gives it meaning, and a record that rejected a stale owner must carry no
-    /// settlement. A settlement that does not name the restored identity is refused, and
-    /// the restored record carries the owner generation the settlement names rather than
-    /// the presented one, so retirement and fencing always compare against the settling
-    /// generation: a record whose settlement does not name both the restored identity and
-    /// the presented owner generation is refused rather than restored against an
-    /// unrelated owner.
+    /// settlement. A settlement that does not name the restored identity is refused.
+    /// Authoritative and compacted records must retain the settlement's exact owner.
+    /// A retired record instead retains its independently presented advanced fence, which
+    /// must strictly succeed the settlement owner; the historical settlement is unchanged.
+    /// The caller authenticates these retained facts; restoration grants no authority.
     pub fn restore(
         operation: &LogicalOperationId,
         generation: &ResourceGenerationId,
@@ -2426,6 +2425,15 @@ impl DedupRecord {
         bounds: DedupRetentionBounds,
     ) -> Result<Self, OperationAbiError> {
         let owner = match settlement.as_ref() {
+            Some(settled) if state == DedupRecordState::Retired => {
+                if !owner.succeeds(settled.owner()) {
+                    return Err(OperationAbiError::RetirementWithoutAdvancedOwner {
+                        settled: settled.owner(),
+                        presented: owner,
+                    });
+                }
+                owner
+            }
             Some(settled) if settled.owner() != owner => {
                 return Err(OperationAbiError::StaleOwnerGeneration {
                     owner,

@@ -708,6 +708,10 @@ projection internally, alongside a machine-issued `ResourceSubjectBinding`;
 `ResourceLedger::project_operation_state` consumes that projection.
 Canonical `OperationSettlement` text retains the observed outcome separately from derived state,
 so accepted and rejected unstarted work cannot collapse into identical evidence text.
+`DedupRecord::restore` preserves a retired record's advanced owner fence separately from its
+historical settlement owner. Equal or regressed retirement fences refuse; authoritative and
+compacted records still require the exact settlement owner. The caller authenticates retained
+retirement facts; restoration supplies no journal authentication or dispatch authority.
 Registry failure settlement and adapter-failure poisoning likewise require the accompanying binding. Evidence still selects
 its own exact account; the binding must name that operation/generation and match its issuing
 execution/task. `EvidenceSubjectMismatch` and `ForeignSubject` refuse before mutation, while
