@@ -1036,6 +1036,10 @@ portable outcomes, identity, or durable compatibility.
    charge publishes caller position, occurrence and callee ownership atomically. Consumed argument
    values and origins MUST remain retained until after unlock. Refusal changes no caller state;
    this changes no receiver authority, semantic release point or reclamation-latency guarantee.
+   Spawn capture validation, detached copying and partial-capture refusal cleanup MUST run
+   outside the shared execution-budget mutex. Preparation retains its existing uncharged
+   suspension and task-local occurrence behavior; refusal MUST publish no partial spawn.
+   This does not make copying cooperative or bound allocation and destruction latency.
    Spawned-body completion MUST validate its result outside shared counters and retain consumed
    operand ownership through its existing charge until mutex release. Invalid-result refusal
    MUST precede budget admission; failed charging MUST consume no operand. Terminal settlement

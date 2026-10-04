@@ -880,6 +880,11 @@ and callee ownership; consumed arguments and origins remain retained until after
 preserves caller state. Receiver authority, semantic release and quota charges remain unchanged;
 frame construction and destruction remain synchronous without a latency guarantee.
 
+Spawn capture validation and detached copying run outside shared execution counters, including
+cleanup of a partially prepared capture vector on refusal. Preparation retains its existing
+uncharged suspension and task-local occurrence semantics and publishes no partial spawn.
+Copying, allocation and destruction remain synchronous without a cooperative latency guarantee.
+
 Spawned-body completion validates before counter locking and retains consumed operand ownership
 until its existing completion charge unlocks. Invalid-result refusal precedes budget admission;
 failed charging consumes no operand. Outcome and obligation settlement run after unlocking,

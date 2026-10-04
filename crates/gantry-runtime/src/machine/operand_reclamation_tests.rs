@@ -98,6 +98,157 @@ struct Probe {
     observations: Vec<(bool, bool, Option<u64>)>,
 }
 
+#[cfg(feature = "concurrent")]
+thread_local! {
+    /// Observes partial capture cleanup only in the executing regression thread.
+    static CAPTURE_PROBE: RefCell<Option<(ExecutionBudget, Vec<Option<u64>>)>> = const { RefCell::new(None) };
+}
+
+/// Test-only disposal observation; production capture ownership has no callback.
+#[cfg(feature = "concurrent")]
+impl Drop for MachineTaskCapture {
+    fn drop(&mut self) {
+        if self.task_capture().name() != "a" {
+            return;
+        }
+        CAPTURE_PROBE.with(|cell| {
+            if let Some((budget, observations)) = cell.borrow_mut().as_mut() {
+                observations.push(budget.inner.try_lock().ok().map(|state| state.revision));
+            }
+        });
+    }
+}
+
+/// Refused spawn capture cleanup must not retain shared counters or publish a partial spawn.
+#[cfg(feature = "concurrent")]
+#[test]
+fn spawn_capture_preparation_and_refusal_cleanup_run_outside_budget_lock() {
+    use gantry_ir::{ExecutableTaskBody, ExecutableTaskCapture, ExecutableTaskContext};
+
+    for missing_capture in [false, true] {
+        let root =
+            CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("root: {error}"));
+        let caller = CanonicalCallableIdentity::free(&root, &[]);
+        let site = StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("site: {error}"));
+        let body_id = TaskBodyIdentity::new(caller.clone(), site.clone());
+        let body = ExecutableTaskBody::new(
+            body_id.clone(),
+            TypeDescriptor::UNIT,
+            ["a", "b"]
+                .into_iter()
+                .map(|name| {
+                    ExecutableTaskCapture::new(Arc::from(name), TypeDescriptor::STRING, false)
+                        .unwrap_or_else(|error| panic!("capture: {error:?}"))
+                })
+                .collect(),
+            ExecutableTaskContext::v1(),
+            vec![
+                Instruction {
+                    site: site.clone(),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Push(LogicalValue::unit()),
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![1])
+                        .unwrap_or_else(|error| panic!("site: {error}")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::TaskComplete,
+                },
+            ],
+        )
+        .unwrap_or_else(|error| panic!("body: {error:?}"));
+        let program = Arc::new(
+            MachineProgram::with_task_bodies(
+                vec![(
+                    caller,
+                    gantry_ir::Workflow {
+                        path: root.clone(),
+                        parameters: Vec::new(),
+                        result: TypeDescriptor::UNIT,
+                        effects: gantry_ir::EffectSet::default(),
+                        instructions: vec![
+                            Instruction {
+                                site: site.clone(),
+                                ty: TypeDescriptor::UNIT,
+                                kind: InstructionKind::Spawn {
+                                    handle: ExecutableTaskHandle::new(
+                                        Arc::from("child"),
+                                        TypeDescriptor::UNIT,
+                                    )
+                                    .unwrap_or_else(|error| panic!("handle: {error:?}")),
+                                    body: body_id,
+                                },
+                            },
+                            Instruction {
+                                site: StructuralPosition::new(vec![1])
+                                    .unwrap_or_else(|error| panic!("site: {error}")),
+                                ty: TypeDescriptor::UNIT,
+                                kind: InstructionKind::Return,
+                            },
+                        ],
+                    },
+                )],
+                vec![body],
+            )
+            .unwrap_or_else(|error| panic!("program: {error:?}")),
+        );
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0xa0; 32])
+            .unwrap_or_else(|error| panic!("execution: {error}"));
+        let limits = MachineLimits::new(8, 1, 1, 1, 8, gantry_core::value::DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|| panic!("limits"));
+        let mut machine = Machine::new(program, &root, Vec::new(), execution, limits)
+            .unwrap_or_else(|error| panic!("machine: {error:?}"));
+        let value = LogicalValue::string("é".repeat(10_000), limits.value_limits)
+            .unwrap_or_else(|error| panic!("value: {error:?}"));
+        for name in if missing_capture {
+            &["a"][..]
+        } else {
+            &["a", "b"][..]
+        } {
+            machine.frames[0].scopes[0].insert(
+                Arc::from(*name),
+                Binding {
+                    value: value.clone(),
+                    ty: TypeDescriptor::STRING,
+                    mutable: false,
+                },
+            );
+        }
+        let before = machine.execution_budget.snapshot();
+        let frames = machine.frames.clone();
+        let counters = machine.counters.clone();
+        CAPTURE_PROBE
+            .with(|cell| *cell.borrow_mut() = Some((machine.execution_budget.clone(), Vec::new())));
+        let step = machine.step();
+        let observations = CAPTURE_PROBE.with(|cell| {
+            cell.borrow_mut()
+                .take()
+                .unwrap_or_else(|| panic!("probe"))
+                .1
+        });
+        assert_eq!(machine.execution_budget.snapshot(), before);
+        assert_eq!(machine.frames, frames);
+        if missing_capture {
+            assert_eq!(observations, vec![Some(before.revision)]);
+            assert!(
+                matches!(step, MachineStep::Transition(MachineLabel::Failure(failure))
+                if failure.code == RuntimeCode::InternalInvariant && failure.workflow == root && failure.site == site)
+            );
+            assert!(machine.pending_spawn().is_none());
+            assert_eq!(machine.counters, counters);
+        } else {
+            let MachineStep::Transition(MachineLabel::TaskControlSuspended(spawn)) = step else {
+                panic!("spawn did not suspend");
+            };
+            assert_eq!(spawn.occurrence, 0);
+            assert_eq!(spawn.captures.len(), 2);
+            assert_eq!(spawn.captures[0].task_capture().value(), &value);
+            assert_eq!(machine.pending_spawn(), Some(&spawn));
+            assert_eq!(machine.status(), MachineStatus::WaitingTaskControl);
+        }
+    }
+}
+
 thread_local! {
     /// Observation is scoped to the executing test thread, never retained in checkpoints.
     static PROBE: RefCell<Option<Probe>> = const { RefCell::new(None) };

@@ -3449,6 +3449,10 @@ impl Machine {
         if let InstructionKind::BranchEnum { arms } = &instruction.kind {
             return self.execute_enum_branch(workflow, instruction.site, arms);
         }
+        #[cfg(feature = "concurrent")]
+        if let InstructionKind::Spawn { handle, body } = instruction.kind.clone() {
+            return self.prepare_spawn(workflow, instruction.site, handle, body);
+        }
         let execution_budget = self.execution_budget.clone();
         let mut budget_state = execution_budget.lock();
         let site = instruction.site.clone();
@@ -3498,8 +3502,8 @@ impl Machine {
                 unreachable!("return owns its validation and publication lock")
             }
             #[cfg(feature = "concurrent")]
-            InstructionKind::Spawn { handle, body } => {
-                return self.prepare_spawn(workflow, site, handle, body);
+            InstructionKind::Spawn { .. } => {
+                unreachable!("spawn preparation owns task-local captures without shared counters")
             }
             #[cfg(not(feature = "concurrent"))]
             InstructionKind::Spawn { .. } => {
