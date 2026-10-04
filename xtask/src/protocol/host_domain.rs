@@ -223,6 +223,12 @@ fn validate(root: &Path, catalog: &Catalog) -> Result<(), String> {
     if catalog.specification_revision != format!("{:x}", Sha256::digest(specification)) {
         return Err("host-domain catalog specification revision is stale".to_owned());
     }
+    validate_structure(catalog)
+}
+
+/// Checks the closed family/category/target matrix independently of revision qualification.
+/// Production admission calls this only after catalog identity, schema and currency checks.
+fn validate_structure(catalog: &Catalog) -> Result<(), String> {
     if catalog
         .negative_fixtures
         .iter()
@@ -418,7 +424,7 @@ mod tests {
 
     use serde::Deserialize;
 
-    use super::{Catalog, validate};
+    use super::{Catalog, validate, validate_structure};
 
     #[derive(Deserialize)]
     struct NegativeFixtures {
@@ -442,6 +448,12 @@ mod tests {
 
     #[test]
     fn checked_in_negative_catalogs_are_rejected_for_their_declared_reason() {
+        let positive: Catalog = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../protocol/catalogs/host-domain-contracts-v1.json"
+        )))
+        .unwrap_or_else(|error| panic!("host-domain positive catalog must decode: {error}"));
+        assert_eq!(validate_structure(&positive), Ok(()));
         let fixtures: NegativeFixtures = serde_json::from_str(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../protocol/goldens/host-domain-contracts-v1.negatives.json"
@@ -450,11 +462,27 @@ mod tests {
         assert_eq!(fixtures.format, "gantry.host-domain-contract-negatives/v1");
         for fixture in fixtures.cases {
             assert_eq!(
-                validate(&workspace_root(), &fixture.catalog),
+                validate_structure(&fixture.catalog),
                 Err(fixture.expected_reason),
                 "negative fixture {} must be refused for its declared reason",
                 fixture.name
             );
         }
+    }
+
+    /// Structural test isolation must not let stale catalog evidence pass production admission.
+    #[test]
+    fn full_catalog_admission_still_refuses_stale_specification_revision() {
+        let mut catalog: Catalog = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../protocol/catalogs/host-domain-contracts-v1.json"
+        )))
+        .unwrap_or_else(|error| panic!("host-domain catalog must decode: {error}"));
+        assert_eq!(validate_structure(&catalog), Ok(()));
+        catalog.specification_revision = "invalid-revision".to_owned();
+        assert_eq!(
+            validate(&workspace_root(), &catalog),
+            Err("host-domain catalog specification revision is stale".to_owned())
+        );
     }
 }
