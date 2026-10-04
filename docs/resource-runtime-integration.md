@@ -643,8 +643,10 @@ no fabricated successful outcome, progress or ordinary operation-state projectio
 Half-close also refuses after either kind of winner with `SecondSettlement` before state
 classification or mutation, including partial winners retaining an open half. Generation fencing
 remains available and does not rewrite accepted settlement or progress evidence.
-`observe` retains Section 20
-allowances and progress rules; accepted `settle` projects operation state and closes only the
+`observe` retains Section 20 allowances and progress rules. Later observations must equal or
+upgrade retained progress; mismatches refuse before allowance charging without changing state.
+Admissible EOF closes the operation even after partial advance. Existing generation, winner
+and unusable-state refusals retain precedence. Accepted `settle` projects operation state and closes only the
 loan root. Refusal retains the guard and progress for another candidate. Whole-resource lifetime,
 quotas and pending machine work remain separate.
 `HostReceiverLoan::invoke_with_charges` admits an explicit whole update vector after existing

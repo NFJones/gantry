@@ -12380,6 +12380,11 @@ be a declared upgrade of it, so a claim that would move progress backwards, incl
 an end of stream where a committed completion was observed or an unstarted observation
 where progress was observed, MUST be refused rather than recorded, and a refused claim
 MUST NOT replace the declared progress record.
+Each later observation MUST also equal or be a declared upgrade of retained progress.
+A non-upgrade MUST refuse with `ProgressObservationMismatch` before consuming observation
+allowance or changing progress or state. Existing fencing, accepted-settlement and unusable-state
+refusals retain precedence. An admissible EOF observation MUST close the operation state,
+including after partial advance; it remains distinct from committed completion.
 
 <a id="GNT-20.5-interruption-cancellation-and-late-completion"></a>
 

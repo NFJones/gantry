@@ -780,6 +780,68 @@ fn a_crash_before_admission_carries_no_effect_and_a_crash_after_admission_withou
     );
 }
 
+/// Every later observation preserves retained progress unless its declared upgrade is admitted.
+#[test]
+fn observation_upgrades_preserve_progress_state_and_allowance() {
+    let owner = OwnerGeneration::initial();
+    let current = abi(
+        OperationKind::LiveResource,
+        1,
+        RecoveryClass::NonIdempotent,
+        ReceiverOwnership::RetainedByCaller,
+    );
+    for initial in ProgressObservation::ALL {
+        for next in ProgressObservation::ALL {
+            let mut live = resource(&current, owner, 1);
+            live.observe(initial)
+                .unwrap_or_else(|error| panic!("initial {initial:?}: {error:?}"));
+            let before = live.clone();
+            let outcome = live.observe(next);
+            if initial == ProgressObservation::Eof {
+                assert_eq!(
+                    refusal(outcome),
+                    OperationAbiDiagnosticCode::ResourceNotUsable
+                );
+                assert_eq!(live, before);
+            } else if !initial.upgrades_to(next) {
+                assert_eq!(
+                    outcome,
+                    Err(OperationAbiError::ProgressObservationMismatch {
+                        observed: initial,
+                        claimed: next,
+                    })
+                );
+                assert_eq!(live, before);
+            } else {
+                assert_eq!(outcome.map(|record| record.progress()), Ok(next));
+                assert_eq!(live.observation_allowance().accepted(), 2);
+                assert_eq!(live.observation_allowance().remaining(), 6);
+                if next == ProgressObservation::Eof {
+                    assert_eq!(live.state(), ResourceState::Closed);
+                }
+            }
+        }
+    }
+    let mut exhausted = resource(&current, owner, 8);
+    exhausted
+        .observe(ProgressObservation::ShortRead)
+        .unwrap_or_else(|error| panic!("last allowance: {error:?}"));
+    let before = exhausted.clone();
+    assert_eq!(
+        exhausted.observe(ProgressObservation::NotStarted),
+        Err(OperationAbiError::ProgressObservationMismatch {
+            observed: ProgressObservation::ShortRead,
+            claimed: ProgressObservation::NotStarted,
+        })
+    );
+    assert_eq!(exhausted, before);
+    assert_eq!(
+        refusal(exhausted.observe(ProgressObservation::ShortRead)),
+        OperationAbiDiagnosticCode::ObservationBudgetExhausted
+    );
+    assert_eq!(exhausted, before);
+}
+
 #[test]
 fn partial_progress_is_distinct_from_completion_and_eof() {
     // A short read and a short write are progress, never completion and never EOF.
@@ -823,6 +885,20 @@ fn partial_progress_is_distinct_from_completion_and_eof() {
         .unwrap_or_else(|_| unreachable!("a usable resource observes progress"));
     assert_eq!(observed.progress(), ProgressObservation::ShortRead);
     assert_eq!(live.state(), ResourceState::PartiallyAdvanced);
+
+    let mut observed = resource(&current, owner, 4);
+    observed
+        .observe(ProgressObservation::ShortRead)
+        .unwrap_or_else(|error| panic!("initial progress: {error:?}"));
+    let before = observed.clone();
+    assert_eq!(
+        refusal(observed.observe(ProgressObservation::NotStarted)),
+        OperationAbiDiagnosticCode::ProgressObservationMismatch
+    );
+    assert_eq!(
+        observed, before,
+        "refused observation preserves progress and allowance"
+    );
 
     // A short read never becomes an end of stream, and partial progress never becomes
     // a committed completion.

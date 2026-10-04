@@ -1850,7 +1850,9 @@ impl LiveResource {
     /// its result state retains an open half; generation fencing retains precedence. The charge
     /// is consumed from the Section 20 allowance alone and never from a Section 15
     /// disclosure budget, which is charged per accepted release. Progress advances the
-    /// resource to [`ResourceState::PartiallyAdvanced`] and an end of stream closes it.
+    /// resource to [`ResourceState::PartiallyAdvanced`] and an admissible end of stream closes it,
+    /// including after partial advance. Each observation must equal or upgrade retained progress;
+    /// a mismatch refuses before allowance charging without changing any resource fact.
     pub fn observe(
         &mut self,
         progress: ProgressObservation,
@@ -1866,6 +1868,12 @@ impl LiveResource {
         if !self.state.is_open() {
             return Err(OperationAbiError::ResourceNotUsable { state: self.state });
         }
+        if !self.progress.upgrades_to(progress) {
+            return Err(OperationAbiError::ProgressObservationMismatch {
+                observed: self.progress,
+                claimed: progress,
+            });
+        }
         self.allowance = match self.allowance.after_charge() {
             Some(charged) => charged,
             None => {
@@ -1877,7 +1885,7 @@ impl LiveResource {
         };
         self.progress = progress;
         self.state = match (self.state, progress) {
-            (ResourceState::Usable, ProgressObservation::Eof) => ResourceState::Closed,
+            (_, ProgressObservation::Eof) => ResourceState::Closed,
             (_, observed) if observed.is_progress() => ResourceState::PartiallyAdvanced,
             (state, _) => state,
         };
