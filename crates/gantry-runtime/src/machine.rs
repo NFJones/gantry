@@ -2420,6 +2420,13 @@ impl Machine {
         Arc::clone(&self.program)
     }
 
+    /// Checks exact executable content without treating allocation identity as semantics.
+    /// Shared immutable programs take the constant-time path; independent copies compare facts.
+    #[cfg(feature = "durable")]
+    pub(crate) fn same_program(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.program, &other.program) || self.program == other.program
+    }
+
     #[cfg(test)]
     pub(crate) fn test_instruction_state(&self) -> (usize, usize, bool) {
         (

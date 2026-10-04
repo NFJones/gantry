@@ -47,6 +47,10 @@ with accounting policy and records preserved in the scheduler rather than silent
 Replayed capture validates machines against the scheduler's actual shared budget owner, not
 merely equal counter snapshots. Independent scheduler ownership refuses before any consuming
 recovery route can expose components that charge separate execution budgets.
+Capture also requires identical executable content in foreground and child machines before
+checkpoint construction. Shared immutable programs take a fast path; independent identical
+copies remain eligible. Matching body names or budgets cannot authorize changed instructions.
+This check establishes consistency, not authentication or bounded comparison latency.
 
 The version-six combined graph wire (`GNTCDP06`) retains enabled empty resource-accounting
 policy as two independently optional ceilings. Legacy v4/v5 graph encodings remain unchanged.

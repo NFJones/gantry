@@ -1079,6 +1079,10 @@ portable outcomes, identity, or durable compatibility.
    Replayed capture and consuming recovery validation MUST require foreground, child
    and scheduler budgets to share one actual owner. Equal counter snapshots MUST NOT
    substitute for shared ownership or permit independently charged recovery components.
+   Graph capture MUST also require identical executable program content across foreground
+   and child machines before constructing a checkpoint. Matching body identities and budgets
+   MUST NOT authorize different instructions; independent copies of identical programs remain
+   eligible. This consistency check does not authenticate the program's provenance.
 <a id="GNT-3.7"></a>
 
 7. An implementation claiming the durable-runtime profile MUST make Gantry

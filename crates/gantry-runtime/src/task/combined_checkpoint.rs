@@ -291,9 +291,9 @@ impl ConcurrentDurableCheckpointV4 {
         retained_resource_limit: Option<u64>,
     ) -> Result<Self, ConcurrentDurableCheckpointError> {
         if !budget.same_owner(&foreground.execution_budget())
-            || children
-                .values()
-                .any(|machine| !budget.same_owner(&machine.execution_budget()))
+            || children.values().any(|machine| {
+                !budget.same_owner(&machine.execution_budget()) || !machine.same_program(foreground)
+            })
         {
             return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
         }
@@ -360,10 +360,10 @@ impl ConcurrentDurableCheckpointV4 {
     ) -> Result<Self, ConcurrentDurableCheckpointError> {
         let foreground_budget = foreground.execution_budget();
         if !scheduler.execution_budget.same_owner(&foreground_budget)
-            || scheduler
-                .machines
-                .values()
-                .any(|machine| !machine.execution_budget().same_owner(&foreground_budget))
+            || scheduler.machines.values().any(|machine| {
+                !machine.execution_budget().same_owner(&foreground_budget)
+                    || !machine.same_program(foreground)
+            })
         {
             return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
         }
@@ -2881,6 +2881,113 @@ mod tests {
             .execution_budget();
         assert!(foreground_budget.same_owner(scheduler_budget));
         assert!(foreground_budget.same_owner(&child_budget));
+    }
+
+    /// Graph capture must not reinterpret a child's state under another executable program.
+    #[test]
+    fn graph_capture_refuses_mixed_child_executable_programs() {
+        let mut fixture = spawned_fixture();
+        let created = running_child(&mut fixture, 0);
+        assert!(
+            ConcurrentDurableCheckpointV4::capture(
+                &fixture.foreground,
+                &fixture.scheduler,
+                &fixture.sessions,
+            )
+            .is_ok()
+        );
+        let body_identity = fixture.program.task_bodies()[0].identity().clone();
+        let body = ExecutableTaskBody::new(
+            body_identity.clone(),
+            TypeDescriptor::UNIT,
+            Vec::new(),
+            ExecutableTaskContext::v1(),
+            vec![
+                Instruction {
+                    site: position(0),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Operation,
+                },
+                Instruction {
+                    site: position(1),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::TaskComplete,
+                },
+            ],
+        )
+        .unwrap_or_else(|error| panic!("changed body: {error:?}"));
+        let callables = fixture
+            .program
+            .callable_identities()
+            .iter()
+            .cloned()
+            .zip(fixture.program.workflows().iter().cloned())
+            .collect();
+        let changed = Arc::new(
+            MachineProgram::with_task_bodies(callables, vec![body])
+                .unwrap_or_else(|error| panic!("changed program: {error:?}")),
+        );
+        assert_ne!(changed, fixture.program);
+        let task = fixture
+            .scheduler
+            .state()
+            .task(created.task_id)
+            .unwrap_or_else(|| panic!("created child"));
+        let task_path = Arc::from(task.task_path());
+        let identical = Arc::new(fixture.program.as_ref().clone());
+        assert!(!Arc::ptr_eq(&identical, &fixture.program));
+        let identical_child = Machine::new_concurrent_task_body_with_context(
+            identical,
+            &body_identity,
+            &[],
+            fixture.execution,
+            created.task_id,
+            Arc::clone(&task_path),
+            machine_limits(),
+            fixture.budget.clone(),
+            None,
+            Some(created.base_session_id),
+        )
+        .unwrap_or_else(|error| panic!("identical child: {error:?}"));
+        fixture
+            .scheduler
+            .machines
+            .insert(created.task_id, identical_child);
+        assert!(
+            ConcurrentDurableCheckpointV4::capture(
+                &fixture.foreground,
+                &fixture.scheduler,
+                &fixture.sessions,
+            )
+            .is_ok(),
+            "independent identical executable remains eligible"
+        );
+        let replacement = Machine::new_concurrent_task_body_with_context(
+            changed,
+            &body_identity,
+            &[],
+            fixture.execution,
+            created.task_id,
+            task_path,
+            machine_limits(),
+            fixture.budget.clone(),
+            None,
+            Some(created.base_session_id),
+        )
+        .unwrap_or_else(|error| panic!("changed child: {error:?}"));
+        fixture
+            .scheduler
+            .machines
+            .insert(created.task_id, replacement);
+        assert_eq!(
+            ConcurrentDurableCheckpointV4::capture(
+                &fixture.foreground,
+                &fixture.scheduler,
+                &fixture.sessions,
+            )
+            .err(),
+            Some(ConcurrentDurableCheckpointError::InvalidCheckpoint)
+        );
     }
 
     /// Equal snapshots do not establish shared budget ownership after mutable recovery access.
