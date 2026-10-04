@@ -58,6 +58,18 @@ pub fn is_white_space(value: char) -> bool {
     in_ranges(value, WHITE_SPACE)
 }
 
+/// Returns the pinned Unicode 16 `Cased` property used by contextual case mapping.
+#[must_use]
+pub fn is_cased(value: char) -> bool {
+    in_ranges(value, CASED)
+}
+
+/// Returns the pinned Unicode 16 `Case_Ignorable` property used by contextual case mapping.
+#[must_use]
+pub fn is_case_ignorable(value: char) -> bool {
+    in_ranges(value, CASE_IGNORABLE)
+}
+
 /// One Unicode 16 `Grapheme_Cluster_Break` value from the pinned data.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum GraphemeBreak {
@@ -457,8 +469,8 @@ pub fn to_full_lowercase_bounded(value: &str, maximum_scalars: u64) -> Option<St
     for index in (0..characters.len()).rev() {
         after_is_cased[index] = next_significant_is_cased;
         let character = characters[index];
-        if !in_ranges(character, CASE_IGNORABLE) {
-            next_significant_is_cased = in_ranges(character, CASED);
+        if !is_case_ignorable(character) {
+            next_significant_is_cased = is_cased(character);
         }
     }
     let mut output = String::new();
@@ -473,8 +485,8 @@ pub fn to_full_lowercase_bounded(value: &str, maximum_scalars: u64) -> Option<St
             push_full_lowercase(character, &mut piece);
         }
         append_case_mapping(&mut output, &mut scalars, &piece, maximum_scalars)?;
-        if !in_ranges(character, CASE_IGNORABLE) {
-            before_is_cased = in_ranges(character, CASED);
+        if !is_case_ignorable(character) {
+            before_is_cased = is_cased(character);
         }
     }
     Some(output)

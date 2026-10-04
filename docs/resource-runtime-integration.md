@@ -809,6 +809,14 @@ Only the completed logical result publishes with the existing single transition 
 Final logical construction/copying and allocation remain synchronous, so this bounds mapping
 work rather than total primitive latency. Contextual lowercase mapping remains a separate path.
 
+Contextual lowercase uses finite collection, backward context and forward mapping phases,
+sharing at most 4096 scalar steps per call. The pinned Cased/Case_Ignorable properties preserve
+Final_Sigma even across long ignorable runs and scheduling yields. Private scratch retains one
+scalar/context flag per input scalar and bounded output, and restarts from operands on recovery.
+Every full expansion is admitted before accumulation; only a completed logical value publishes
+with one transition charge. Allocation, cloning, disposal and final construction remain outside
+the mapping-work guarantee; complete semantic-work metering is still outstanding.
+
 Concatenation, replacement and list joining check each next output piece's Unicode-scalar contribution before
 appending it to private construction state. Over-limit pieces are not allocated or appended;
 only the complete logical value is published. Replacement stays nonoverlapping and never rescans

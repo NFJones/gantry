@@ -24,11 +24,13 @@ use gantry_ir::{ExecutableTaskHandle, TaskBodyIdentity};
 
 use crate::resource::ResourceSubjectBinding;
 use crate::session::SessionCreationModeV1;
+mod string_lowercase;
 mod string_search;
 mod string_trim;
 mod string_uppercase;
 #[cfg(feature = "concurrent")]
 use crate::task::{DynamicTaskHandleIdentity, JoinResolutionV1, TaskCaptureV1, TaskJoinFailureV1};
+use string_lowercase::StringLowercaseWork;
 use string_search::StringSearchWork;
 use string_trim::StringTrimWork;
 use string_uppercase::StringUppercaseWork;
@@ -1826,6 +1828,8 @@ pub struct Machine {
     string_trim_work: Option<StringTrimWork>,
     /// Private bounded uppercase accumulation, never partial logical publication.
     string_uppercase_work: Option<StringUppercaseWork>,
+    /// Recomputable contextual lowercase facts and private output.
+    string_lowercase_work: Option<StringLowercaseWork>,
     #[cfg(feature = "concurrent")]
     pending_task_control: Option<PendingTaskControl>,
     pending_labels: VecDeque<MachineLabel>,
@@ -2120,6 +2124,7 @@ impl Machine {
             string_search_work: None,
             string_trim_work: None,
             string_uppercase_work: None,
+            string_lowercase_work: None,
             pending_task_control: None,
             pending_labels: VecDeque::new(),
             cancellation: None,
@@ -2232,6 +2237,7 @@ impl Machine {
             string_search_work: None,
             string_trim_work: None,
             string_uppercase_work: None,
+            string_lowercase_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: None,
             pending_labels: VecDeque::new(),
@@ -2642,6 +2648,7 @@ impl Machine {
             string_search_work: None,
             string_trim_work: None,
             string_uppercase_work: None,
+            string_lowercase_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: checkpoint.pending_task_control,
             pending_labels: checkpoint.pending_labels,
@@ -3151,6 +3158,13 @@ impl Machine {
             {
                 return MachineStep::YieldRequired;
             }
+            if matches!(
+                instruction.kind,
+                InstructionKind::Primitive(Primitive::StringLowercase)
+            ) && self.prepare_string_lowercase()
+            {
+                return MachineStep::YieldRequired;
+            }
             return self.execute(instruction, workflow);
         }
     }
@@ -3625,7 +3639,20 @@ impl Machine {
     ) -> Result<(), RuntimeCode> {
         let arity = primitive.arity();
         let operands = self.peek_operands(arity)?;
-        let result = if primitive == Primitive::StringUppercase
+        let result = if primitive == Primitive::StringLowercase
+            && let Some(work) = self.string_lowercase_work.as_ref()
+        {
+            if work.failed {
+                return Err(RuntimeCode::Deterministic(
+                    DeterministicEvaluationCode::StringSizeLimit,
+                ));
+            }
+            if !work.complete {
+                return Err(RuntimeCode::InternalInvariant);
+            }
+            LogicalValue::string(work.output.as_str(), self.limits.value_limits)
+                .map_err(map_string_value_error)?
+        } else if primitive == Primitive::StringUppercase
             && let Some(work) = self.string_uppercase_work.as_ref()
         {
             if work.failed {
@@ -3677,6 +3704,7 @@ impl Machine {
         self.string_search_work = None;
         self.string_trim_work = None;
         self.string_uppercase_work = None;
+        self.string_lowercase_work = None;
         self.truncate_operands(arity);
         self.push_staged(result, None);
         self.advance_pc();
@@ -3809,7 +3837,34 @@ impl Machine {
         pending
     }
 
+    /// Advances private contextual lowercase passes outside the shared budget lock.
+    /// Final logical construction and refusal precedence remain in primitive publication.
+    fn prepare_string_lowercase(&mut self) -> bool {
+        let Ok(operands) = self.peek_operands(1) else {
+            return false;
+        };
+        if operands[0].as_string().is_none() {
+            return false;
+        }
+        let source = operands[0].clone();
+        let pending = self
+            .string_lowercase_work
+            .get_or_insert_with(StringLowercaseWork::default)
+            .advance(
+                source
+                    .as_string()
+                    .unwrap_or_else(|| unreachable!("validated String")),
+                self.limits.value_limits.maximum_string_scalars(),
+                STRING_EQUALITY_WORK_QUANTUM,
+            );
+        if pending {
+            self.status = MachineStatus::YieldRequired;
+        }
+        pending
+    }
+
     /// Bounds replay-only scheduling yields per semantic step from admitted String limits.
+    /// Contextual lowercase uses three scalar passes, also covered by this allowance.
     /// Four UTF-8 octets per scalar and four linear passes bound search/comparison chunks; one extra yield covers the
     /// ordinary transition quantum. Saturation remains finite and never changes charges.
     #[cfg(all(feature = "concurrent", feature = "durable"))]
@@ -4749,6 +4804,7 @@ impl Machine {
         self.string_search_work = None;
         self.string_trim_work = None;
         self.string_uppercase_work = None;
+        self.string_lowercase_work = None;
         self.settle_consumption_obligations();
         self.status = match outcome {
             MachineOutcome::Succeeded(_) => MachineStatus::Succeeded,

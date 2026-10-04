@@ -957,6 +957,12 @@ portable outcomes, identity, or durable compatibility.
    bound before private accumulation. Recovery MAY recompute this private output from retained
    operands; final logical-value construction, copying and allocation remain outside this
    mapping-work bound. No partial output or additional semantic transition MAY be published.
+   Contextual lowercase collection, backward context analysis and forward mapping MUST share
+   a finite quantum of at most 4096 scalar steps per call. Pinned `Final_Sigma` and
+   `Case_Ignorable` rules MUST remain exact across yields. Scratch MAY retain one scalar and
+   context flag per input scalar plus output admitted under the captured String bound;
+   recovery MAY recompute these private facts. Allocation, cloning and final construction
+   remain outside this work bound, and no partial result or extra transition is admitted.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

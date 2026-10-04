@@ -1925,6 +1925,88 @@ fn long_string_equality_yields_before_atomic_publication_and_cancellation() {
     }
 }
 
+/// Contextual lowercase must yield without losing Final_Sigma across ignorable runs.
+#[test]
+fn long_string_lowercase_yields_with_exact_context_and_cancellation() {
+    let input = format!("ΟΣ{}Α ΟΣ", "\u{301}".repeat(10_000));
+    let expected = format!("οσ{}α ος", "\u{301}".repeat(10_000));
+    let root = workflow(
+        "crate::main",
+        vec![],
+        TypeDescriptor::STRING,
+        EffectSet::default(),
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::STRING,
+                InstructionKind::Push(
+                    LogicalValue::string(input, DEFAULT_VALUE_LIMITS)
+                        .unwrap_or_else(|error| panic!("input: {error:?}")),
+                ),
+            ),
+            instruction(
+                1,
+                TypeDescriptor::STRING,
+                InstructionKind::Primitive(Primitive::StringLowercase),
+            ),
+            instruction(2, TypeDescriptor::STRING, InstructionKind::Return),
+        ],
+    );
+    let mut machine = new_machine(
+        program(vec![root]),
+        "crate::main",
+        vec![],
+        limits(8, 1, 1, 1, 8),
+    );
+    assert!(matches!(machine.step(), MachineStep::Transition(_)));
+    let before = machine.execution_budget().snapshot();
+    assert_eq!(machine.step(), MachineStep::YieldRequired);
+    assert_eq!(machine.execution_budget().snapshot(), before);
+    let mut cancelled = machine.clone();
+    assert!(cancelled.cancel("lowercase cancelled").is_some());
+    assert!(matches!(
+        drive(&mut cancelled),
+        MachineOutcome::Cancelled(_)
+    ));
+    assert_eq!(cancelled.execution_budget().snapshot(), before);
+    #[cfg(feature = "durable")]
+    {
+        let bytes = machine.checkpoint().canonical_bytes();
+        let checkpoint = crate::MachineCheckpointV3::decode(&machine.program_arc(), &bytes)
+            .unwrap_or_else(|error| panic!("lowercase checkpoint: {error:?}"));
+        let budget = ExecutionBudget::recover_from_checkpoint(before)
+            .unwrap_or_else(|error| panic!("lowercase budget: {error:?}"));
+        let mut recovered =
+            Machine::recover_from_checkpoint(machine.program_arc(), checkpoint, budget)
+                .unwrap_or_else(|error| panic!("lowercase recovery: {error:?}"));
+        assert_eq!(recovered.checkpoint().canonical_bytes(), bytes);
+        assert!(recovered.resume_after_yield());
+        assert_eq!(
+            drive(&mut recovered),
+            MachineOutcome::Succeeded(
+                LogicalValue::string(expected.clone(), DEFAULT_VALUE_LIMITS)
+                    .unwrap_or_else(|error| panic!("lowercase expected: {error:?}"))
+            )
+        );
+        assert_eq!(
+            recovered.execution_budget().snapshot().revision,
+            before.revision + 1
+        );
+    }
+    assert!(machine.resume_after_yield());
+    assert_eq!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(
+            LogicalValue::string(expected, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|error| panic!("expected: {error:?}"))
+        )
+    );
+    assert_eq!(
+        machine.execution_budget().snapshot().revision,
+        before.revision + 1
+    );
+}
+
 /// Long uppercase construction yields before publication and retains no partial result on cancel.
 #[test]
 fn long_string_uppercase_yields_before_publication_and_cancellation() {
