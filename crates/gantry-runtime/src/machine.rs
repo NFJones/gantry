@@ -3273,6 +3273,9 @@ impl Machine {
             }
             return self.execute_aggregate(kind, operands, workflow, instruction.site);
         }
+        if let InstructionKind::Project(projection) = instruction.kind.clone() {
+            return self.execute_projection(projection, workflow, instruction.site);
+        }
         let execution_budget = self.execution_budget.clone();
         let mut budget_state = execution_budget.lock();
         let site = instruction.site.clone();
@@ -3292,9 +3295,7 @@ impl Machine {
             InstructionKind::Aggregate { .. } => {
                 unreachable!("aggregates use private result construction")
             }
-            InstructionKind::Project(projection) => {
-                self.project_value(projection, &mut budget_state)
-            }
+            InstructionKind::Project(_) => unreachable!("projections use private lookup"),
             InstructionKind::Primitive(_) => {
                 unreachable!("primitives use private result construction")
             }
@@ -3669,17 +3670,18 @@ impl Machine {
             Ok(candidate) => candidate,
             Err(code) => return self.fail_at(code, workflow, site),
         };
-        if let Err(code) = self.publish_constructed_result(candidate, operands) {
+        if let Err(code) = self.publish_constructed_result(candidate, operands, None) {
             return self.fail_at(code, workflow, site);
         }
         self.finish_deterministic(workflow, site, Arc::from("aggregate"))
     }
 
-    fn project_value(
-        &mut self,
+    /// Resolves a private value and extended place origin without shared counter locking.
+    /// Invalid indexes and moved-out place refusals retain precedence over budget admission.
+    fn projection_result(
+        &self,
         projection: Projection,
-        budget_state: &mut ExecutionBudgetState,
-    ) -> Result<(), RuntimeCode> {
+    ) -> Result<(LogicalValue, Option<LoadedPlace>), RuntimeCode> {
         let source = self.values.last().ok_or(RuntimeCode::InternalInvariant)?;
         let source_place = self
             .values_places
@@ -3720,11 +3722,25 @@ impl Machine {
             }
             None => None,
         };
-        self.charge_transition(budget_state)?;
-        self.pop_staged();
-        self.push_staged(projected, projected_place);
-        self.advance_pc();
-        Ok(())
+        Ok((projected, projected_place))
+    }
+
+    /// Publishes an exact projection and its origin with one atomic transition charge.
+    /// Consumed source ownership and temporary origins are disposed outside shared counters.
+    fn execute_projection(
+        &mut self,
+        projection: Projection,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+    ) -> MachineStep {
+        let (candidate, place) = match self.projection_result(projection) {
+            Ok(candidate) => candidate,
+            Err(code) => return self.fail_at(code, workflow, site),
+        };
+        if let Err(code) = self.publish_constructed_result(candidate, 1, place) {
+            return self.fail_at(code, workflow, site);
+        }
+        self.finish_deterministic(workflow, site, Arc::from("projection"))
     }
 
     /// Constructs and validates a private primitive result without acquiring shared counters.
@@ -3864,7 +3880,7 @@ impl Machine {
             Ok(result) => result,
             Err(code) => return self.fail_at(code, workflow, site),
         };
-        if let Err(code) = self.publish_constructed_result(result, primitive.arity()) {
+        if let Err(code) = self.publish_constructed_result(result, primitive.arity(), None) {
             return self.fail_at(code, workflow, site);
         }
         // Recomputable scratch destruction is separate from budget publication too.
@@ -3888,6 +3904,7 @@ impl Machine {
         &mut self,
         result: LogicalValue,
         operands: usize,
+        place: Option<LoadedPlace>,
     ) -> Result<(), RuntimeCode> {
         let mut consumed = Vec::with_capacity(operands);
         let execution_budget = self.execution_budget.clone();
@@ -3899,7 +3916,7 @@ impl Machine {
                     unreachable!("private result construction validated operands")
                 }));
             }
-            self.push_staged(result, None);
+            self.push_staged(result, place);
             self.advance_pc();
         }
         drop(consumed);
@@ -6621,6 +6638,18 @@ mod bounded_string_tests {
             Ok(expected)
         );
         assert_eq!(machine.values.len(), 2);
+        assert_eq!(machine.frames[0].pc, pc);
+        assert_eq!(*held, before);
+        machine.values.clear();
+        machine.values_places.clear();
+        let source = LogicalValue::list(vec![LogicalValue::unit()], DEFAULT_STRING_TEST_LIMITS)
+            .unwrap_or_else(|error| panic!("projection source: {error:?}"));
+        machine.push_staged(source.clone(), None);
+        assert_eq!(
+            machine.projection_result(Projection::Member(0)),
+            Ok((LogicalValue::unit(), None))
+        );
+        assert_eq!(machine.values, vec![source]);
         assert_eq!(machine.frames[0].pc, pc);
         assert_eq!(*held, before);
         drop(held);

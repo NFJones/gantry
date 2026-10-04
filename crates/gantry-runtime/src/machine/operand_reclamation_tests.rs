@@ -158,3 +158,97 @@ fn assert_consumed_origin_reclamation(aggregate: bool) {
     assert_eq!(machine.values_places, vec![None]);
     assert_eq!(machine.execution_budget.snapshot().revision, 1);
 }
+
+/// Projection must retain its extended origin while disposing the source outside shared counters.
+#[test]
+fn projection_source_and_temporary_origins_are_disposed_after_budget_unlock() {
+    let root = CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("root: {error:?}"));
+    let program = Arc::new(
+        MachineProgram::new(vec![gantry_ir::Workflow {
+            path: root.clone(),
+            parameters: Vec::new(),
+            result: TypeDescriptor::UNIT,
+            effects: gantry_ir::EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: StructuralPosition::new(vec![0])
+                        .unwrap_or_else(|error| panic!("site: {error:?}")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Project(Projection::Member(0)),
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![1])
+                        .unwrap_or_else(|error| panic!("site: {error:?}")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Return,
+                },
+            ],
+        }])
+        .unwrap_or_else(|error| panic!("program: {error:?}")),
+    );
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x95; 32])
+        .unwrap_or_else(|error| panic!("execution: {error:?}"));
+    let limits = MachineLimits::new(8, 1, 1, 1, 8, gantry_core::value::DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| panic!("limits"));
+    let mut machine = Machine::new(program, &root, Vec::new(), execution, limits)
+        .unwrap_or_else(|error| panic!("machine: {error:?}"));
+    let origin: Arc<str> = Arc::from("projection-source-origin");
+    let weak = Arc::downgrade(&origin);
+    let value = LogicalValue::list(
+        (0..10_000).map(|_| LogicalValue::unit()).collect(),
+        limits.value_limits,
+    )
+    .unwrap_or_else(|error| panic!("value: {error:?}"));
+    machine.push_staged(
+        value,
+        Some(LoadedPlace {
+            root: origin,
+            path: Vec::new(),
+        }),
+    );
+    PROBE.with(|cell| {
+        *cell.borrow_mut() = Some(Probe {
+            root: weak.clone(),
+            budget: machine.execution_budget.clone(),
+            observations: Vec::new(),
+        })
+    });
+    let step = machine.step();
+    let observations = PROBE.with(|cell| {
+        cell.borrow_mut()
+            .take()
+            .unwrap_or_else(|| panic!("probe exists"))
+            .observations
+    });
+    assert!(matches!(
+        step,
+        MachineStep::Transition(MachineLabel::Deterministic { .. })
+    ));
+    assert!(
+        !observations.is_empty(),
+        "source origins must actually be disposed"
+    );
+    assert!(
+        observations.iter().all(|(_, unlocked, _)| *unlocked),
+        "{observations:?}"
+    );
+    assert!(
+        observations
+            .iter()
+            .any(|(_, _, revision)| *revision == Some(1))
+    );
+    assert_eq!(machine.values, vec![LogicalValue::unit()]);
+    let place = machine.values_places[0]
+        .as_ref()
+        .unwrap_or_else(|| panic!("projected origin"));
+    assert_eq!(place.root.as_ref(), "projection-source-origin");
+    assert_eq!(place.path, vec![ValuePathSegment::ListItem(0)]);
+    assert_eq!(machine.frames[0].pc, 1);
+    assert_eq!(machine.execution_budget.snapshot().revision, 1);
+    assert!(
+        weak.upgrade().is_some(),
+        "the projected place retains its origin"
+    );
+    drop(machine);
+    assert!(weak.upgrade().is_none());
+}

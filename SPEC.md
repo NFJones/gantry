@@ -1004,6 +1004,10 @@ portable outcomes, identity, or durable compatibility.
    Authenticated live-resource aggregation MUST still refuse before operand copying. Only a
    complete candidate MAY publish with its existing single charge; consumed ownership MUST
    remain retained until mutex release. Aggregate construction remains synchronous.
+   Projection lookup and extended place-origin validation MUST likewise precede shared-counter
+   locking. Invalid-index and moved-out-place refusals MUST retain precedence over budget refusal.
+   The projected value and its exact origin MUST publish with one charge, retaining consumed
+   source ownership until after unlocking. This adds no authority, stop point or latency bound.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

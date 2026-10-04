@@ -792,6 +792,11 @@ boundary. Live-resource classification still refuses before operand copying; res
 precedence over counter exhaustion. Consumed values and origins are reclaimed after unlocking.
 This does not make aggregate construction cooperative or grant live-handle transport.
 
+Projection lookup and extended place-origin validation also run outside shared counters.
+Invalid indexes and moved-out places retain their refusal precedence. Atomic publication preserves
+the projected origin and the existing single charge; consumed source storage and temporary origins
+are disposed after unlocking. Lookup remains synchronous and grants no new authority or stop point.
+
 Direct String equality, inequality, prefix and suffix matching compare at most 4096 UTF-8 octets per machine call
 before requesting a scheduling-only executor yield. Operands and program position remain
 unchanged until the Boolean result commits with the existing single transition charge.
