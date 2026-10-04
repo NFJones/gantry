@@ -6779,6 +6779,195 @@ fn charged_receiver_loan_acquisition_preserves_refusal_and_commits_once() {
     );
 }
 
+/// Pending machine facts govern receiver acquisition without independent ABI reconstruction.
+#[test]
+fn pending_machine_receiver_acquisition_preserves_provenance_and_charging() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    let (program, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("pending subject"));
+    let owner = OwnerGeneration::new(4);
+    let allowance = OperationAbi::observation_allowance(
+        2,
+        DisclosureCharge::new(1).unwrap_or_else(|| panic!("positive observation charge")),
+    );
+    let account = admitted(
+        ResourceCarrier::ReconstructionRecord,
+        ledger().durable_record(),
+        subject.clone(),
+    )
+    .unwrap_or_else(|error| panic!("account: {error:?}"));
+    let mut resource = OwnedHostResource::bind(account, 11_u64).unwrap_or_else(|_| panic!("bind"));
+    let before = resource.account().durable_record();
+    let checkpoint = machine.checkpoint().canonical_bytes();
+    let budget = machine.budget_checkpoint();
+    let mut foreign = Machine::new(
+        program,
+        &CanonicalPath::new(FIXTURE_WORKFLOW).unwrap_or_else(|error| panic!("workflow: {error:?}")),
+        Vec::new(),
+        ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [10; 32])
+            .unwrap_or_else(|error| panic!("foreign execution: {error:?}")),
+        MachineLimits::new(8, 1, 1, 1, 8, DEFAULT_VALUE_LIMITS).unwrap_or_else(|| panic!("limits")),
+    )
+    .unwrap_or_else(|error| panic!("foreign machine: {error:?}"));
+    assert!(matches!(
+        foreign.step(),
+        MachineStep::Transition(MachineLabel::OperationPrepared(_))
+    ));
+    assert_eq!(
+        resource
+            .borrow_receiver_from_pending(&foreign, owner, allowance, &[])
+            .err(),
+        Some(HostResourceError::ForeignSubject)
+    );
+    let invalid = [Charge {
+        owner: QuotaOwner::Owner,
+        family: QuotaFamily::Handles,
+        amount: 1,
+    }];
+    assert_eq!(
+        resource
+            .borrow_receiver_from_pending(&machine, owner, allowance, &invalid)
+            .err(),
+        Some(HostResourceError::Model(ResourceError::UndeclaredQuota))
+    );
+    assert_eq!(resource.account().durable_record(), before);
+    assert_eq!(machine.checkpoint().canonical_bytes(), checkpoint);
+    assert_eq!(machine.budget_checkpoint(), budget);
+    let charges = [Charge {
+        owner: QuotaOwner::Owner,
+        family: QuotaFamily::Bytes,
+        amount: 3,
+    }];
+    {
+        let mut loan = resource
+            .borrow_receiver_from_pending(&machine, owner, allowance, &charges)
+            .unwrap_or_else(|error| panic!("machine-qualified acquisition: {error:?}"));
+        assert_eq!(loan.live().operation(), subject.operation());
+        assert_eq!(loan.live().generation(), subject.generation());
+        assert_eq!(loan.live().abi().recovery(), RecoveryClass::Idempotent);
+        assert_eq!(loan.invoke(|value| Ok(*value)), Ok(11));
+        loan.settle_failure(FailureClass::AdapterFailure)
+            .unwrap_or_else(|error| panic!("settlement: {error:?}"));
+    }
+    assert_eq!(
+        resource
+            .account()
+            .remaining(QuotaOwner::Owner, QuotaFamily::Bytes),
+        Some(5)
+    );
+    assert!(
+        machine.checkpoint().pending_operation().is_some(),
+        "loan settlement does not settle machine work"
+    );
+    // A separate eligible owner proves cancellation refusal precedes quota charging.
+    let (_, mut cancelled, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let account = admitted(
+        ResourceCarrier::ReconstructionRecord,
+        ledger().durable_record(),
+        subject.unwrap_or_else(|| panic!("cancelled subject")),
+    )
+    .unwrap_or_else(|error| panic!("account: {error:?}"));
+    let mut cancelled_resource =
+        OwnedHostResource::bind(account, 17_u64).unwrap_or_else(|_| panic!("bind"));
+    let before = cancelled_resource.account().durable_record();
+    assert!(cancelled.cancel("loan acquisition cancelled").is_some());
+    assert_eq!(
+        cancelled_resource
+            .borrow_receiver_from_pending(&cancelled, owner, allowance, &invalid)
+            .err(),
+        Some(HostResourceError::CancellationRequested)
+    );
+    assert_eq!(cancelled_resource.account().durable_record(), before);
+    let operation = machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("pending"))
+        .identity;
+    machine
+        .fail_operation(
+            operation,
+            gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+        )
+        .unwrap_or_else(|error| panic!("settle machine: {error:?}"));
+    assert_eq!(
+        resource
+            .borrow_receiver_from_pending(&machine, owner, allowance, &[])
+            .err(),
+        Some(HostResourceError::PendingOperation)
+    );
+}
+
+/// A recovered pending alias cannot reopen a loan after the authoritative issuing work settles.
+#[test]
+fn pending_receiver_acquisition_refuses_settled_authoritative_lease_through_recovery() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    let (program, mut machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("pending subject"));
+    let bytes = machine.checkpoint().canonical_bytes();
+    let checkpoint = MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("checkpoint: {error:?}"));
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("budget: {error:?}"));
+    let recovered = Machine::recover_from_checkpoint(program, checkpoint, budget)
+        .unwrap_or_else(|error| panic!("recovered alias: {error:?}"));
+    assert_eq!(recovered.pending_resource_subject(), Some(subject.clone()));
+    let account = admitted(
+        ResourceCarrier::ReconstructionRecord,
+        ledger().durable_record(),
+        subject,
+    )
+    .unwrap_or_else(|error| panic!("account: {error:?}"));
+    let mut resource = OwnedHostResource::bind(account, 11_u64).unwrap_or_else(|_| panic!("bind"));
+    let owner = OwnerGeneration::new(4);
+    let allowance = OperationAbi::observation_allowance(
+        2,
+        DisclosureCharge::new(1).unwrap_or_else(|| panic!("positive charge")),
+    );
+    let invalid = [Charge {
+        owner: QuotaOwner::Owner,
+        family: QuotaFamily::Handles,
+        amount: 1,
+    }];
+    assert_eq!(
+        resource
+            .borrow_receiver_from_pending(&recovered, owner, allowance, &invalid)
+            .err(),
+        Some(HostResourceError::Model(ResourceError::UndeclaredQuota)),
+        "eligible recovered aliases still reach ordinary quota admission"
+    );
+    let before = resource.account().durable_record();
+    let operation = machine
+        .checkpoint()
+        .pending_operation()
+        .unwrap_or_else(|| panic!("pending"))
+        .identity;
+    machine
+        .fail_operation(
+            operation,
+            gantry::portable::RuntimeErrorCategory::ExecutorFailure,
+        )
+        .unwrap_or_else(|error| panic!("settle authoritative work: {error:?}"));
+    let charges = [Charge {
+        owner: QuotaOwner::Owner,
+        family: QuotaFamily::Bytes,
+        amount: 3,
+    }];
+    assert_eq!(
+        resource
+            .borrow_receiver_from_pending(&recovered, owner, allowance, &charges)
+            .err(),
+        Some(HostResourceError::PendingOperation)
+    );
+    assert_eq!(resource.account().durable_record(), before);
+    assert!(!resource.is_poisoned());
+    assert_eq!(
+        resource.invoke(owner, |value| Ok(*value)),
+        Ok(11),
+        "refused acquisition leaves no outstanding-loan fence"
+    );
+    assert_eq!(recovered.checkpoint().canonical_bytes(), bytes);
+}
+
 /// Direct update charges commit only for admitted callbacks and are not rolled back after failure.
 #[test]
 fn charged_host_invocation_preserves_refusals_and_accepted_charges() {

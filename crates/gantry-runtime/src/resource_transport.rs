@@ -208,6 +208,48 @@ impl<T> OwnedHostResource<T> {
         self.borrow_receiver_with_charges(live, &[])
     }
 
+    /// Derives and acquires a receiver loan from an exact pending issuing machine.
+    ///
+    /// The caller supplies current ownership, observation allowance and explicit charges,
+    /// not operation identity or recovery metadata. Pending subject provenance must match
+    /// this account; the existing loan-root, transport, cancellation and quota fences then
+    /// apply under the account's authoritative lease. Refusal changes no accounting or
+    /// machine facts. Receiver authority remains the embedding caller's responsibility.
+    /// No physical handle, source value, accepted-work settlement or recovery is created.
+    pub fn borrow_receiver_from_pending(
+        &mut self,
+        machine: &crate::Machine,
+        owner: OwnerGeneration,
+        allowance: gantry_ir::ObservationAllowance,
+        charges: &[gantry_ir::Charge],
+    ) -> Result<HostReceiverLoan<'_, T>, HostResourceError> {
+        self.require_owner(owner)?;
+        let subject = machine
+            .pending_resource_subject()
+            .ok_or(HostResourceError::PendingOperation)?;
+        if subject != *self.account.subject() {
+            return Err(HostResourceError::ForeignSubject);
+        }
+        let retained = machine
+            .pending_resource_abi(gantry_ir::ReceiverOwnership::RetainedByCaller)
+            .map_err(HostResourceError::Operation)?
+            .ok_or(HostResourceError::ForeignLoan)?;
+        let loan = gantry_ir::LoanId::seal(
+            retained.declaration(),
+            retained.site(),
+            retained.generation(),
+        );
+        let abi = machine
+            .pending_resource_abi(gantry_ir::ReceiverOwnership::BorrowedLoan(loan))
+            .map_err(HostResourceError::Operation)?
+            .ok_or(HostResourceError::ForeignLoan)?;
+        let live = abi
+            .open_live(owner, allowance)
+            .map_err(HostResourceError::Operation)?;
+        self.borrow_receiver_using(live, charges, true)
+            .map_err(|refusal| refusal.0)
+    }
+
     /// Atomically charges an explicit loan vector and acquires the exact receiver loan.
     ///
     /// Eligibility and cancellation retain precedence over quota refusal. The complete
@@ -217,6 +259,18 @@ impl<T> OwnedHostResource<T> {
         &mut self,
         live: LiveResource,
         charges: &[gantry_ir::Charge],
+    ) -> Result<HostReceiverLoan<'_, T>, Box<(HostResourceError, LiveResource)>> {
+        self.borrow_receiver_using(live, charges, false)
+    }
+
+    /// Shares loan eligibility and authoritative lease admission without changing legacy
+    /// historical borrowing. Pending-specific acquisition checks settlement under that same
+    /// guard, after cancellation and before charging or setting the acquisition fence.
+    fn borrow_receiver_using(
+        &mut self,
+        live: LiveResource,
+        charges: &[gantry_ir::Charge],
+        require_pending: bool,
     ) -> Result<HostReceiverLoan<'_, T>, Box<(HostResourceError, LiveResource)>> {
         if let Err(error) = self.require_owner(live.owner()) {
             return Err(Box::new((error, live)));
@@ -262,6 +316,9 @@ impl<T> OwnedHostResource<T> {
         };
         if admission.cancellation_requested {
             return Err(Box::new((HostResourceError::CancellationRequested, live)));
+        }
+        if require_pending && !admission.pending {
+            return Err(Box::new((HostResourceError::PendingOperation, live)));
         }
         if let Err(error) =
             self.account

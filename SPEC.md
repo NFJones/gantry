@@ -15801,7 +15801,21 @@ Eligibility and cancellation MUST precede quota admission. The complete Section 
 MUST commit under the same lease before acquiring the loan, with no remaining fallible step;
 quota refusal MUST return the handle unchanged and acquire no loan. No charge is inferred from
 physical size or observation allowance. Ordinary borrowing uses an empty vector. Accepted loan
-settlement and sealed cleanup remain available after cancellation. Accepted Section 20 settlement MUST project
+settlement and sealed cleanup remain available after cancellation.
+`borrow_receiver_from_pending` MAY derive and acquire the loan from a supplied pending machine.
+Current-owner validation MUST precede pending-subject validation. Its exact runtime-qualified
+subject MUST equal the admitted account's subject before deriving ABI or loan facts; a foreign
+execution or task MUST refuse `ForeignSubject`, and absent pending work MUST refuse
+`PendingOperation`. Declaration, recovery, site and generation MUST come from the machine,
+not caller text. Observation allowance and explicit charges remain declared caller inputs.
+The existing transport, loan-root, account-lease cancellation and whole-vector quota fences
+MUST still apply before acquisition. After cancellation validation, the admitted account's
+authoritative lease MUST still be pending under the same guard as charging and acquisition;
+otherwise `PendingOperation` MUST refuse without spending quota or acquiring a loan. A recovered
+caller's pending lease MUST NOT reopen settled authoritative work. Historical unqualified
+borrowing remains unchanged. Refusal MUST change no accounting or machine fact.
+This route grants no receiver authority, physical ownership, source transport or machine settlement.
+Accepted Section 20 settlement MUST project
 only operation state and close that loan root; refused settlement MUST retain the guard and
 observed progress. No loan settlement releases whole-resource lifetime or pending machine work.
 An acquired `HostReceiverLoan` MAY expose `invoke_with_charges` for an explicit whole update

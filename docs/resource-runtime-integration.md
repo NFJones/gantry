@@ -615,7 +615,19 @@ refusal returns the complete handle without changing accounting or poisoning tra
 same lease, after eligibility and cancellation and before the infallible acquisition. Quota refusal
 preserves the handle and every quota and acquires no loan. Ordinary borrowing uses an empty vector;
 neither physical size nor observation allowance supplies implicit charges. Already
-admitted loan settlement and sealed cleanup remain available after cancellation. The underlying `LiveResource`
+admitted loan settlement and sealed cleanup remain available after cancellation.
+`borrow_receiver_from_pending(machine, owner, allowance, charges)` derives the loan and ABI
+from the supplied pending machine after current-owner and exact runtime-subject checks.
+Foreign execution/task subjects refuse `ForeignSubject`; absent pending work refuses
+`PendingOperation`. It reuses the existing account-lease cancellation, eligibility and atomic
+quota path without accepting caller-selected operation identities or recovery classes.
+After cancellation validation, this pending-specific route additionally checks the account's
+authoritative pending state under the same lock as charging and acquisition. A recovered pending
+alias cannot reopen settled issuing work; refusal spends no quota and creates no loan fence.
+Historical unqualified borrowing remains unchanged.
+The caller still authenticates receiver authority and declares observation allowance/charges;
+this is process-local access, not source-handle transport or pending-machine settlement.
+The underlying `LiveResource`
 refuses observation after accepted settlement with `SecondSettlement`, preserving progress,
 state and observation allowance even for a partial winner with an open half. Generation fencing
 retains observation-refusal precedence and the first fencing category on repeated requests,
