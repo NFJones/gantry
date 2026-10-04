@@ -2067,6 +2067,33 @@ fn resource_records_survive_version_eight_graph_recovery() {
         .unwrap_or_else(|error| panic!("recover: {error:?}"))
         .into_driver_admission()
         .unwrap_or_else(|error| panic!("driver admission: {error:?}"));
+    let components = checkpoint
+        .clone()
+        .recover(Arc::clone(&program))
+        .unwrap_or_else(|error| panic!("component recovery: {error:?}"));
+    let (component_root, component_scheduler, component_sessions) = components
+        .into_parts()
+        .unwrap_or_else(|_| panic!("valid resource-bearing components remain extractable"));
+    assert_eq!(
+        component_scheduler.resource_records(),
+        checkpoint.resource_records()
+    );
+    assert_eq!(
+        component_scheduler.resource_policy(),
+        checkpoint.resource_policy()
+    );
+    assert_eq!(component_scheduler.retained_resource_limit(), Some(3));
+    assert_eq!(
+        component_root.execution_budget().snapshot(),
+        component_scheduler.execution_budget()
+    );
+    let recaptured = crate::ConcurrentDurableCheckpointV4::capture(
+        &component_root,
+        &component_scheduler,
+        &component_sessions,
+    )
+    .unwrap_or_else(|error| panic!("component recapture: {error:?}"));
+    assert_eq!(recaptured.canonical_bytes(), bytes);
     assert_eq!(
         recovered.coordinator().snapshot().resource_records(),
         before.resource_records()
@@ -3146,6 +3173,31 @@ fn retained_resource_policy_survives_graph_recovery() {
         let decoded = crate::ConcurrentDurableCheckpointV4::decode_compatible(&program, &bytes)
             .unwrap_or_else(|error| panic!("retained policy decode: {error:?}"));
         assert_eq!(decoded.canonical_bytes(), bytes);
+        let (component_root, component_scheduler, component_sessions) = decoded
+            .clone()
+            .recover(Arc::clone(&program))
+            .unwrap_or_else(|error| panic!("policy component recovery: {error:?}"))
+            .into_parts()
+            .unwrap_or_else(|_| panic!("valid policy-bearing components remain extractable"));
+        assert_eq!(
+            component_scheduler.resource_policy(),
+            Some((Some(2), Some(3)))
+        );
+        assert_eq!(
+            component_scheduler.retained_resource_limit(),
+            Some(retained)
+        );
+        assert!(component_scheduler.resource_records().is_empty());
+        assert_eq!(
+            crate::ConcurrentDurableCheckpointV4::capture(
+                &component_root,
+                &component_scheduler,
+                &component_sessions,
+            )
+            .unwrap_or_else(|error| panic!("policy component recapture: {error:?}"))
+            .canonical_bytes(),
+            bytes,
+        );
         let admission = decoded
             .recover(program)
             .unwrap_or_else(|error| panic!("retained policy recovery: {error:?}"))
