@@ -1044,6 +1044,11 @@ portable outcomes, identity, or durable compatibility.
    outside shared execution counters. Their existing uncharged suspension, handle ordering and
    empty-joinall behavior MUST remain unchanged. Refusal MUST consume no handle or publish a
    partial suspension; this adds no ownership authority or destruction-latency guarantee.
+   Integration operation inputs and immutable executable metadata MUST be prepared outside
+   shared execution counters. Operation charging, resource-generation allocation and pending
+   publication retain their existing atomic counter boundary. Refused admission MUST release
+   the mutex before failure cleanup or temporary-input disposal. This does not bound identity
+   derivation, allocation or total preparation latency and changes no operation charge.
    Spawned-body completion MUST validate its result outside shared counters and retain consumed
    operand ownership through its existing charge until mutex release. Invalid-result refusal
    MUST precede budget admission; failed charging MUST consume no operand. Terminal settlement

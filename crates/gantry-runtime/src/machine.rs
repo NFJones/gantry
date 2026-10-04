@@ -3453,6 +3453,15 @@ impl Machine {
         if let InstructionKind::Spawn { handle, body } = instruction.kind.clone() {
             return self.prepare_spawn(workflow, instruction.site, handle, body);
         }
+        let operation_operands = match &instruction.kind {
+            InstructionKind::Operation => Some(0),
+            InstructionKind::OperationWithOperands { operands }
+            | InstructionKind::OperationCall { operands, .. } => Some(*operands),
+            _ => None,
+        };
+        if let Some(operands) = operation_operands {
+            return self.prepare_operation(workflow, instruction, operands);
+        }
         #[cfg(feature = "concurrent")]
         match instruction.kind.clone() {
             InstructionKind::Join { handles } => {
@@ -3555,13 +3564,13 @@ impl Machine {
                 return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
             }
             InstructionKind::Operation => {
-                return self.prepare_operation(workflow, instruction, 0, &mut budget_state);
+                unreachable!("operations own input preparation and charged publication")
             }
-            InstructionKind::OperationWithOperands { operands } => {
-                return self.prepare_operation(workflow, instruction, operands, &mut budget_state);
+            InstructionKind::OperationWithOperands { .. } => {
+                unreachable!("operations own input preparation and charged publication")
             }
-            InstructionKind::OperationCall { operands, .. } => {
-                return self.prepare_operation(workflow, instruction, operands, &mut budget_state);
+            InstructionKind::OperationCall { .. } => {
+                unreachable!("operations own input preparation and charged publication")
             }
             InstructionKind::EnterAgent(agent) => self.enter_agent(agent, &mut budget_state),
             InstructionKind::ExitAgent => self.exit_agent(&mut budget_state),
@@ -5395,15 +5404,23 @@ impl Machine {
         self.finish_deterministic(workflow, site, Arc::from("return"))
     }
 
+    /// Copies validated inputs without acquiring shared execution counters.
+    /// This pure preparation changes no operands, origins, program position or budget facts.
+    fn operation_inputs(&self, operands: usize) -> Result<Arc<[LogicalValue]>, RuntimeCode> {
+        self.peek_operands(operands)
+            .map(|inputs| Arc::from(inputs.to_vec()))
+    }
+
+    /// Prepares immutable inputs before locking; generation allocation and publication stay charged.
+    /// Budget refusal unlocks before failure cleanup or temporary-input destruction.
     fn prepare_operation(
         &mut self,
         workflow: CanonicalPath,
         instruction: Instruction,
         operands: usize,
-        budget_state: &mut ExecutionBudgetState,
     ) -> MachineStep {
-        let inputs = match self.peek_operands(operands) {
-            Ok(inputs) => Arc::from(inputs.to_vec()),
+        let inputs = match self.operation_inputs(operands) {
+            Ok(inputs) => inputs,
             Err(_) => {
                 return self.fail_at(RuntimeCode::InternalInvariant, workflow, instruction.site);
             }
@@ -5412,8 +5429,11 @@ impl Machine {
             InstructionKind::OperationCall { operation, .. } => Some(Arc::new(operation.clone())),
             _ => None,
         };
+        let execution_budget = self.execution_budget.clone();
+        let mut budget_state = execution_budget.lock();
         let resource_generation = budget_state.revision;
-        if let Err(code) = ExecutionBudget::charge_operation(budget_state) {
+        if let Err(code) = ExecutionBudget::charge_operation(&mut budget_state) {
+            drop(budget_state);
             return self.fail_at(code, workflow, instruction.site);
         }
         let operation_frame = self.next_occurrence(
@@ -5432,6 +5452,7 @@ impl Machine {
         let identity = match ProtocolIdentity::derive(IdentityKind::Operation, &key) {
             Ok(identity) => identity,
             Err(_) => {
+                drop(budget_state);
                 return self.fail_at(RuntimeCode::InternalInvariant, workflow, instruction.site);
             }
         };
@@ -7066,6 +7087,17 @@ mod bounded_string_tests {
             Ok((LogicalValue::unit(), None))
         );
         assert_eq!(machine.values, vec![source]);
+        assert_eq!(machine.frames[0].pc, pc);
+        assert_eq!(*held, before);
+        assert_eq!(
+            machine.operation_inputs(1),
+            Ok(Arc::from(machine.values.clone()))
+        );
+        assert_eq!(
+            machine.operation_inputs(2),
+            Err(RuntimeCode::InternalInvariant)
+        );
+        assert_eq!(machine.values.len(), 1);
         assert_eq!(machine.frames[0].pc, pc);
         assert_eq!(*held, before);
         drop(held);

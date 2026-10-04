@@ -890,6 +890,12 @@ validation, consumption and temporary disposal. Uncharged suspension, handle ord
 joinall behavior remain unchanged; refusal consumes no handle or publishes a partial suspension.
 This changes neither task ownership authority nor synchronous destruction latency.
 
+Operation input copying and immutable metadata preparation run outside shared execution counters.
+The existing operation charge, resource-generation allocation and pending publication remain
+under their atomic counter boundary. Rejected admission unlocks before failure cleanup and
+temporary-input disposal. Identity derivation and allocation remain synchronous; this supplies
+no total preparation-latency guarantee or changed operation charge.
+
 Spawned-body completion validates before counter locking and retains consumed operand ownership
 until its existing completion charge unlocks. Invalid-result refusal precedes budget admission;
 failed charging consumes no operand. Outcome and obligation settlement run after unlocking,
