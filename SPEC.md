@@ -987,8 +987,10 @@ portable outcomes, identity, or durable compatibility.
    RFC 8259 scanner steps per call before yielding when more grammar work remains.
    Token endpoints MUST NOT authorize conversion of trailing or substituted input. Invalid
    grammar still publishes `None`, not a task failure. Exact decimal range conversion,
-   binary64 rounding, final grammar revalidation and logical construction remain synchronous
-   and outside this grammar-only work bound. Scratch MAY be recomputed after recovery.
+   binary64 rounding and final grammar revalidation MUST run outside the shared execution-budget
+   mutex, caching only a private numeric result. Logical-result limits and the existing transition
+   charge MUST still precede atomic publication. Conversion and logical construction remain
+   synchronous and outside this grammar-only work bound. Scratch MAY be recomputed after recovery.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

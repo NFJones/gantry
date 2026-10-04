@@ -3710,9 +3710,12 @@ impl Machine {
         let result = if primitive == Primitive::StringParseFloat
             && let Some(work) = self.string_float_work.as_ref()
         {
-            match work.valid {
-                Some(false) => LogicalValue::none(),
-                Some(true) => evaluate_primitive(primitive, operands, self.limits.value_limits)?,
+            match work.result {
+                Some(None) => LogicalValue::none(),
+                Some(Some(value)) => {
+                    LogicalValue::some(LogicalValue::float(value), self.limits.value_limits)
+                        .map_err(map_value_error)?
+                }
                 None => return Err(RuntimeCode::InternalInvariant),
             }
         } else if primitive == Primitive::StringSplit
@@ -4119,7 +4122,8 @@ impl Machine {
     }
 
     /// Advances private Float-token grammar admission outside the shared budget lock.
-    /// Exact conversion still revalidates the whole token during primitive publication.
+    /// Exact conversion revalidates the whole token and caches a private result here;
+    /// value-limit validation and transition charging remain at primitive publication.
     fn prepare_string_float(&mut self) -> bool {
         let Ok(operands) = self.peek_operands(1) else {
             return false;
@@ -6458,6 +6462,68 @@ fn append_bounded_string(
 #[cfg(test)]
 mod bounded_string_tests {
     use super::*;
+
+    /// Private numeric preparation must finish even while the shared budget is held elsewhere.
+    #[test]
+    fn float_conversion_preparation_does_not_acquire_the_budget_lock() {
+        let root =
+            CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("root: {error:?}"));
+        let program = Arc::new(
+            MachineProgram::new(vec![gantry_ir::Workflow {
+                path: root.clone(),
+                parameters: Vec::new(),
+                result: TypeDescriptor::UNIT,
+                effects: gantry_ir::EffectSet::default(),
+                instructions: vec![Instruction {
+                    site: StructuralPosition::new(vec![0])
+                        .unwrap_or_else(|error| panic!("site: {error:?}")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Return,
+                }],
+            }])
+            .unwrap_or_else(|error| panic!("program: {error:?}")),
+        );
+        let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x93; 32])
+            .unwrap_or_else(|error| panic!("execution: {error:?}"));
+        let limits = MachineLimits::new(8, 1, 1, 1, 8, DEFAULT_STRING_TEST_LIMITS)
+            .unwrap_or_else(|| panic!("limits"));
+        let mut machine = Machine::new(program, &root, Vec::new(), execution, limits)
+            .unwrap_or_else(|error| panic!("machine: {error:?}"));
+        let input = LogicalValue::string(
+            format!("1.{}", "0".repeat(10_000)),
+            DEFAULT_STRING_TEST_LIMITS,
+        )
+        .unwrap_or_else(|error| panic!("input: {error:?}"));
+        machine.push_staged(input.clone(), None);
+        let budget = machine.execution_budget.clone();
+        let held = budget.lock();
+        let before = *held;
+        let pc = machine.frames[0].pc;
+        let mut complete = false;
+        for _ in 0..10 {
+            if !machine.prepare_string_float() {
+                complete = true;
+                break;
+            }
+        }
+        assert!(
+            complete,
+            "pure conversion must finish without acquiring the held budget"
+        );
+        assert_eq!(*held, before);
+        assert_eq!(machine.frames[0].pc, pc);
+        assert_eq!(machine.values, vec![input]);
+        assert_eq!(
+            machine
+                .string_float_work
+                .as_ref()
+                .and_then(|work| work.result),
+            Some(Some(
+                GantryFloat::new(1.0).unwrap_or_else(|| panic!("finite fixture"))
+            ))
+        );
+        drop(held);
+    }
 
     /// A refused piece is neither appended nor counted, including multibyte Unicode scalars.
     #[test]
