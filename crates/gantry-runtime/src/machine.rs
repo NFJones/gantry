@@ -27,6 +27,7 @@ use crate::session::SessionCreationModeV1;
 mod string_concat;
 mod string_join;
 mod string_lowercase;
+mod string_replace;
 mod string_search;
 mod string_trim;
 mod string_uppercase;
@@ -35,6 +36,7 @@ use crate::task::{DynamicTaskHandleIdentity, JoinResolutionV1, TaskCaptureV1, Ta
 use string_concat::StringConcatWork;
 use string_join::StringJoinWork;
 use string_lowercase::StringLowercaseWork;
+use string_replace::StringReplaceWork;
 use string_search::StringSearchWork;
 use string_trim::StringTrimWork;
 use string_uppercase::StringUppercaseWork;
@@ -1838,6 +1840,8 @@ pub struct Machine {
     string_concat_work: Option<StringConcatWork>,
     /// Private ordered separator/item admission and joining progress.
     string_join_work: Option<StringJoinWork>,
+    /// Recomputable nonoverlapping search and admitted replacement copying.
+    string_replace_work: Option<StringReplaceWork>,
     #[cfg(feature = "concurrent")]
     pending_task_control: Option<PendingTaskControl>,
     pending_labels: VecDeque<MachineLabel>,
@@ -2135,6 +2139,7 @@ impl Machine {
             string_lowercase_work: None,
             string_concat_work: None,
             string_join_work: None,
+            string_replace_work: None,
             pending_task_control: None,
             pending_labels: VecDeque::new(),
             cancellation: None,
@@ -2250,6 +2255,7 @@ impl Machine {
             string_lowercase_work: None,
             string_concat_work: None,
             string_join_work: None,
+            string_replace_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: None,
             pending_labels: VecDeque::new(),
@@ -2663,6 +2669,7 @@ impl Machine {
             string_lowercase_work: None,
             string_concat_work: None,
             string_join_work: None,
+            string_replace_work: None,
             #[cfg(feature = "concurrent")]
             pending_task_control: checkpoint.pending_task_control,
             pending_labels: checkpoint.pending_labels,
@@ -3191,6 +3198,13 @@ impl Machine {
             {
                 return MachineStep::YieldRequired;
             }
+            if matches!(
+                instruction.kind,
+                InstructionKind::Primitive(Primitive::StringReplace)
+            ) && self.prepare_string_replace()
+            {
+                return MachineStep::YieldRequired;
+            }
             return self.execute(instruction, workflow);
         }
     }
@@ -3665,7 +3679,18 @@ impl Machine {
     ) -> Result<(), RuntimeCode> {
         let arity = primitive.arity();
         let operands = self.peek_operands(arity)?;
-        let result = if primitive == Primitive::StringListJoin
+        let result = if primitive == Primitive::StringReplace
+            && let Some(work) = self.string_replace_work.as_ref()
+        {
+            if let Some(error) = work.error {
+                return Err(error);
+            }
+            if !work.complete {
+                return Err(RuntimeCode::InternalInvariant);
+            }
+            LogicalValue::string(work.output.as_str(), self.limits.value_limits)
+                .map_err(map_string_value_error)?
+        } else if primitive == Primitive::StringListJoin
             && let Some(work) = self.string_join_work.as_ref()
         {
             if let Some(error) = work.error {
@@ -3757,6 +3782,7 @@ impl Machine {
         self.string_lowercase_work = None;
         self.string_concat_work = None;
         self.string_join_work = None;
+        self.string_replace_work = None;
         self.truncate_operands(arity);
         self.push_staged(result, None);
         self.advance_pc();
@@ -3978,6 +4004,41 @@ impl Machine {
         pending
     }
 
+    /// Advances bounded nonoverlapping replacement without holding the budget lock.
+    /// All operand type checks precede empty-pattern admission and private construction.
+    fn prepare_string_replace(&mut self) -> bool {
+        let Ok(operands) = self.peek_operands(3) else {
+            return false;
+        };
+        if operands.iter().any(|operand| operand.as_string().is_none()) {
+            return false;
+        }
+        let pieces = [
+            operands[0].clone(),
+            operands[1].clone(),
+            operands[2].clone(),
+        ];
+        let [source, pattern, replacement] = pieces.each_ref().map(|piece| {
+            piece
+                .as_string()
+                .unwrap_or_else(|| unreachable!("validated String"))
+        });
+        let pending = self
+            .string_replace_work
+            .get_or_insert_with(StringReplaceWork::default)
+            .advance(
+                source,
+                pattern,
+                replacement,
+                self.limits.value_limits.maximum_string_scalars(),
+                STRING_EQUALITY_WORK_QUANTUM,
+            );
+        if pending {
+            self.status = MachineStatus::YieldRequired;
+        }
+        pending
+    }
+
     /// Bounds replay-only scheduling yields per semantic step from admitted String/List limits.
     /// Contextual lowercase uses three scalar passes, also covered by this allowance.
     /// Four UTF-8 octets per scalar and four linear passes bound search/comparison chunks; one extra yield covers the
@@ -3989,7 +4050,7 @@ impl Machine {
             .value_limits
             .maximum_string_scalars()
             .saturating_mul(4)
-            .saturating_mul(4)
+            .saturating_mul(16)
             .saturating_add(
                 self.limits
                     .value_limits
@@ -4928,6 +4989,7 @@ impl Machine {
         self.string_lowercase_work = None;
         self.string_concat_work = None;
         self.string_join_work = None;
+        self.string_replace_work = None;
         self.settle_consumption_obligations();
         self.status = match outcome {
             MachineOutcome::Succeeded(_) => MachineStatus::Succeeded,

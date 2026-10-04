@@ -74,6 +74,18 @@ impl StringSearchWork {
         }
         true
     }
+
+    /// Returns the completed match's source range without exposing partial search progress.
+    pub(super) fn match_range(&self, pattern_length: usize) -> Option<std::ops::Range<usize>> {
+        (self.result == Some(true)).then(|| self.offset - pattern_length..self.offset)
+    }
+
+    /// Continues after a complete nonempty match, retaining the table but excluding overlap.
+    pub(super) fn resume_nonoverlapping(&mut self) {
+        debug_assert_eq!(self.result, Some(true));
+        self.result = None;
+        self.matched = 0;
+    }
 }
 
 #[cfg(test)]

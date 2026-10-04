@@ -829,6 +829,13 @@ the existing order. Refusal publishes no private prefix; recovery restarts from 
 Only the complete logical result publishes with one transition charge. Replay includes List-item
 limits as well as String limits; final construction and allocation remain outside the work bound.
 
+Replacement shares a finite 4096-unit quantum across incremental nonoverlapping search,
+whole-piece scalar admission, copying and phase boundaries. Search retains its prefix table
+between matches and never examines inserted text. Every unmatched/replacement piece is fully
+counted before any of it is copied; refusal publishes no accumulated prefix. Recovery recomputes
+scratch from unchanged operands and completed publication charges one transition. Allocation,
+cloning, disposal and final logical construction remain outside this work guarantee.
+
 Concatenation, replacement and list joining check each next output piece's Unicode-scalar contribution before
 appending it to private construction state. Over-limit pieces are not allocated or appended;
 only the complete logical value is published. Replacement stays nonoverlapping and never rescans

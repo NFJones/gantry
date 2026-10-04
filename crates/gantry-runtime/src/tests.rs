@@ -1925,6 +1925,106 @@ fn long_string_equality_yields_before_atomic_publication_and_cancellation() {
     }
 }
 
+/// Replacement yields before publication and never searches newly inserted text.
+#[test]
+fn long_string_replacement_yields_before_publication_and_cancellation() {
+    let source = format!("{}éé", "a".repeat(20_000));
+    let expected = format!("{}éxéx", "a".repeat(20_000));
+    let root = workflow(
+        "crate::main",
+        vec![],
+        TypeDescriptor::STRING,
+        EffectSet::default(),
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::STRING,
+                InstructionKind::Push(
+                    LogicalValue::string(source, DEFAULT_VALUE_LIMITS)
+                        .unwrap_or_else(|error| panic!("source: {error:?}")),
+                ),
+            ),
+            instruction(
+                1,
+                TypeDescriptor::STRING,
+                InstructionKind::Push(
+                    LogicalValue::string("é", DEFAULT_VALUE_LIMITS)
+                        .unwrap_or_else(|error| panic!("pattern: {error:?}")),
+                ),
+            ),
+            instruction(
+                2,
+                TypeDescriptor::STRING,
+                InstructionKind::Push(
+                    LogicalValue::string("éx", DEFAULT_VALUE_LIMITS)
+                        .unwrap_or_else(|error| panic!("replacement: {error:?}")),
+                ),
+            ),
+            instruction(
+                3,
+                TypeDescriptor::STRING,
+                InstructionKind::Primitive(Primitive::StringReplace),
+            ),
+            instruction(4, TypeDescriptor::STRING, InstructionKind::Return),
+        ],
+    );
+    let mut machine = new_machine(
+        program(vec![root]),
+        "crate::main",
+        vec![],
+        limits(8, 1, 1, 1, 8),
+    );
+    for _ in 0..3 {
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+    }
+    let before = machine.execution_budget().snapshot();
+    assert_eq!(machine.step(), MachineStep::YieldRequired);
+    assert_eq!(machine.execution_budget().snapshot(), before);
+    let mut cancelled = machine.clone();
+    assert!(cancelled.cancel("replacement cancelled").is_some());
+    assert!(matches!(
+        drive(&mut cancelled),
+        MachineOutcome::Cancelled(_)
+    ));
+    assert_eq!(cancelled.execution_budget().snapshot(), before);
+    #[cfg(feature = "durable")]
+    {
+        let bytes = machine.checkpoint().canonical_bytes();
+        let checkpoint = crate::MachineCheckpointV3::decode(&machine.program_arc(), &bytes)
+            .unwrap_or_else(|error| panic!("replacement checkpoint: {error:?}"));
+        let budget = ExecutionBudget::recover_from_checkpoint(before)
+            .unwrap_or_else(|error| panic!("replacement budget: {error:?}"));
+        let mut recovered =
+            Machine::recover_from_checkpoint(machine.program_arc(), checkpoint, budget)
+                .unwrap_or_else(|error| panic!("replacement recovery: {error:?}"));
+        assert_eq!(recovered.checkpoint().canonical_bytes(), bytes);
+        assert!(recovered.resume_after_yield());
+        assert_eq!(
+            drive(&mut recovered),
+            MachineOutcome::Succeeded(
+                LogicalValue::string(expected.clone(), DEFAULT_VALUE_LIMITS)
+                    .unwrap_or_else(|error| panic!("replacement recovered result: {error:?}"))
+            )
+        );
+        assert_eq!(
+            recovered.execution_budget().snapshot().revision,
+            before.revision + 1
+        );
+    }
+    assert!(machine.resume_after_yield());
+    assert_eq!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(
+            LogicalValue::string(expected, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|error| panic!("replacement expected: {error:?}"))
+        )
+    );
+    assert_eq!(
+        machine.execution_budget().snapshot().revision,
+        before.revision + 1
+    );
+}
+
 /// Joining long pieces yields before publishing or charging any partial String.
 #[test]
 fn long_string_join_yields_before_publication_and_cancellation() {

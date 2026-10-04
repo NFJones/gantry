@@ -973,6 +973,11 @@ portable outcomes, identity, or durable compatibility.
    copying in existing separator-before-item order, retaining refusal precedence. Private output
    MAY be recomputed after recovery; replay MUST include admitted List-item limits in its separate
    yield allowance. Final construction and allocation remain outside this copy-work bound.
+   String replacement MUST share at most 4096 search, scalar admission/copy or phase-boundary
+   work units per call. Matches MUST remain left-to-right and nonoverlapping, and inserted text
+   MUST NOT be searched. Each whole unmatched/replacement piece MUST pass its output-scalar
+   admission before copying. Private scratch MAY restart from retained operands on recovery;
+   allocation, cloning and final logical construction remain outside this work bound.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.
