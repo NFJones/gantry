@@ -1111,6 +1111,10 @@ portable outcomes, identity, or durable compatibility.
    MUST NOT silently normalize independently charged children; refusal MUST reserve no
    publication and change no machine or coordinator facts. The coordinator's committed
    budget projection remains independently validated as the predecessor frontier.
+   Installing a newly submitted child onto a private transaction budget MUST require
+   its complete budget snapshot to match that private budget before rebinding. Installation
+   MUST NOT discard independently charged progress. Refusal MUST insert no child machine
+   or admission guard, leaving a legitimate submission retry available.
    Graph capture MUST also require identical executable program content across foreground
    and child machines before constructing a checkpoint. Matching body identities and budgets
    MUST NOT authorize different instructions; independent copies of identical programs remain

@@ -51,6 +51,9 @@ Journal-first staging checks that live foreground and child machines share one b
 before rebinding private clones. Equal snapshots cannot normalize independently charged children;
 refusal changes no machine or coordinator facts and reserves no publication. The coordinator's
 committed budget projection remains separately checked as the predecessor frontier.
+New child installation checks the complete counter snapshot against the private budget before
+rebinding. Independently charged progress cannot be erased by installation; refusal inserts no
+child or admission guard, and an unchanged legitimate submission can still be installed.
 Capture also requires identical executable content in foreground and child machines before
 checkpoint construction. Shared immutable programs take a fast path; independent identical
 copies remain eligible. Matching body names or budgets cannot authorize changed instructions.

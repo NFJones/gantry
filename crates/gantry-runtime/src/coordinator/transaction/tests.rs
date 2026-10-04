@@ -4850,6 +4850,20 @@ fn multiple_machines_publish_one_budget_and_checkpoint_cut() {
             tasks.resolve_submission(child.task_id, Ok(()))
         })
         .unwrap_or_else(|error| panic!("submission: {error:?}"));
+    let independent_budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("independent child budget: {error:?}"));
+    let mut advanced_child = Machine::recover_from_checkpoint(
+        Arc::clone(&program),
+        machine.checkpoint(),
+        independent_budget,
+    )
+    .unwrap_or_else(|error| panic!("independent child recovery: {error:?}"));
+    assert!(matches!(advanced_child.step(), MachineStep::Transition(_)));
+    assert_eq!(
+        stage.install_child_machine(child.task_id, advanced_child),
+        Err(TaskStateError::InvalidTaskMachine),
+        "rebinding must not erase independently charged child work",
+    );
     stage
         .install_child_machine(child.task_id, machine)
         .unwrap_or_else(|error| panic!("child installation: {error:?}"));

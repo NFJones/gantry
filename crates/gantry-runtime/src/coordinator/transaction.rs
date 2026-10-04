@@ -431,6 +431,8 @@ impl DurableGraphTransaction<'_> {
     /// Callers first resolve the staged task from `submitting` to `running` in
     /// `update`, then add the corresponding machine before committing the same
     /// checkpoint. The original child machine is never published directly.
+    /// Its counters must match the private budget before rebinding; independently charged
+    /// progress cannot be discarded by installation. Refusal inserts no child or lease guard.
     pub fn install_child_machine(
         &mut self,
         task_id: ProtocolIdentity,
@@ -443,6 +445,9 @@ impl DurableGraphTransaction<'_> {
             .map(|task| task.task_path().to_vec())
             .ok_or(TaskStateError::InvalidTaskMachine)?;
         if self.staged_children.contains_key(&task_id) {
+            return Err(TaskStateError::InvalidTaskMachine);
+        }
+        if machine.budget_checkpoint() != self.budget.snapshot() {
             return Err(TaskStateError::InvalidTaskMachine);
         }
         let (machine, guard) = machine
