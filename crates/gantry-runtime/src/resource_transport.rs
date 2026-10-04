@@ -246,8 +246,13 @@ impl<T> OwnedHostResource<T> {
         let live = abi
             .open_live(owner, allowance)
             .map_err(HostResourceError::Operation)?;
-        self.borrow_receiver_using(live, charges, true)
-            .map_err(|refusal| refusal.0)
+        self.borrow_receiver_using(
+            live,
+            charges,
+            true,
+            machine.resource_cancellation_requested(),
+        )
+        .map_err(|refusal| refusal.0)
     }
 
     /// Atomically charges an explicit loan vector and acquires the exact receiver loan.
@@ -260,7 +265,7 @@ impl<T> OwnedHostResource<T> {
         live: LiveResource,
         charges: &[gantry_ir::Charge],
     ) -> Result<HostReceiverLoan<'_, T>, Box<(HostResourceError, LiveResource)>> {
-        self.borrow_receiver_using(live, charges, false)
+        self.borrow_receiver_using(live, charges, false, false)
     }
 
     /// Shares loan eligibility and authoritative lease admission without changing legacy
@@ -271,6 +276,7 @@ impl<T> OwnedHostResource<T> {
         live: LiveResource,
         charges: &[gantry_ir::Charge],
         require_pending: bool,
+        caller_cancelled: bool,
     ) -> Result<HostReceiverLoan<'_, T>, Box<(HostResourceError, LiveResource)>> {
         if let Err(error) = self.require_owner(live.owner()) {
             return Err(Box::new((error, live)));
@@ -314,7 +320,7 @@ impl<T> OwnedHostResource<T> {
         let Some(admission) = subject.lock_admission() else {
             return Err(Box::new((HostResourceError::PendingOperation, live)));
         };
-        if admission.cancellation_requested {
+        if admission.cancellation_requested || caller_cancelled {
             return Err(Box::new((HostResourceError::CancellationRequested, live)));
         }
         if require_pending && !admission.pending {

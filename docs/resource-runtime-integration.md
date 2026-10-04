@@ -625,6 +625,9 @@ After cancellation validation, this pending-specific route additionally checks t
 authoritative pending state under the same lock as charging and acquisition. A recovered pending
 alias cannot reopen settled issuing work; refusal spends no quota and creates no loan fence.
 Historical unqualified borrowing remains unchanged.
+Cancellation retained by the supplied machine also refuses at cancellation admission, even
+if its recovered lease differs from the account's uncancelled authoritative lease. This local
+refusal does not cancel or settle the original issuing machine or prevent its eligible acquisition.
 The caller still authenticates receiver authority and declares observation allowance/charges;
 this is process-local access, not source-handle transport or pending-machine settlement.
 The underlying `LiveResource`

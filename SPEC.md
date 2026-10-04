@@ -15814,6 +15814,9 @@ authoritative lease MUST still be pending under the same guard as charging and a
 otherwise `PendingOperation` MUST refuse without spending quota or acquiring a loan. A recovered
 caller's pending lease MUST NOT reopen settled authoritative work. Historical unqualified
 borrowing remains unchanged. Refusal MUST change no accounting or machine fact.
+Cancellation retained by the supplied machine MUST also refuse `CancellationRequested`
+at the cancellation-admission boundary, even when the admitted account's lease is uncancelled.
+Refusal MUST NOT propagate that alias cancellation into the authoritative account or machine.
 This route grants no receiver authority, physical ownership, source transport or machine settlement.
 Accepted Section 20 settlement MUST project
 only operation state and close that loan root; refused settlement MUST retain the guard and

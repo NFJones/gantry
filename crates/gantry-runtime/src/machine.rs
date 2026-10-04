@@ -2291,6 +2291,12 @@ impl Machine {
         self.status
     }
 
+    /// Reports machine-local cancellation without capturing or mutating recovery state.
+    /// Pending resource admission must also check its authoritative account lease.
+    pub(crate) fn resource_cancellation_requested(&self) -> bool {
+        self.cancellation.is_some()
+    }
+
     /// Returns the accepted execution identity shared by this task machine.
     #[must_use]
     pub const fn execution_id(&self) -> ProtocolIdentity {

@@ -6968,6 +6968,61 @@ fn pending_receiver_acquisition_refuses_settled_authoritative_lease_through_reco
     assert_eq!(recovered.checkpoint().canonical_bytes(), bytes);
 }
 
+/// Cancellation carried by a recovered machine cannot borrow through an uncancelled account lease.
+#[test]
+fn pending_receiver_acquisition_refuses_cancelled_recovered_machine() {
+    use gantry::runtime::{HostResourceError, OwnedHostResource};
+    let (program, machine, subject) = machine_with_declared_subject(Some(FIXTURE_DECLARATION));
+    let subject = subject.unwrap_or_else(|| panic!("pending subject"));
+    let bytes = machine.checkpoint().canonical_bytes();
+    let checkpoint = MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("checkpoint: {error:?}"));
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("budget: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(program, checkpoint, budget)
+        .unwrap_or_else(|error| panic!("recovered machine: {error:?}"));
+    let account = admitted(
+        ResourceCarrier::ReconstructionRecord,
+        ledger().durable_record(),
+        subject,
+    )
+    .unwrap_or_else(|error| panic!("account: {error:?}"));
+    let mut resource = OwnedHostResource::bind(account, 11_u64).unwrap_or_else(|_| panic!("bind"));
+    let before = resource.account().durable_record();
+    let owner = OwnerGeneration::new(4);
+    let allowance = OperationAbi::observation_allowance(
+        2,
+        DisclosureCharge::new(1).unwrap_or_else(|| panic!("positive charge")),
+    );
+    assert!(recovered.cancel("recovered machine cancelled").is_some());
+    let cancelled_checkpoint = recovered.checkpoint().canonical_bytes();
+    let charges = [Charge {
+        owner: QuotaOwner::Owner,
+        family: QuotaFamily::Bytes,
+        amount: 3,
+    }];
+    assert_eq!(
+        resource
+            .borrow_receiver_from_pending(&recovered, owner, allowance, &charges)
+            .err(),
+        Some(HostResourceError::CancellationRequested)
+    );
+    assert_eq!(resource.account().durable_record(), before);
+    assert!(!resource.is_poisoned());
+    assert_eq!(resource.invoke(owner, |value| Ok(*value)), Ok(11));
+    assert_eq!(machine.checkpoint().canonical_bytes(), bytes);
+    assert_eq!(
+        recovered.checkpoint().canonical_bytes(),
+        cancelled_checkpoint
+    );
+    // Local alias refusal must not cancel the authoritative original or prevent its acquisition.
+    let mut loan = resource
+        .borrow_receiver_from_pending(&machine, owner, allowance, &[])
+        .unwrap_or_else(|error| panic!("original remains eligible: {error:?}"));
+    loan.settle_failure(FailureClass::ResourceFailure)
+        .unwrap_or_else(|error| panic!("settle original loan: {error:?}"));
+}
+
 /// Direct update charges commit only for admitted callbacks and are not rolled back after failure.
 #[test]
 fn charged_host_invocation_preserves_refusals_and_accepted_charges() {
