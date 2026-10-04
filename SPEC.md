@@ -995,7 +995,10 @@ portable outcomes, identity, or durable compatibility.
    execution-budget mutex. Deterministic evaluation and result-limit refusals MUST retain
    precedence over transition-budget exhaustion. Only a complete validated private result
    MAY acquire the mutex for the existing single transition charge and atomic operand/PC
-   publication. This lock separation supplies no additional source stop point or latency bound.
+   publication. Consumed operand ownership MUST be retained until after releasing that mutex,
+   so physical value reclamation cannot extend the shared-counter critical section. This lock
+   separation supplies no additional source stop point or latency bound and changes no semantic
+   release point or quota charge.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.

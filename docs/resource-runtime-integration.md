@@ -781,7 +781,10 @@ Primitive result evaluation and final logical-value construction run outside the
 execution-budget mutex. Their existing deterministic and result-limit failures still precede
 transition-budget refusal. A validated private result acquires the mutex only for its existing
 single transition charge and atomic operand/program-position publication; recomputable scratch
-is discarded afterward outside that lock. This removes shared-counter contention during pure
+and consumed operand storage are discarded afterward outside that lock. Temporary ownership
+storage is preallocated for the closed primitive arity before locking; moving consumed operands
+does not release their values inside the critical section. Semantic release and quota charges
+are unchanged. This removes shared-counter contention during pure
 construction, not synchronous construction latency or allocation cost, and adds no source stop point.
 
 Direct String equality, inequality, prefix and suffix matching compare at most 4096 UTF-8 octets per machine call

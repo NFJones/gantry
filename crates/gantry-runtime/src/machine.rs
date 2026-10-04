@@ -24,6 +24,8 @@ use gantry_ir::{ExecutableTaskHandle, TaskBodyIdentity};
 
 use crate::resource::ResourceSubjectBinding;
 use crate::session::SessionCreationModeV1;
+#[cfg(test)]
+mod operand_reclamation_tests;
 mod string_concat;
 mod string_float;
 mod string_join;
@@ -3840,6 +3842,9 @@ impl Machine {
             Ok(result) => result,
             Err(code) => return self.fail_at(code, workflow, site),
         };
+        // Primitive arity is closed at one to three operands. Allocate before locking,
+        // then move ownership without destruction while publishing the charged result.
+        let mut consumed = Vec::with_capacity(primitive.arity());
         let execution_budget = self.execution_budget.clone();
         {
             let mut budget_state = execution_budget.lock();
@@ -3847,10 +3852,15 @@ impl Machine {
                 drop(budget_state);
                 return self.fail_at(code, workflow, site);
             }
-            self.truncate_operands(primitive.arity());
+            for _ in 0..primitive.arity() {
+                consumed.push(self.pop_staged().unwrap_or_else(|| {
+                    unreachable!("private result construction validated primitive operands")
+                }));
+            }
             self.push_staged(result, None);
             self.advance_pc();
         }
+        drop(consumed);
         // Recomputable scratch destruction is separate from budget publication too.
         self.string_equality_work = None;
         self.string_search_work = None;
