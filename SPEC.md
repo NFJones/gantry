@@ -15899,7 +15899,10 @@ MUST refuse without mutation. Sealed emergency release remains available from fi
 Explicit physical disposal is permitted only after accounting leaves active, including finishing,
 and MUST NOT itself release semantic quota. Terminal semantic release remains effective before
 disposal and despite destruction failure. A deleted account MUST remain retained until its physical
-value is disposed. Captures and reconstruction MUST omit physical slots, and no coordinator callback
+value is disposed. Failed disposal MUST additionally retain its slot and deleted account during
+reaping so reclamation cannot erase the reportable failure or permit same-subject readmission.
+This retention MUST NOT restore physical presence or undo semantic quota release.
+Captures and reconstruction MUST omit physical slots, and no coordinator callback
 route may invoke integration under its shared lock. This boundary grants no host authority and
 does not establish automatic evaluator integration or physical reconstruction.
 

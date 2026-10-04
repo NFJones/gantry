@@ -4686,6 +4686,13 @@ fn registry_host_refusals_preserve_inputs_and_contain_callback_destruction() {
 /// Deleted accounting cannot be reaped while its physical value still needs contained disposal.
 #[test]
 fn registry_host_record_reclamation_waits_for_physical_disposal() {
+    for panic_on_drop in [false, true] {
+        assert_record_reclamation_after_disposal(panic_on_drop);
+    }
+}
+
+/// Failed destruction remains reportable after deletion rather than disappearing during reaping.
+fn assert_record_reclamation_after_disposal(panic_on_drop: bool) {
     let subject = active_subject();
     let owner = OwnerGeneration::new(4);
     let mut registry = ResourceRegistry::with_live_limit(1);
@@ -4703,7 +4710,7 @@ fn registry_host_record_reclamation_waits_for_physical_disposal() {
             owner,
             TransportValue {
                 drops: Arc::clone(&drops),
-                panic_on_drop: false,
+                panic_on_drop,
                 value: 1,
             },
         )
@@ -4727,6 +4734,39 @@ fn registry_host_record_reclamation_waits_for_physical_disposal() {
     assert_eq!(registry.reap_deleted(), 0);
     assert_eq!(registry.live_resources(), 0);
     assert!(registry.account(&subject).is_some());
+    if panic_on_drop {
+        assert!(matches!(
+            registry.dispose_host_value(&subject, owner),
+            Err(gantry::runtime::HostResourceError::Boundary(_))
+        ));
+        let before = registry.declared_records();
+        assert_eq!(
+            registry.reap_deleted(),
+            0,
+            "failed disposal evidence must remain retained"
+        );
+        assert_eq!(registry.declared_records(), before);
+        assert!(matches!(
+            registry.dispose_host_value(&subject, owner),
+            Err(gantry::runtime::HostResourceError::Boundary(_))
+        ));
+        assert_eq!(registry.live_resources(), 0);
+        assert!(!registry.has_host_value(&subject));
+        assert!(registry.host_values_are_quiescent());
+        assert_eq!(registry.reap_deleted(), 0);
+        assert_eq!(
+            registry
+                .admit(
+                    subject.clone(),
+                    ResourceCarrier::ReconstructionRecord,
+                    ledger().durable_record()
+                )
+                .err(),
+            Some(ResourceRegistryRefusal::SecondAdmission)
+        );
+        assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
+        return;
+    }
     assert_eq!(registry.dispose_host_value(&subject, owner), Ok(()));
     assert_eq!(registry.reap_deleted(), 1);
     assert!(registry.account(&subject).is_none());

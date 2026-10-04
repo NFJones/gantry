@@ -1133,6 +1133,8 @@ impl ResourceRegistry {
     /// registry holds no account for a reaped subject afterwards. A settled lifetime that is still
     /// retained keeps its account and stays queryable. Conclusively closed pending-lease references
     /// are also pruned; pending or unreadable leases remain owned. The return counts accounts only.
+    /// A failed physical disposal retains its account and slot so reclamation cannot erase the
+    /// operational failure or allow the same subject to be readmitted as successful cleanup.
     pub fn reap_deleted(&mut self) -> usize {
         let before = self.accounts.len();
         self.accounts.retain(|key, account| {
@@ -1140,7 +1142,7 @@ impl ResourceRegistry {
                 || self
                     .physical
                     .get(key)
-                    .is_some_and(crate::resource_transport::HostValueSlot::is_present)
+                    .is_some_and(|slot| slot.is_present() || slot.disposal_failed())
         });
         self.physical
             .retain(|key, _| self.accounts.contains_key(key));

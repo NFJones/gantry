@@ -367,7 +367,10 @@ before disposal. A contained destruction failure remains recorded after the slot
 repeated disposal reports the same failure without destroying again, and normal finalization
 refuses with `PhysicalDisposalFailed`. Sealed emergency release remains available from finishing.
 `has_host_value` reports presence only, not successful destruction.
-Deleted accounts are not reaped while a value remains attached. Captures and reconstruction omit
+Deleted accounts are not reaped while a value remains attached or its disposal failure remains
+recorded. Retaining the failed slot preserves repeated failure reporting and refuses same-subject
+readmission; it restores neither physical presence nor a semantically released live place.
+Captures and reconstruction omit
 physical slots; no callback route is exposed through the coordinator's shared lock. Registry drop
 contains physical destruction only and does not synthesize semantic settlement.
 
