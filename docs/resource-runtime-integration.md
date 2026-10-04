@@ -894,6 +894,12 @@ and temporary values/origins are reclaimed after unlocking. Invalid Option refus
 counter exhaustion and rejected publication preserves operands, occurrences and PC. This adds
 no scheduling stop or latency bound and leaves semantic release and quota charges unchanged.
 
+Result branches use the same preparation/publication boundary: payload extraction and exact
+extended origin precede counter admission, while consumed and temporary ownership survives until
+unlock. Invalid Result refusal precedes budget exhaustion; the existing single charge publishes
+payload, occurrence and target. Refusal preserves staged state and the `branch` label is unchanged.
+This relocates reclamation without changing semantic release or bounding destruction latency.
+
 Direct String equality, inequality, prefix and suffix matching compare at most 4096 UTF-8 octets per machine call
 before requesting a scheduling-only executor yield. Operands and program position remain
 unchanged until the Boolean result commits with the existing single transition charge.

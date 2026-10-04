@@ -1054,6 +1054,11 @@ portable outcomes, identity, or durable compatibility.
    consumed and temporary ownership MUST remain retained until after unlock. Invalid Option
    refusal MUST precede budget exhaustion, and rejected publication MUST preserve operands,
    occurrences and PC. The `branch` label, semantic release and quota charges remain unchanged.
+   Result branches MUST likewise prepare their payload and exact extended place origin before
+   shared-counter admission and retain consumed/temporary ownership until after unlock.
+   Invalid Result refusal MUST precede budget exhaustion; one existing charge atomically publishes
+   payload, occurrence and target. Rejected publication changes no operand, occurrence or PC.
+   This preserves the `branch` label and supplies no new release point or destruction-latency bound.
    All these paths MUST
    preserve operands, assignment targets and program position until atomic publication,
    and consume exactly the existing single transition only after comparison succeeds.
