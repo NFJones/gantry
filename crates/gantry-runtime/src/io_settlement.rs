@@ -1733,7 +1733,13 @@ mod tests {
 
     impl Fixture {
         /// Builds one fixture whose ledger retains the resource and loan liveness roots.
-        fn new() -> Self {
+        fn with_quotas(
+            quotas: &[(
+                gantry_ir::QuotaOwner,
+                gantry_ir::QuotaFamily,
+                gantry_ir::Quota,
+            )],
+        ) -> Self {
             let machine = live_machine();
             let subject = machine
                 .pending_resource_subject()
@@ -1746,7 +1752,7 @@ mod tests {
                     gantry_ir::LivenessRoot::Resource,
                     gantry_ir::LivenessRoot::Loan,
                 ],
-                &[],
+                quotas,
             )
             .unwrap_or_else(|error| panic!("fixture ledger: {error:?}"))
             .durable_record();
@@ -1756,6 +1762,11 @@ mod tests {
                 subject,
                 record,
             }
+        }
+
+        /// Builds one fixture with no declared quotas.
+        fn new() -> Self {
+            Self::with_quotas(&[])
         }
 
         /// Returns the machine-issued admission lease of this occurrence.
@@ -1788,6 +1799,7 @@ mod tests {
         lease: Option<Arc<Mutex<ResourceOperationLease>>>,
         mid_call: Option<MidCall>,
         owner_override: Option<OwnerGeneration>,
+        generation_override: Option<u64>,
         calls: Arc<AtomicU64>,
     }
 
@@ -1822,6 +1834,7 @@ mod tests {
                 lease: None,
                 mid_call: None,
                 owner_override: None,
+                generation_override: None,
                 calls: Arc::new(AtomicU64::new(0)),
             }
         }
@@ -1853,6 +1866,12 @@ mod tests {
             self
         }
 
+        /// Answers as though another resource generation held the occurrence.
+        fn regenerated(mut self, ordinal: u64) -> Self {
+            self.generation_override = Some(ordinal);
+            self
+        }
+
         /// Returns the shared call counter of this endpoint.
         fn counter(&self) -> Arc<AtomicU64> {
             Arc::clone(&self.calls)
@@ -1877,15 +1896,27 @@ mod tests {
                     MidCall::Poison => poison_lease(lease),
                 }
             }
-            let binding = match self.owner_override {
-                Some(owner) => IoCallBinding {
-                    occurrence: IoOccurrence {
-                        owner,
-                        ..call.occurrence().clone()
-                    },
-                    request: call.request().clone(),
-                },
-                None => call.clone(),
+            let mut occurrence = call.occurrence().clone();
+            if let Some(owner) = self.owner_override {
+                occurrence = IoOccurrence {
+                    owner,
+                    ..occurrence
+                };
+            }
+            if let Some(ordinal) = self.generation_override {
+                let generation = ResourceGenerationId::derive(
+                    occurrence.operation(),
+                    occurrence.site(),
+                    ordinal,
+                );
+                occurrence = IoOccurrence {
+                    generation,
+                    ..occurrence
+                };
+            }
+            let binding = IoCallBinding {
+                occurrence,
+                request: call.request().clone(),
             };
             IoHostResponse::new(binding, self.completion.clone())
         }
@@ -2859,6 +2890,162 @@ mod tests {
         );
         assert_eq!(handle.calls(), 0);
         assert_eq!(resource.account().durable_record(), record);
+    }
+
+    /// A cancellation observed after the settlement does not retract it.
+    #[test]
+    fn a_cancellation_after_settlement_does_not_retract_it() {
+        let fixture = Fixture::new();
+        let transport = InMemoryIoTransport::bounded(b"ab".to_vec(), 4)
+            .unwrap_or_else(|error| panic!("transport: {error:?}"));
+        let handle = transport.handle();
+        let mut resource = fixture.bind(transport);
+        let lease = fixture.lease();
+        let mut service = fixture.service(IoOperation::Read);
+        let request = IoRequest::read(2).unwrap_or_else(|error| panic!("request: {error:?}"));
+        assert!(matches!(
+            service.attempt(&mut resource, request.clone(), &[]),
+            IoCallOutcome::Settled(_)
+        ));
+        let settled = resource.account().durable_record();
+        lease
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .cancellation_requested = true;
+        assert_eq!(
+            service.attempt(&mut resource, request, &[]),
+            IoCallOutcome::Refused(IoRefusal::DuplicateSettlement)
+        );
+        assert_eq!(resource.account().durable_record(), settled);
+        assert_eq!(handle.calls(), 1);
+    }
+
+    /// A completion of another resource generation is contained and publishes nothing.
+    #[test]
+    fn a_wrong_generation_response_cannot_publish() {
+        let fixture = Fixture::new();
+        let endpoint = ScriptedEndpoint::new(IoHostCompletion::Read {
+            advanced: 0,
+            bytes: Vec::new(),
+            ended: false,
+        })
+        .regenerated(9);
+        let mut resource = fixture.bind(endpoint);
+        let mut service = fixture.service(IoOperation::Read);
+        let outcome = service.attempt(
+            &mut resource,
+            IoRequest::read(2).unwrap_or_else(|error| panic!("request: {error:?}")),
+            &[],
+        );
+        let IoCallOutcome::Failed(failed) = outcome else {
+            panic!("a foreign generation must be contained, observed {outcome:?}")
+        };
+        assert_eq!(
+            failed.fault(),
+            &IoCallFault::Operational(IoOperationalFault::ForeignCompletion)
+        );
+        let settlement = failed
+            .settlement()
+            .unwrap_or_else(|| panic!("a foreign generation settles at most once"));
+        assert_eq!(settlement.evidence(), &IoEvidence::NoOctets);
+    }
+
+    /// A read longer than its request and a write accepting more than it was given are contained.
+    #[test]
+    fn an_overlong_read_and_an_over_accepted_write_are_contained() {
+        let overlong = Fixture::new();
+        let endpoint = ScriptedEndpoint::new(IoHostCompletion::Read {
+            advanced: 3,
+            bytes: b"abc".to_vec(),
+            ended: false,
+        });
+        let mut resource = overlong.bind(endpoint);
+        let mut service = overlong.service(IoOperation::Read);
+        let outcome = service.attempt(
+            &mut resource,
+            IoRequest::read(2).unwrap_or_else(|error| panic!("request: {error:?}")),
+            &[],
+        );
+        let IoCallOutcome::Failed(failed) = outcome else {
+            panic!("an overlong read must be contained, observed {outcome:?}")
+        };
+        assert_eq!(
+            failed.fault(),
+            &IoCallFault::Operational(IoOperationalFault::ReadOverlong {
+                requested: 2,
+                returned: 3,
+            })
+        );
+
+        let overaccepted = Fixture::new();
+        let endpoint = ScriptedEndpoint::new(IoHostCompletion::Write { accepted: 3 });
+        let mut resource = overaccepted.bind(endpoint);
+        let mut service = overaccepted.service(IoOperation::Write);
+        let outcome = service.attempt(
+            &mut resource,
+            IoRequest::write(2).unwrap_or_else(|error| panic!("request: {error:?}")),
+            b"AB",
+        );
+        let IoCallOutcome::Failed(failed) = outcome else {
+            panic!("an over-accepted write must be contained, observed {outcome:?}")
+        };
+        assert_eq!(
+            failed.fault(),
+            &IoCallFault::Operational(IoOperationalFault::WriteOverAccepted {
+                provided: 2,
+                accepted: 3,
+            })
+        );
+    }
+
+    /// A charged loan commits its charge once, and a refused duplicate charges nothing.
+    #[test]
+    fn a_charged_settlement_commits_once_and_a_duplicate_charges_nothing() {
+        let charge = gantry_ir::Charge {
+            owner: gantry_ir::QuotaOwner::Owner,
+            family: gantry_ir::QuotaFamily::Bytes,
+            amount: 4,
+        };
+        let fixture = Fixture::with_quotas(&[(
+            gantry_ir::QuotaOwner::Owner,
+            gantry_ir::QuotaFamily::Bytes,
+            gantry_ir::Quota::new(64, 0),
+        )]);
+        let transport = InMemoryIoTransport::bounded(b"ab".to_vec(), 4)
+            .unwrap_or_else(|error| panic!("transport: {error:?}"));
+        let mut resource = fixture.bind(transport);
+        let mut service = IoSettlementService::new(
+            &fixture.machine,
+            fixture.owner,
+            IoOperation::Read,
+            allowance(8),
+            vec![charge],
+            7,
+        )
+        .unwrap_or_else(|error| panic!("fixture service: {error:?}"));
+        let request = IoRequest::read(2).unwrap_or_else(|error| panic!("request: {error:?}"));
+        assert!(matches!(
+            service.attempt(&mut resource, request.clone(), &[]),
+            IoCallOutcome::Settled(_)
+        ));
+        let used = resource
+            .account()
+            .ledger()
+            .quota(gantry_ir::QuotaOwner::Owner, gantry_ir::QuotaFamily::Bytes)
+            .map(gantry_ir::Quota::used);
+        assert_eq!(used, Some(4));
+        assert_eq!(
+            service.attempt(&mut resource, request, &[]),
+            IoCallOutcome::Refused(IoRefusal::DuplicateSettlement)
+        );
+        assert_eq!(
+            resource
+                .account()
+                .ledger()
+                .quota(gantry_ir::QuotaOwner::Owner, gantry_ir::QuotaFamily::Bytes)
+                .map(gantry_ir::Quota::used),
+            Some(4)
+        );
     }
 
     /// Dropping the attempt retains the accepted octets and the admission lease.

@@ -953,6 +953,148 @@ pub enum ResourceOriginRecoveryError {
     Registry(ResourceRegistryRefusal),
 }
 
+/// One unclonable, process-local machine carrier for one registry-owned physical slot.
+///
+/// The carrier is the only machine value that names a live physical slot, and only the registry
+/// that owns that slot issues one. It holds no payload and implements no clone, no copy, no
+/// serialization, and no ordinary conversion, so no logical value, JSON document, hook result,
+/// prompt, or checkpoint can carry it: those channels accept only types that implement their
+/// encodings, and this type implements none. Dropping a carrier neither completes nor releases
+/// anything, because completion is the registry route below.
+///
+/// A carrier authenticates four facts together: the issuing subject and provenance of the account,
+/// the owner generation that currently holds it, the machine-issued admission lease identity that
+/// was issued with that account, and the presence of the registry-owned slot. A carrier from
+/// another registry, a superseded owner, and a disposed slot are each refused, so holding a
+/// carrier is never authority for any operation and never a substitute for the exact requirement
+/// facts of the owning operation.
+#[derive(Debug)]
+pub struct MachineResourceCarrier {
+    subject: ResourceSubjectBinding,
+    owner: OwnerGeneration,
+    value_type: std::any::TypeId,
+    lease: Arc<Mutex<crate::machine::ResourceOperationLease>>,
+}
+
+impl MachineResourceCarrier {
+    /// Returns the exact subject this carrier was issued for.
+    #[must_use]
+    pub const fn subject(&self) -> &ResourceSubjectBinding {
+        &self.subject
+    }
+
+    /// Returns the owner generation the carrier was issued under.
+    #[must_use]
+    pub const fn owner(&self) -> OwnerGeneration {
+        self.owner
+    }
+}
+
+impl ResourceRegistry {
+    /// Issues one carrier for the exact account and owner whose physical slot this registry owns.
+    ///
+    /// Issue requires an admitted account with matching runtime provenance, a current owner
+    /// generation, an active and open accounting state, a present registry-owned slot, and a
+    /// readable admission lease that has not requested cancellation. Any other state is refused
+    /// before a carrier exists, and refusal changes no accounting or physical fact.
+    pub fn issue_carrier<T: std::any::Any + Send>(
+        &self,
+        subject: &ResourceSubjectBinding,
+        owner: OwnerGeneration,
+    ) -> Result<MachineResourceCarrier, crate::HostResourceError> {
+        use crate::HostResourceError;
+        let key = self.selection_key(subject);
+        let account = self
+            .accounts
+            .get(&key)
+            .ok_or(HostResourceError::UnknownSubject)?;
+        if account.subject().runtime_owner != subject.runtime_owner {
+            return Err(HostResourceError::ForeignSubject);
+        }
+        account
+            .require_current_owner(owner)
+            .map_err(HostResourceError::Model)?;
+        if account.ledger().lifetime() != ResourceLifetimeState::Active
+            || !account.ledger().operation_state().is_open()
+        {
+            return Err(HostResourceError::Model(
+                ResourceError::IllegalLifetimeTransition,
+            ));
+        }
+        if !self
+            .physical
+            .get(&key)
+            .is_some_and(crate::resource_transport::HostValueSlot::is_present)
+        {
+            return Err(HostResourceError::NotAttached);
+        }
+        let lease = Arc::clone(&account.subject().admission_open);
+        let admission = lease
+            .lock()
+            .map_err(|_| HostResourceError::PendingOperation)?;
+        if admission.cancellation_requested {
+            return Err(HostResourceError::CancellationRequested);
+        }
+        drop(admission);
+        Ok(MachineResourceCarrier {
+            subject: account.subject().clone(),
+            owner,
+            value_type: std::any::TypeId::of::<T>(),
+            lease,
+        })
+    }
+
+    /// Authenticates one carrier against this account, owner, lease, and slot.
+    ///
+    /// A carrier issued by another registry, a carrier whose owner generation was superseded, a
+    /// carrier whose account was replaced, and a carrier whose slot is absent are each refused.
+    pub fn authenticate_carrier(
+        &self,
+        carrier: &MachineResourceCarrier,
+    ) -> Result<(), crate::HostResourceError> {
+        use crate::HostResourceError;
+        let account = self
+            .account(carrier.subject())
+            .ok_or(HostResourceError::UnknownSubject)?;
+        if account.subject().runtime_owner != carrier.subject().runtime_owner {
+            return Err(HostResourceError::ForeignSubject);
+        }
+        if !Arc::ptr_eq(&account.subject().admission_open, &carrier.lease) {
+            return Err(HostResourceError::ForeignSubject);
+        }
+        account
+            .require_current_owner(carrier.owner())
+            .map_err(HostResourceError::Model)?;
+        if !self.has_host_value(carrier.subject()) {
+            return Err(HostResourceError::NotAttached);
+        }
+        Ok(())
+    }
+
+    /// Completes one authenticated carrier once its account reached semantic settlement.
+    ///
+    /// Completion requires the exact Rust type the carrier was issued for, this registry own
+    /// account, lease and slot, and an account lifetime that is no longer active, which the
+    /// registry own begin-finish and complete-finalization routes establish. The physical value is
+    /// then extracted and disposed through the contained private disposal job, so completion
+    /// happens once and a second attempt finds no attached slot.
+    pub fn complete_carrier<T: std::any::Any + Send>(
+        &mut self,
+        carrier: MachineResourceCarrier,
+    ) -> Result<(), crate::HostResourceError> {
+        use crate::HostResourceError;
+        if carrier.value_type != std::any::TypeId::of::<T>() {
+            return Err(HostResourceError::TypeMismatch);
+        }
+        self.authenticate_carrier(&carrier)?;
+        let job = self.extract_host_disposal(carrier.subject(), carrier.owner())?;
+        match job {
+            Some(job) => job.run(),
+            None => Err(HostResourceError::Disposed),
+        }
+    }
+}
+
 impl ResourceRegistry {
     /// Creates an empty registry.
     #[must_use]

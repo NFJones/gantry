@@ -161,8 +161,8 @@ pub use recovery::{
 };
 pub use resource::{
     AdapterBindingRefusal, AdmittedResource, CohortEmergencyCleanup, CohortEmergencySettlement,
-    PostFailureSettlementRefusal, RecoveredResourceRecord, ResourceRecordCodecError,
-    ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding,
+    MachineResourceCarrier, PostFailureSettlementRefusal, RecoveredResourceRecord,
+    ResourceRecordCodecError, ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding,
     decode_resource_reconstruction_record, encode_resource_reconstruction_record,
 };
 #[cfg(feature = "durable")]

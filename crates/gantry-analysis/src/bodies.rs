@@ -8161,6 +8161,10 @@ fn refuse_carrier_construction(
     Ok(())
 }
 
+// The inference walk passes the tree, the owning node, the constructor node, facts, the
+// environment, the expected type, the body context, and the diagnostic sink: every input is
+// distinct and none is a hidden bundle, so the landed signature is kept as it was.
+#[allow(clippy::too_many_arguments)]
 fn infer_struct(
     tree: &SyntaxTree,
     node: &gantry_frontend::SyntaxNode,
