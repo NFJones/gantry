@@ -73,7 +73,10 @@ A committed eligible snapshot recovers its exact values through
 `DurableEnvironmentRecord` and `admit_durable_environment`, including protected
 values and their protection. The declared durable contract version is
 `ENV_VALUE_CONTRACT_VERSION`; another version is refused rather than
-reinterpreted. A native handle never resurrects, and a path or digest grants no
+reinterpreted. A decoded record is refused against its entry count, per-entry,
+and total byte bounds before entry payloads are indexed, and it is stored in
+canonical ascending name order, so a decoded record equals the committed record
+of the snapshot it recovers. A native handle never resurrects, and a path or digest grants no
 authority to recover anything. Ordinary serialization and ordinary durable
 state are inadmissible carriers; only the declared durable reconstruction
 record carries these facts.

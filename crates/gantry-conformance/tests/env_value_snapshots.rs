@@ -239,6 +239,20 @@ fn env_snapshot_refuses_duplicates_and_bounds() {
         )),
         EnvDiagnosticCode::EntryCountBound
     );
+    // The count bound is checked before entry content, so an over-count presentation is never
+    // indexed or payload-copied to discover a later per-entry refusal.
+    assert_eq!(
+        refusal(EnvironmentSnapshot::new(
+            vec![
+                ordinary(&bounds, "A", ""),
+                ordinary(&bounds, "B", ""),
+                ordinary(&bounds, "C", ""),
+                ordinary(&declared(), "D", &"x".repeat(17)),
+            ],
+            &bounds,
+        )),
+        EnvDiagnosticCode::EntryCountBound
+    );
 
     let total_bounds = EnvLimits::new(2, 10, 8, 16, 10)
         .unwrap_or_else(|error| panic!("the total-bound limits are valid: {error}"));
@@ -596,6 +610,51 @@ fn env_durable_snapshot_recovers_but_handles_and_paths_do_not() {
             &bounds,
         )),
         EnvDiagnosticCode::IneligibleSnapshot
+    );
+
+    // A decoded record is stored in canonical ascending name order and is stable across recovery,
+    // so decoded and re-recorded representations compare equal.
+    let reversed = DurableEnvironmentRecord::decode(
+        1,
+        vec![ordinary(&bounds, "B", "2"), ordinary(&bounds, "A", "1")],
+        &bounds,
+    )
+    .unwrap_or_else(|error| panic!("the reversed record decodes: {error}"));
+    assert_eq!(
+        reversed
+            .entries()
+            .iter()
+            .map(|entry| entry.name().as_str())
+            .collect::<Vec<_>>(),
+        ["A", "B"]
+    );
+    let reversed_snapshot = reversed
+        .recover()
+        .unwrap_or_else(|error| panic!("the reversed record recovers: {error}"));
+    assert_eq!(
+        DurableEnvironmentRecord::committed(&reversed_snapshot),
+        reversed
+    );
+
+    // Bounds are refused before payload indexing: the count bound wins over content, and an entry
+    // admitted under wider bounds is re-refused by the record's narrower bound.
+    let one_entry = EnvLimits::new(2, 1, 8, 16, 40)
+        .unwrap_or_else(|error| panic!("the one-entry limits are valid: {error}"));
+    assert_eq!(
+        refusal(DurableEnvironmentRecord::decode(
+            1,
+            vec![ordinary(&bounds, "A", "1"), ordinary(&bounds, "B", "2")],
+            &one_entry,
+        )),
+        EnvDiagnosticCode::EntryCountBound
+    );
+    assert_eq!(
+        refusal(DurableEnvironmentRecord::decode(
+            1,
+            vec![ordinary(&bounds, "A", &"x".repeat(17))],
+            &tight(),
+        )),
+        EnvDiagnosticCode::EntryByteBound
     );
 
     assert_eq!(

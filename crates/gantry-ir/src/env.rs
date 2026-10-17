@@ -928,23 +928,52 @@ pub struct EnvironmentSnapshot {
 impl EnvironmentSnapshot {
     /// Admits one exact entry set against `limits`.
     ///
-    /// Entries are validated in presented order, a duplicate name is refused at its second
-    /// occurrence, and the count and total byte bounds are checked after every entry is admitted.
-    /// The canonical enumeration order is ascending by name.
+    /// The entry count bound is checked before any entry content. Entries are then validated in
+    /// presented order and the running total byte bound is checked after every entry, so an
+    /// out-of-bound presentation is refused before the canonical map is built. Duplicate names
+    /// are refused while that canonical ascending-name map is constructed, and no entry payload
+    /// is copied in order to refuse a presentation.
     ///
     /// # Errors
     ///
-    /// Returns [`EnvDiagnosticCode::InvalidEntryName`],
-    /// [`EnvDiagnosticCode::InvalidValue`], or [`EnvDiagnosticCode::EntryByteBound`] for a refused
-    /// entry, [`EnvDiagnosticCode::DuplicateEntry`] for a repeated name,
-    /// [`EnvDiagnosticCode::EntryCountBound`] beyond the entry count bound, and
-    /// [`EnvDiagnosticCode::TotalByteBound`] beyond the total byte bound.
+    /// Returns [`EnvDiagnosticCode::EntryCountBound`] before any entry is inspected,
+    /// [`EnvDiagnosticCode::InvalidEntryName`], [`EnvDiagnosticCode::InvalidValue`], or
+    /// [`EnvDiagnosticCode::EntryByteBound`] for a refused entry,
+    /// [`EnvDiagnosticCode::TotalByteBound`] once the running total exceeds its bound, and
+    /// [`EnvDiagnosticCode::DuplicateEntry`] for a repeated name.
     pub fn new(entries: Vec<EnvironmentEntry>, limits: &EnvLimits) -> Result<Self, EnvError> {
-        let mut frozen = BTreeMap::new();
+        if entries.len() > limits.max_entries {
+            return Err(EnvError::new(
+                EnvDiagnosticCode::EntryCountBound,
+                format!(
+                    "{} entries are declared, beyond the {} entry bound",
+                    entries.len(),
+                    limits.max_entries
+                ),
+            ));
+        }
         let mut total_bytes = 0usize;
-        for entry in entries {
+        for entry in &entries {
             validate_name_text(entry.name().as_str(), limits)?;
             validate_value_text(entry.value().expose(), limits)?;
+            total_bytes = total_bytes.checked_add(entry.byte_len()).ok_or_else(|| {
+                EnvError::new(
+                    EnvDiagnosticCode::TotalByteBound,
+                    "the declared environment bytes exceed the addressable total",
+                )
+            })?;
+            if total_bytes > limits.max_total_bytes {
+                return Err(EnvError::new(
+                    EnvDiagnosticCode::TotalByteBound,
+                    format!(
+                        "the environment declares {total_bytes} bytes, beyond the {} byte bound",
+                        limits.max_total_bytes
+                    ),
+                ));
+            }
+        }
+        let mut frozen = BTreeMap::new();
+        for entry in entries {
             let name = entry.name().as_str().to_owned();
             if frozen.contains_key(&name) {
                 return Err(EnvError::new(
@@ -952,32 +981,7 @@ impl EnvironmentSnapshot {
                     format!("environment name `{name}` is declared more than once"),
                 ));
             }
-            total_bytes = total_bytes.checked_add(entry.byte_len()).ok_or_else(|| {
-                EnvError::new(
-                    EnvDiagnosticCode::TotalByteBound,
-                    "the declared environment bytes exceed the addressable total",
-                )
-            })?;
             frozen.insert(name, entry);
-        }
-        if frozen.len() > limits.max_entries {
-            return Err(EnvError::new(
-                EnvDiagnosticCode::EntryCountBound,
-                format!(
-                    "{} entries are declared, beyond the {} entry bound",
-                    frozen.len(),
-                    limits.max_entries
-                ),
-            ));
-        }
-        if total_bytes > limits.max_total_bytes {
-            return Err(EnvError::new(
-                EnvDiagnosticCode::TotalByteBound,
-                format!(
-                    "the environment declares {total_bytes} bytes, beyond the {} byte bound",
-                    limits.max_total_bytes
-                ),
-            ));
         }
         Ok(Self {
             entries: frozen,
@@ -1039,28 +1043,24 @@ impl EnvironmentSnapshot {
     ///
     /// Returns the entry refusal of the presented entry,
     /// [`EnvDiagnosticCode::EntryCountBound`] for an addition beyond the count bound, or
-    /// [`EnvDiagnosticCode::TotalByteBound`] beyond the total byte bound. A refusal leaves every
+    /// [`EnvDiagnosticCode::TotalByteBound`] beyond the total byte bound. Refusal checks run
+    /// before the new map is built, so a refused update copies no entry payload and leaves every
     /// snapshot unchanged.
     pub fn with_entry(&self, entry: EnvironmentEntry) -> Result<Self, EnvError> {
         validate_name_text(entry.name().as_str(), &self.limits)?;
         validate_value_text(entry.value().expose(), &self.limits)?;
         let name = entry.name().as_str().to_owned();
-        let mut entries = self.entries.clone();
-        let mut total_bytes = self.total_bytes;
-        match entries.get(&name) {
-            Some(existing) => total_bytes -= existing.byte_len(),
-            None if entries.len() >= self.limits.max_entries => {
-                return Err(EnvError::new(
-                    EnvDiagnosticCode::EntryCountBound,
-                    format!(
-                        "adding `{name}` would exceed the {} entry bound",
-                        self.limits.max_entries
-                    ),
-                ));
-            }
-            None => {}
+        let replaced = self.entries.get(&name).map(EnvironmentEntry::byte_len);
+        if replaced.is_none() && self.entries.len() >= self.limits.max_entries {
+            return Err(EnvError::new(
+                EnvDiagnosticCode::EntryCountBound,
+                format!(
+                    "adding `{name}` would exceed the {} entry bound",
+                    self.limits.max_entries
+                ),
+            ));
         }
-        total_bytes += entry.byte_len();
+        let total_bytes = self.total_bytes - replaced.unwrap_or_default() + entry.byte_len();
         if total_bytes > self.limits.max_total_bytes {
             return Err(EnvError::new(
                 EnvDiagnosticCode::TotalByteBound,
@@ -1070,6 +1070,7 @@ impl EnvironmentSnapshot {
                 ),
             ));
         }
+        let mut entries = self.entries.clone();
         entries.insert(name, entry);
         Ok(Self {
             entries,
@@ -1318,6 +1319,10 @@ impl DurableEnvironmentRecord {
 
     /// Decodes one durable record from its declared fields.
     ///
+    /// The version is authenticated before any entry is inspected, and the admitted snapshot is
+    /// then stored in canonical ascending name order, so a decoded record equals the committed
+    /// record of the snapshot it recovers. Refusal copies no entry payload.
+    ///
     /// # Errors
     ///
     /// Returns [`EnvDiagnosticCode::IneligibleSnapshot`] for a version other than the declared
@@ -1336,10 +1341,10 @@ impl DurableEnvironmentRecord {
                 ),
             ));
         }
-        EnvironmentSnapshot::new(entries.clone(), limits)?;
+        let snapshot = EnvironmentSnapshot::new(entries, limits)?;
         Ok(Self {
             version,
-            entries,
+            entries: snapshot.entries.into_values().collect(),
             limits: *limits,
         })
     }
