@@ -28,6 +28,7 @@ mod crypto;
 mod data;
 mod effects;
 mod env;
+mod env_cwd;
 pub mod error_semantics;
 mod executable;
 mod facts;
@@ -247,6 +248,14 @@ pub use env::{
     admit_durable_environment, admit_env_durable_carrier, admit_env_surface,
     admit_injection_parity, canonical_env_hierarchy, declare_env_package, declare_env_surface,
     env_durable_carrier_is_admissible,
+};
+// `std.env::working_directory` publishes the portable logical working-directory value model of
+// Sections 30.2, 30.3, and 49. It is data-only and grants no directory authority.
+pub use env_cwd::{
+    CWD_DEFAULT_MAX_PATH_BYTES, CWD_DEFAULT_MAX_SEGMENT_BYTES, CWD_DEFAULT_MAX_SEGMENTS,
+    CWD_TARGET_POLICIES, CWD_VALUE_CONTRACT_VERSION, CwdCasePolicy, CwdComparison,
+    CwdDiagnosticCode, CwdEncodingPolicy, CwdError, CwdLimits, CwdTargetPolicy, LogicalCwdRoot,
+    LogicalCwdSegment, LogicalWorkingDirectory,
 };
 // `identifier` is re-exported here for the identifier-security surface, except
 // for `AliasMap`, `CollisionCondition`, and `DeclaredName`, which the package and
