@@ -2,7 +2,7 @@
  "format": "gantry.specification-currency-qualification/v1",
  "issue": "be47045e-93fb-473b-af7a-2d459aae091c",
  "status": "verified",
- "specification_sha256": "7e2a8d5867b7102de2b3dbab9f432855fe2626d3beade56f485a0effad104b13",
+ "specification_sha256": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60",
  "superseded_specification_sha256": "ee9282d1a6a80cbf73d1e7f398fff210a61fba61884348dd62a788b1c7e8f745",
  "candidate": {
   "base_commit": "1eb17dc92065a6438347ff0391afcf03aaf0ba80",
@@ -14,7 +14,7 @@
   "inputs": [
    {
     "path": "SPEC.md",
-    "sha256": "7e2a8d5867b7102de2b3dbab9f432855fe2626d3beade56f485a0effad104b13"
+    "sha256": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60"
    },
    {
     "path": "protocol/requirements/reviewed-v1.json",
@@ -491,7 +491,7 @@
   },
   {
    "path": "protocol/publication/v1/SPEC.md",
-   "sha256": "7e2a8d5867b7102de2b3dbab9f432855fe2626d3beade56f485a0effad104b13"
+   "sha256": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60"
   },
   {
    "path": "protocol/publication/v1/gantry.authoring.json",

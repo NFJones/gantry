@@ -3935,7 +3935,8 @@ moved value more than once or passing it as a copied argument and reusing it,
 MUST be rejected at compile time. Discarding an `AffineDroppable` value is
 permitted. An `owned self` method on an `AffineDroppable` receiver performs the
 owned-move transfer described in item 2b. Resource
-declarations remain excluded.
+declarations remain excluded, except for the `affine live_resource struct` form admitted
+by item 2j.
 
 <a id="GNT-6.2d"></a>
 
@@ -4135,11 +4136,37 @@ type reports that class in place of the empty-aggregate identity, an empty `live
 struct` remains `LiveResource`, and a stored member whose declared type is `LiveResource`
 makes every enclosing stored aggregate `LiveResource` under that clause's fold.
 
-A `live_resource struct` seeds the resource axis only. It admits no ownership class and
-no transfer contract, so its ownership and transfer axes are the ordinary stored-member
-fold of `GNT-5.20-parametric-types`, and a declaration that names `live_resource`
-together with `affine` or `must_consume` names two modifiers and MUST be rejected at
+A bare `live_resource struct` seeds the resource axis only. It admits no ownership class
+and no transfer contract, so its ownership and transfer axes are the ordinary
+stored-member fold of `GNT-5.20-parametric-types`, and a declaration that names
+`live_resource` together with `must_consume` names two modifiers and MUST be rejected at
 syntax time, exactly as a declaration naming both ownership modifiers is.
+
+A struct declaration MAY name `affine` immediately followed by `live_resource`, in that
+order and in that order only. This is the one admitted two-modifier form, and it seeds
+exactly three independent facts. It seeds the `AffineDroppable` ownership class of item
+2c, so a value of the declared type is never copied and is moved once. It seeds the
+`LiveResource` resource class of the stored-member fold above. And it seeds one
+availability fact: ordinary recovery is unavailable for the declared type, so an
+ordinary snapshot, restore, value reconstruction, or entry conversion of that type MUST
+be refused rather than reconstructed, and no checkpoint or reconstruction format may
+encode one.
+
+A struct constructor, a field literal, or any other source expression that would mint a
+value of a type declared by the admitted form MUST be rejected at analysis time under
+the `live-resource-construction` diagnostic, because a carrier is acquired by its owning
+operation and never assembled from source fields. A value of an ordinary `affine struct`
+type, and of a bare `live_resource struct` type, remains constructible exactly as before.
+
+The admitted form grants no authority and decides no behavior. It creates, admits,
+transfers, or releases no resource, value, handle, or operation; it grants no cleanup,
+release, or acquisition authority and no admission at any boundary; and it states no
+analysis, evaluator, journal, adapter, host, or durable behavior. The exact abstract
+requirement, capability, lineage, current rights, target, mode, and revocation facts of
+the owning operation alone admit that operation, so a declaration of this form is never
+by itself authority for any operation. Every other combination remains refused: the
+reversed order, a repeated modifier, and any third modifier each name more than the one
+admitted form and MUST be rejected at syntax time.
 
 Classification is the whole of the declaration: it creates, admits, or transfers no
 resource, value, handle, or operation, grants no cleanup, release, or acquisition
@@ -7881,11 +7908,15 @@ effect_name             = "prompt" | "decide"
 struct_declaration      = [ struct_modifier ], "struct", identifier_token,
                           [ type_parameter_list ], [ where_clause ], "{",
                           [ struct_field_list ], "}" ;
-struct_modifier         = ownership_modifier | "live_resource" ;
+struct_modifier         = ownership_modifier | "live_resource"
+                        | "affine", "live_resource" ;
 ownership_modifier      = "affine" | "must_consume" ;
 `struct_modifier` and `ownership_modifier` are contextual identifier spellings, not
 reserved words: each is recognized only immediately before `struct` and remains an
-ordinary identifier elsewhere. A struct declaration names at most one `struct_modifier`.
+ordinary identifier elsewhere. A struct declaration names at most one `struct_modifier`,
+except that it MAY name `affine` immediately followed by `live_resource`, in that order
+and in that order only; a reversed, repeated, or otherwise combined spelling names more
+than the one admitted form and MUST be rejected.
 struct_field_list       = struct_field, { ",", struct_field }, [ "," ] ;
 struct_field            = identifier_token, ":", value_type,
                           [ "=", field_default ] ;

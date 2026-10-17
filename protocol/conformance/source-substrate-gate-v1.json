@@ -1,98 +1,98 @@
 {
- "artifacts": [
-  {
-   "path": "protocol/goldens/diagnostic-machine-v1.json",
-   "sha256": "456fa349437d36d2d9f0c5ae310f1a539f9ba9c492b14a4449f2f84190704bab"
+  "artifacts": [
+    {
+      "path": "protocol/goldens/diagnostic-machine-v1.json",
+      "sha256": "456fa349437d36d2d9f0c5ae310f1a539f9ba9c492b14a4449f2f84190704bab"
+    },
+    {
+      "path": "protocol/goldens/diagnostic-presentation-v1.json",
+      "sha256": "27b2a321347f99fe5376277a7af7323d6b8e0ec04fc4ee976ff7b834688c3351"
+    },
+    {
+      "path": "protocol/goldens/source-substrate-vectors-v1.json",
+      "sha256": "7b5d656a1b7df33808a5e86b57d32e92debf534744c74d5a5b94b86297523ed2"
+    },
+    {
+      "path": "protocol/requirements/generated/requirements-v1.json",
+      "sha256": "fe2d7a8e2154154d519d067d77e1181caf4cdb34ac11f60a24399c20575f66ce"
+    },
+    {
+      "path": "protocol/schemas/source-substrate-v1.schema.json",
+      "sha256": "e98037704d9a66a3479d30ab726b4968fb4b98cf72dc06effbb406f6ed36595c"
+    }
+  ],
+  "claim": {
+    "advertises_profile": false,
+    "phase": "phase-1-source-substrate",
+    "profiles": []
   },
-  {
-   "path": "protocol/goldens/diagnostic-presentation-v1.json",
-   "sha256": "27b2a321347f99fe5376277a7af7323d6b8e0ec04fc4ee976ff7b834688c3351"
+  "environment_gaps": [
+    "The stable-macOS source-provider race lane executes in hosted CI; this Linux gate run does not claim a local macOS result."
+  ],
+  "evidence_suites": [
+    {
+      "id": "diagnostic-presentation",
+      "kind": "golden",
+      "path": "crates/gantry-conformance/tests/diagnostic_presentation.rs",
+      "revision": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60",
+      "state": "verified",
+      "visibility": "public-facade"
+    },
+    {
+      "id": "requirement-ledger",
+      "kind": "requirement",
+      "path": "crates/gantry-conformance/tests/requirements_ledger.rs",
+      "revision": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60",
+      "state": "verified",
+      "visibility": "public-facade"
+    },
+    {
+      "id": "source-provider",
+      "kind": "public-api",
+      "path": "crates/gantry-conformance/tests/source_provider.rs",
+      "revision": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60",
+      "state": "verified",
+      "visibility": "public-facade"
+    },
+    {
+      "id": "source-substrate",
+      "kind": "fixture",
+      "path": "crates/gantry-conformance/tests/source_substrate.rs",
+      "revision": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60",
+      "state": "verified",
+      "visibility": "public-facade"
+    }
+  ],
+  "format": "gantry.source-substrate-gate-evidence/v1",
+  "gate": "GNT-GATE-100",
+  "prerequisites": [
+    {
+      "commit": "54cd63eab5032e7f51c01bbbcac63b196f69ec98",
+      "issue": "GNT-SRC-001",
+      "subject": "Implement portable source substrate"
+    },
+    {
+      "commit": "297822b69e771a9c8a8610b18742196dc46a80d0",
+      "issue": "GNT-SRC-002",
+      "subject": "Implement secure package snapshots"
+    },
+    {
+      "commit": "f4a90de1b692ad8a1029997811eb062187fb8a83",
+      "issue": "GNT-SRC-003",
+      "subject": "Implement diagnostic presentation."
+    }
+  ],
+  "specification": {
+    "path": "SPEC.md",
+    "sha256": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60"
   },
-  {
-   "path": "protocol/goldens/source-substrate-vectors-v1.json",
-   "sha256": "7b5d656a1b7df33808a5e86b57d32e92debf534744c74d5a5b94b86297523ed2"
-  },
-  {
-   "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "8a9a9207cbd7fc161af4fd7dcb79d4946b491b1c59fe28fe37360387713e6494"
-  },
-  {
-   "path": "protocol/schemas/source-substrate-v1.schema.json",
-   "sha256": "e98037704d9a66a3479d30ab726b4968fb4b98cf72dc06effbb406f6ed36595c"
-  }
- ],
- "claim": {
-  "advertises_profile": false,
-  "phase": "phase-1-source-substrate",
-  "profiles": []
- },
- "environment_gaps": [
-  "The stable-macOS source-provider race lane executes in hosted CI; this Linux gate run does not claim a local macOS result."
- ],
- "evidence_suites": [
-  {
-   "id": "diagnostic-presentation",
-   "kind": "golden",
-   "path": "crates/gantry-conformance/tests/diagnostic_presentation.rs",
-   "revision": "7e2a8d5867b7102de2b3dbab9f432855fe2626d3beade56f485a0effad104b13",
-   "state": "verified",
-   "visibility": "public-facade"
-  },
-  {
-   "id": "requirement-ledger",
-   "kind": "requirement",
-   "path": "crates/gantry-conformance/tests/requirements_ledger.rs",
-   "revision": "7e2a8d5867b7102de2b3dbab9f432855fe2626d3beade56f485a0effad104b13",
-   "state": "verified",
-   "visibility": "public-facade"
-  },
-  {
-   "id": "source-provider",
-   "kind": "public-api",
-   "path": "crates/gantry-conformance/tests/source_provider.rs",
-   "revision": "7e2a8d5867b7102de2b3dbab9f432855fe2626d3beade56f485a0effad104b13",
-   "state": "verified",
-   "visibility": "public-facade"
-  },
-  {
-   "id": "source-substrate",
-   "kind": "fixture",
-   "path": "crates/gantry-conformance/tests/source_substrate.rs",
-   "revision": "7e2a8d5867b7102de2b3dbab9f432855fe2626d3beade56f485a0effad104b13",
-   "state": "verified",
-   "visibility": "public-facade"
-  }
- ],
- "format": "gantry.source-substrate-gate-evidence/v1",
- "gate": "GNT-GATE-100",
- "prerequisites": [
-  {
-   "commit": "54cd63eab5032e7f51c01bbbcac63b196f69ec98",
-   "issue": "GNT-SRC-001",
-   "subject": "Implement portable source substrate"
-  },
-  {
-   "commit": "297822b69e771a9c8a8610b18742196dc46a80d0",
-   "issue": "GNT-SRC-002",
-   "subject": "Implement secure package snapshots"
-  },
-  {
-   "commit": "f4a90de1b692ad8a1029997811eb062187fb8a83",
-   "issue": "GNT-SRC-003",
-   "subject": "Implement diagnostic presentation."
-  }
- ],
- "specification": {
-  "path": "SPEC.md",
-  "sha256": "7e2a8d5867b7102de2b3dbab9f432855fe2626d3beade56f485a0effad104b13"
- },
- "status": "verified",
- "validation_commands": [
-  "cargo run --locked -p xtask -- check generated",
-  "cargo run --locked -p xtask -- check governance",
-  "cargo run --locked -p xtask -- check workspace",
-  "cargo fmt --all -- --check",
-  "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
-  "cargo test --locked --workspace --all-targets --all-features --no-fail-fast"
- ]
+  "status": "verified",
+  "validation_commands": [
+    "cargo run --locked -p xtask -- check generated",
+    "cargo run --locked -p xtask -- check governance",
+    "cargo run --locked -p xtask -- check workspace",
+    "cargo fmt --all -- --check",
+    "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
+    "cargo test --locked --workspace --all-targets --all-features --no-fail-fast"
+  ]
 }

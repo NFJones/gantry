@@ -17,7 +17,7 @@ const PREREQUISITES: [(&str, &str, &str, &str, &str); 5] = [
         "3892895c41d1f8290e97da09ce32260c51a1d74d",
         "Isolate package work behind bounded blocking admission.",
         "protocol/conformance/blocking-work-v1.json",
-        "75a2cff04aff92fcb7e7d83c50e951d5b8026ba3bff2d36876d846242aa32126",
+        "07e36f555c9e1de9119b71eada2ec51a1d1de450caccd638fca32fcbc517b66d",
     ),
     (
         "GNT-ASYNC-CLI-001",
@@ -55,19 +55,19 @@ const ARTIFACTS: [(&str, &str); 8] = [
     ),
     (
         "protocol/catalogs/profiles-v1.json",
-        "02efc5ebb4ed303d50b9dde5e495a6e87cc43fdbcb17fbba59ca41bcb950231b",
+        "b8faac7f267b4076a1802c6db1989a876af70bef1f44e00667335b701fb80770",
     ),
     (
         "protocol/conformance/async-execution-adoption-v1.json",
-        "79247224ab791e3e2696a744b4630d66786d825e10caa24f56ff57e93723207f",
+        "f43d576c842386f04a852a987162dd7e18b3afe2987d4669bb310a0ae18f476d",
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
-        "626658ff27952c7569cd0e34f7764cbc0ef5bb851f98371d4ee5bf4adc58003c",
+        "ce10334c332ddb652975faee906421410d8301000f0a41d3732164fb10485279",
     ),
     (
         "protocol/conformance/async-execution-gate-v1.json",
-        "1ece7d6994d96d399582618fc9bd75b3764ec5caa13e869d4278c48268c778ab",
+        "0deeb3e4b0e7166c11436c142b3459339b3889289e2102030dcf2dd320c63013",
     ),
     (
         "protocol/goldens/concurrent-refinement-model-v1.json",
