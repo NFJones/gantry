@@ -95,7 +95,7 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
-        "ce10334c332ddb652975faee906421410d8301000f0a41d3732164fb10485279",
+        "dca5fd73dd6297c0cffd4410697fe314d6ff573db2c5f8841f420b6ec3057904",
     ),
     (
         "protocol/conformance/async-execution-observation-v1.json",
@@ -103,7 +103,7 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         "protocol/conformance/async-source-lowering-v1.json",
-        "9258f4f57a50ae3edcfc3618c2ee0b1ef8028dbe8585d72b63a66233d6cd1f1c",
+        "02e770d09cd066d66d4176ab4dd2cc9110722a7bee56a0872f46f84b26f3fd77",
     ),
     (
         "protocol/conformance/durable-coordination-v1.json",
