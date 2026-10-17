@@ -18,6 +18,7 @@ mod durable;
 mod durable_event;
 mod event;
 mod hook_request;
+mod io_settlement;
 mod lifecycle;
 mod machine;
 mod operation;
@@ -97,6 +98,12 @@ pub use hook_request::{
     ModelOperationRequestV1, ModelSessionUseV1, NamedInputV1, OperationRequestHeaderV1,
     PreparedHookDispatch, RootSessionProvenanceV1, TaskContextV1, TaskSessionContextV1,
     TypedActionArgumentV1, ValidationErrorCategoryV1, ValidationErrorV1,
+};
+pub use io_settlement::{
+    BoundedIoEndpoint, InMemoryIoHandle, InMemoryIoTransport, IoAttemptStage, IoBlockedCall,
+    IoCallBinding, IoCallFault, IoCallOutcome, IoCancelledCall, IoEvidence, IoFailedCall,
+    IoFamilyFault, IoHostCompletion, IoHostResponse, IoNativeDiagnostic, IoOccurrence,
+    IoOperationalFault, IoPublication, IoRefusal, IoSettlement, IoSettlementService,
 };
 pub use lifecycle::{
     AcceptExecutionError, AdmissionKind, CancellationCausalIdentity, CancellationReason,

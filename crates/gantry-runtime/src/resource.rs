@@ -466,6 +466,17 @@ impl ResourceSubjectBinding {
         self.admission_open.lock().ok()
     }
 
+    /// Returns the machine-issued admission lease shared with this subject.
+    ///
+    /// The lease is the authoritative admission and cancellation fact a bounded attempt
+    /// rechecks before its single call and again before it publishes a settlement. Holding
+    /// the lease grants no admission: only a locked read of the pending or cancellation fact
+    /// decides one attempt, and a poisoned lease is reported as unreadable rather than open.
+    #[must_use]
+    pub(crate) fn admission_lease(&self) -> Arc<Mutex<crate::machine::ResourceOperationLease>> {
+        Arc::clone(&self.admission_open)
+    }
+
     /// Returns the Section 20 operation kind the decoded metadata authenticated, when any.
     ///
     /// A subject whose operation carries no authenticated live-resource kind is never admissible:
