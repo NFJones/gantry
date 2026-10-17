@@ -271,15 +271,6 @@ impl IndependentTypeProperties {
     pub const fn recovery_projection_class(self) -> RecoveryProjectionClass {
         self.recovery_projection
     }
-
-    /// Returns whether ordinary value recovery is available at all.
-    #[must_use]
-    pub const fn has_ordinary_recovery(self) -> bool {
-        matches!(
-            self.recovery_projection,
-            RecoveryProjectionClass::SealedValue
-        )
-    }
 }
 
 /// Compiler-owned facts about one existing primitive value type.
