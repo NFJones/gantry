@@ -805,6 +805,7 @@ than one block.
 | Parallel execution | `GNT-10.0`, `GNT-10.1` through `GNT-10.14` |
 | Durable execution | `GNT-11.0`, `GNT-11.1` through `GNT-11.11`, `GNT-11.11-generic-artifact-recovery`, `GNT-11.6-compatibility-classes` |
 | Observability | `GNT-12.0`, `GNT-12.1` through `GNT-12.11`, `GNT-12.11-generic-diagnostics` |
+| Environment package declarations | `GNT-49.0-environment-foundation-scope` through `GNT-49.1-environment-modules-and-item-rows` |
 | Grammar | `GNT-13.0`, `GNT-13.1` through `GNT-13.9` |
 | Embedding | `GNT-15.0`, `GNT-15.1` through `GNT-15.10`, `GNT-15.1-automatic-execution`, `GNT-15.2-runtime-sessions`, `GNT-15.4-owned-work` |
 | Packages, manifests, and public interfaces | `GNT-16.0`, `GNT-16.1-package-identity`, `GNT-16.2-package-instances`, `GNT-16.3-dependency-aliases`, `GNT-16.4-visibility`, `GNT-16.5-reexports`, `GNT-16.6-target-kinds`, `GNT-16.7-public-interface-manifest`, `GNT-16.8-compatibility-axes`, `GNT-16.9-resolution-order-independence` |
@@ -812,7 +813,8 @@ than one block.
 | Identity domains and identifier security | `GNT-18.0`, `GNT-18.1-symbolic-identity-domains`, `GNT-18.2-canonical-symbolic-identity`, `GNT-18.3-source-spelling-admission`, `GNT-18.4-confusable-and-script-policy`, `GNT-18.5-reserved-word-occupancy`, `GNT-18.6-collision-relation`, `GNT-18.7-case-behaviour`, `GNT-18.8-truncation-behaviour`, `GNT-18.9-external-name-mapping`, `GNT-18.10-generated-alias-derivation`, `GNT-18.11-hostile-label-rendering`, `GNT-18.12-typed-identity-authority`, `GNT-18.13-identity-version-pinning` |
 | Dynamic authorization and authenticated approval | `GNT-19.0`, `GNT-19.1-approval-request-identity`, `GNT-19.2-approval-subject`, `GNT-19.3-authenticated-approver-identity`, `GNT-19.4-approver-presentation-fidelity`, `GNT-19.5-decision-scope-and-standing-authority`, `GNT-19.6-decision-linearization-and-revalidation`, `GNT-19.7-durable-request-and-decision-cuts`, `GNT-19.8-approval-outcome-taxonomy`, `GNT-19.9-execution-and-release-separation`, `GNT-19.10-approval-audit-evidence` |
 | Value actions and live-resource operations | `GNT-20.0-value-actions-and-live-resource-operations`, `GNT-20.1-operation-kinds`, `GNT-20.2-logical-operation-and-resource-generation-identity`, `GNT-20.3-receiver-loan-and-ownership-transfer`, `GNT-20.4-partial-progress-and-eof`, `GNT-20.5-interruption-cancellation-and-late-completion`, `GNT-20.6-ambiguous-effect-classification-and-retry-eligibility`, `GNT-20.7-resource-state-after-failure-and-poisoning`, `GNT-20.8-half-close-and-post-failure-ownership`, `GNT-20.9-deduplication-retention-and-compaction`, `GNT-20.10-retirement-and-stale-owner-fencing`, `GNT-20.11-adapter-obligations-and-diagnostics` |
-| Portable host-domain, standard host-family contracts, application entry/launch lifecycle, source metadata, constants/package initialization, locale/civil-time semantics, standard-library architecture, scalar/binary foundation values, recursive algebraic data types, callable values, captures, and logical-frame admission, typed errors, assertions, panic, and divergence, and the collection key, canonical order, collection type identity, and sealed range step foundation, the deterministic numeric foundation, the text foundation, the codec foundation, the data value foundation, the cryptographic algorithm foundation, the common I/O foundation, the console foundation, and the filesystem foundation | `GNT-29.0-portable-host-domain-and-standard-host-family-contracts` through `GNT-29.15-host-contract-non-claims`; `GNT-30.0-application-entry-and-launch-lifecycle` through `GNT-30.12-application-non-claims`; `GNT-31.0-source-metadata-documentation-attributes-and-lint-policy` through `GNT-31.12-source-metadata-non-claims`; `GNT-32.0-constants-package-state-and-initialization` through `GNT-32.12-constant-and-package-state-non-claims`; `GNT-33.0-locale-calendar-civil-time-and-rule-data` through `GNT-33.12-locale-and-time-non-claims`; `GNT-34.0-standard-library-package-architecture` through `GNT-34.12-standard-library-architecture-non-claims`; `GNT-35.0-scalar-and-binary-foundation` through `GNT-35.12-scalar-and-binary-non-claims`; `GNT-36.0-recursive-algebraic-data-types` through `GNT-36.12-adt-non-claims`; `GNT-37.0-callable-values-and-frame-admission` through `GNT-37.12-callable-non-claims`; `GNT-38.0-error-and-divergence-scope` through `GNT-38.4-boundaries-durability-and-non-claims`; `GNT-39.0-collection-key-and-order-scope` through `GNT-39.8-collection-value-model`; `GNT-40.0-deterministic-numeric-scope` through `GNT-40.7-canonical-integer-overflow-modes`; `GNT-41.0-text-foundation-scope` through `GNT-41.11-canonical-text-value-bound`; `GNT-42.0-codec-foundation-scope` through `GNT-42.7-codec-non-claims`; `GNT-43.0-data-family-scope` through `GNT-43.6-request-and-response-value-model`; `GNT-44.0-crypto-foundation-scope` through `GNT-44.4-crypto-non-claims`; `GNT-45.0-common-io-foundation-scope` through `GNT-45.4-io-backpressure-fact`; `GNT-46.0-console-foundation-scope` through `GNT-46.5-console-terminal-observations`; `GNT-47.0-filesystem-foundation-scope` through `GNT-47.14-filesystem-durable-carriers` |
+| Portable host-domain, standard host-family contracts, application entry/launch lifecycle, source metadata, constants/package initialization, locale/civil-time semantics, standard-library architecture, scalar/binary foundation values, recursive algebraic data types, callable values, captures, and logical-frame admission, typed errors, assertions, panic, and divergence, and the collection key, canonical order, collection type identity, and sealed range step foundation, the deterministic numeric foundation, the text foundation, the codec foundation, the data value foundation, the cryptographic algorithm foundation, the common I/O foundation, the console foundation, and the filesystem foundation | `GNT-29.0-portable-host-domain-and-standard-host-family-contracts` through `GNT-29.15-host-contract-non-claims`; `GNT-30.0-application-entry-and-launch-lifecycle` through `GNT-30.12-application-non-claims`; `GNT-31.0-source-metadata-documentation-attributes-and-lint-policy` through `GNT-31.12-source-metadata-non-claims`; `GNT-32.0-constants-package-state-and-initialization` through `GNT-32.12-constant-and-package-state-non-claims`; `GNT-33.0-locale-calendar-civil-time-and-rule-data` through `GNT-33.12-locale-and-time-non-claims`; `GNT-34.0-standard-library-package-architecture` through `GNT-34.12-standard-library-architecture-non-claims`; `GNT-35.0-scalar-and-binary-foundation` through `GNT-35.12-scalar-and-binary-non-claims`; `GNT-36.0-recursive-algebraic-data-types` through `GNT-36.12-adt-non-claims`; `GNT-37.0-callable-values-and-frame-admission` through `GNT-37.12-callable-non-claims`; `GNT-38.0-error-and-divergence-scope` through `GNT-38.4-boundaries-durability-and-non-claims`; `GNT-39.0-collection-key-and-order-scope` through `GNT-39.8-collection-value-model`; `GNT-40.0-deterministic-numeric-scope` through `GNT-40.8-numeric-module-names`; `GNT-41.0-text-foundation-scope` through `GNT-41.12-text-module-names`; `GNT-42.0-codec-foundation-scope` through `GNT-42.7-codec-non-claims`; `GNT-43.0-data-family-scope` through `GNT-43.6-request-and-response-value-model`; `GNT-44.0-crypto-foundation-scope` through `GNT-44.4-crypto-non-claims`; `GNT-45.0-common-io-foundation-scope` through `GNT-45.4-io-backpressure-fact`; `GNT-46.0-console-foundation-scope` through `GNT-46.5-console-terminal-observations`; `GNT-47.0-filesystem-foundation-scope` through `GNT-47.14-filesystem-durable-carriers` |
+| Random package declarations | `GNT-50.0-random-foundation-scope` through `GNT-50.1-random-modules-and-item-rows` |
 
 Adding a substantial obligation with different applicability or an
 independent compatibility lifecycle SHOULD add a descriptive child identifier
@@ -940,7 +942,158 @@ portable outcomes, identity, or durable compatibility.
    future. Checking cancellation does not itself consume a transition. The
    per-task counter resets after any such await or explicit scheduler yield.
    The yield quantum MUST be nonzero and finite, and Gantry MUST observe
-   cancellation immediately before and after the yield. Changing the quantum
+   cancellation immediately before and after the yield.
+   Flat String-list equality and inequality MUST share a quantum of at most 4096
+   member-admission and UTF-8-octet comparison units per machine call. Empty members
+   consume admission work. Operands and program position MUST remain unchanged until
+   the complete Boolean publishes with the existing single transition charge. Scratch
+   is recomputable and MUST NOT become a logical checkpoint fact. Other member kinds
+   retain general equality semantics; allocation, cloning and destruction latency,
+   nested aggregate equality and complete semantic-work metering remain outside this guarantee.
+   Direct String equality, inequality, prefix and suffix matching MUST compare at most 4096 UTF-8 octets before
+   returning a scheduling-only yield when more comparison work remains. Such work MUST
+   also apply to substring containment: prefix-table construction and matching MUST perform
+   at most 4096 comparison/fallback work units per call, counting fallback without input advance.
+   Private search scratch MAY retain at most one prefix entry per pattern octet; it is recomputable,
+   not a logical checkpoint fact or a total-allocation/latency guarantee. Substring search MUST
+   preserve exact UTF-8 matching and avoid repeated-prefix quadratic rescanning.
+   String trimming boundary scans MUST classify at most 4096 scalars per call before yielding
+   when more scan work remains, retaining only private scalar-boundary offsets. This bounds
+   boundary scanning, not final String construction, allocation or total primitive latency.
+   Uppercase mapping MUST process at most 4096 input scalars per call before yielding when
+   more mapping work remains. Each complete pinned expansion MUST pass the captured output
+   bound before private accumulation. Recovery MAY recompute this private output from retained
+   operands; final logical-value construction, copying and allocation remain outside this
+   mapping-work bound. No partial output or additional semantic transition MAY be published.
+   Contextual lowercase collection, backward context analysis and forward mapping MUST share
+   a finite quantum of at most 4096 scalar steps per call. Pinned `Final_Sigma` and
+   `Case_Ignorable` rules MUST remain exact across yields. Scratch MAY retain one scalar and
+   context flag per input scalar plus output admitted under the captured String bound;
+   recovery MAY recompute these private facts. Allocation, cloning and final construction
+   remain outside this work bound, and no partial result or extra transition is admitted.
+   String concatenation MUST admit the complete scalar count before copying, then copy at
+   most 4096 scalars per call before yielding when more copy work remains. Immutable String
+   metrics MAY supply that count. Numeric addition MUST retain its existing path. Private
+   concatenation output MAY be recomputed on recovery; final logical construction and allocation
+   remain outside the copy-work bound, with no partial publication or extra transition charge.
+   List-of-String joining MUST perform at most 4096 piece admissions or scalar copies per call,
+   counting empty separator/item admission as work. Each complete piece MUST be admitted before
+   copying in existing separator-before-item order, retaining refusal precedence. Private output
+   MAY be recomputed after recovery; replay MUST include admitted List-item limits in its separate
+   yield allowance. Final construction and allocation remain outside this copy-work bound.
+   String replacement MUST share at most 4096 search, scalar admission/copy or phase-boundary
+   work units per call. Matches MUST remain left-to-right and nonoverlapping, and inserted text
+   MUST NOT be searched. Each whole unmatched/replacement piece MUST pass its output-scalar
+   admission before copying. Private scratch MAY restart from retained operands on recovery;
+   allocation, cloning and final logical construction remain outside this work bound.
+   String splitting MUST share at most 4096 search, scalar admission/copy or phase-boundary
+   work units per call. Each next List place MUST be admitted before its segment's String
+   construction; adjacent, leading and trailing empty segments MUST remain exact. Private
+   segment state MAY be recomputed on recovery. Segment and final List construction,
+   allocation, cloning and destruction remain outside this work bound.
+   Runtime String-to-Float grammar admission MUST perform at most 4096 constant-work
+   RFC 8259 scanner steps per call before yielding when more grammar work remains.
+   Token endpoints MUST NOT authorize conversion of trailing or substituted input. Invalid
+   grammar still publishes `None`, not a task failure. After complete grammar admission,
+   exact magnitude preflight MUST scan at most 4096 octets per call using constant-size
+   private facts, preserving the mathematical finite-Float bound and normalized zero.
+   Out-of-range input publishes `None` without binary64 conversion. In-range conversion,
+   binary64 rounding and final grammar revalidation MUST run outside the shared execution-budget
+   mutex, caching only a private numeric result. Logical-result limits and the existing transition
+   charge MUST still precede atomic publication. Conversion and logical construction remain
+   synchronous and outside these grammar/range scanning bounds. Scratch MAY be recomputed after recovery.
+   Primitive result evaluation and logical-value construction MUST occur outside the shared
+   execution-budget mutex. Deterministic evaluation and result-limit refusals MUST retain
+   precedence over transition-budget exhaustion. Only a complete validated private result
+   MAY acquire the mutex for the existing single transition charge and atomic operand/PC
+   publication. Consumed operand ownership MUST be retained until after releasing that mutex,
+   so physical value reclamation cannot extend the shared-counter critical section. This lock
+   separation supplies no additional source stop point or latency bound and changes no semantic
+   release point or quota charge.
+   Ordinary aggregate candidates MUST likewise be constructed and validated outside the shared
+   execution-budget mutex, preserving result-limit refusal before transition-budget refusal.
+   Authenticated live-resource aggregation MUST still refuse before operand copying. Only a
+   complete candidate MAY publish with its existing single charge; consumed ownership MUST
+   remain retained until mutex release. Aggregate construction remains synchronous.
+   Projection lookup and extended place-origin validation MUST likewise precede shared-counter
+   locking. Invalid-index and moved-out-place refusals MUST retain precedence over budget refusal.
+   The projected value and its exact origin MUST publish with one charge, retaining consumed
+   source ownership until after unlocking. This adds no authority, stop point or latency bound.
+   Discard MUST retain consumed value and place-origin ownership through its existing charged
+   stack/PC update and reclaim them only after shared-counter unlocking. Empty-stack refusal
+   MUST precede budget admission; failed charging MUST change no stack or program position.
+   This changes neither semantic release nor quota charges and adds no latency guarantee.
+   Lexical scope exit MUST likewise retain removed value and task-handle scopes until after
+   its charged scope/PC update releases the shared execution-budget mutex. Root-scope and
+   scope-alignment checks MUST precede admission. Failed charging MUST remove no scope;
+   deferred reclamation changes no lexical release point, task settlement or quota charge.
+   Callable return MUST validate its result outside the shared execution-budget mutex.
+   Nonroot return MUST preserve its existing charge, caller restoration, moved-out facts and
+   consumption obligations, retaining retired callee storage until after unlocking. Invalid
+   results MUST refuse before budget admission; failed charging MUST restore no caller or
+   remove a frame. Root return remains uncharged. Reclamation remains synchronous.
+   Callable admission MUST validate arguments, receiver arrangement and call depth before
+   shared-counter admission. Callee-frame preparation MUST precede locking; the existing single
+   charge publishes caller position, occurrence and callee ownership atomically. Consumed argument
+   values and origins MUST remain retained until after unlock. Refusal changes no caller state;
+   this changes no receiver authority, semantic release point or reclamation-latency guarantee.
+   Spawn capture validation, detached copying and partial-capture refusal cleanup MUST run
+   outside the shared execution-budget mutex. Preparation retains its existing uncharged
+   suspension and task-local occurrence behavior; refusal MUST publish no partial spawn.
+   Spawn occurrence allocation MUST refuse an exhausted counter with `InternalInvariant`
+   rather than saturating or reusing a child identity. Refusal MUST preserve the counter,
+   caller position and shared budget and publish no pending spawn; the last incrementable
+   ordinal remains eligible after ordinary capture validation.
+   This does not make copying cooperative or bound allocation and destruction latency.
+   Join, joinall and detach preparation MUST likewise validate and consume task-local handles
+   outside shared execution counters. Their existing uncharged suspension, handle ordering and
+   empty-joinall behavior MUST remain unchanged. Refusal MUST consume no handle or publish a
+   partial suspension; this adds no ownership authority or destruction-latency guarantee.
+   Integration operation inputs and immutable executable metadata MUST be prepared outside
+   shared execution counters. Operation charging, resource-generation allocation and pending
+   publication retain their existing atomic counter boundary. Refused admission MUST release
+   the mutex before failure cleanup or temporary-input disposal. This does not bound identity
+   derivation, allocation or total preparation latency and changes no operation charge.
+   Spawned-body completion MUST validate its result outside shared counters and retain consumed
+   operand ownership through its existing charge until mutex release. Invalid-result refusal
+   MUST precede budget admission; failed charging MUST consume no operand. Terminal settlement
+   follows unlocking, preserving its existing outcome and consumption-obligation evidence.
+   Assignment replacement and propagated exclusive-receiver candidates MUST be fully validated
+   outside shared counters. Mutability, type, path and result-limit refusals MUST precede budget
+   admission. One charged update MUST publish all candidates and preserve existing moved-out
+   and consumption-obligation rules. Superseded values and consumed operands MUST remain owned
+   until unlocking. Refusal MUST publish no partial assignment; construction remains synchronous.
+   Lexical binding MUST validate name availability, operand type and target scope before
+   budget admission. One existing transition MUST publish the binding and PC atomically,
+   retaining consumed values and place origins until after shared-counter unlock. Failed
+   admission MUST preserve operands, scopes and PC; the deterministic label remains `binding`.
+   This changes no semantic release point or quota charge and promises no bounded reclamation latency.
+   Boolean/Decision branch validation MUST precede shared-counter admission. Its existing single
+   charge MUST publish the branch occurrence and target atomically, retaining consumed value/origin
+   ownership until after unlock. Refusal MUST change no operand, occurrence or PC; the `branch`
+   label and semantic release remain unchanged. This supplies no bounded destruction latency.
+   Option branches MUST prepare payload and extended place-origin facts before shared-counter
+   admission. Their existing single charge MUST atomically publish payload, occurrence and target;
+   consumed and temporary ownership MUST remain retained until after unlock. Invalid Option
+   refusal MUST precede budget exhaustion, and rejected publication MUST preserve operands,
+   occurrences and PC. The `branch` label, semantic release and quota charges remain unchanged.
+   Result branches MUST likewise prepare their payload and exact extended place origin before
+   shared-counter admission and retain consumed/temporary ownership until after unlock.
+   Invalid Result refusal MUST precede budget exhaustion; one existing charge atomically publishes
+   payload, occurrence and target. Rejected publication changes no operand, occurrence or PC.
+   This preserves the `branch` label and supplies no new release point or destruction-latency bound.
+   Enum branches MUST prepare variant selection, optional payload and exact extended origin
+   before shared-counter admission. Invalid values and unmatched variants MUST refuse before
+   budget exhaustion. One existing charge atomically publishes payload, occurrence and target;
+   consumed and temporary ownership MUST be reclaimed only after unlock. Rejected publication
+   preserves operands, occurrences and PC, without changing labels, release points or quota charges.
+   All these paths MUST
+   preserve operands, assignment targets and program position until atomic publication,
+   and consume exactly the existing single transition only after comparison succeeds.
+   Recomputable comparison scratch is not a logical checkpoint fact; recovery MAY restart
+   that pure work from retained operands. Replay MUST bound scheduling yields separately
+   from semantic transitions using admitted value limits. These yields grant no new source
+   cooperative-stop observation point, hook, event or resource authority. Changing the quantum
    affects scheduling only: it MUST NOT alter deterministic computation within
    one task, dynamic operation or task identities, retry accounting, or the
    semantic content and per-task order of logical evidence and events. It MAY
@@ -957,6 +1110,53 @@ portable outcomes, identity, or durable compatibility.
    configured interpreter resource limit MUST surface as a structured
    deterministic-evaluation runtime error, never a panic or silent process
    termination.
+   Concurrent durable graph admission MUST require a retained source task body's
+   lexical spawn site and executable-resolved enclosing workflow to equal its immutable
+   task creation facts. Equal lexical sites in different workflows MUST NOT substitute
+   for one another. Matching
+   task identity, path and budget MUST NOT authorize substitution of another spawn
+   body. Legacy workflow-based child machines without a task-body fact remain
+   subject to their existing correspondence checks; this grants no artifact authentication.
+   Consuming replacement-driver admission MUST revalidate the actual recovered graph
+   after mutable access, including record-free graphs. Prior decode validation alone
+   MUST NOT authorize substituted child machines; refusal MUST expose no driver owner.
+   Machine-only extraction MUST likewise revalidate policy-free graphs after mutable access.
+   Invalid correspondence MUST return the complete recovered owner rather than expose
+   substituted machines; accounting-policy-bearing extraction remains refused.
+   Component decomposition MUST also revalidate before moving the machine, scheduler
+   and session owners. Invalid correspondence MUST return the complete recovered owner;
+   successful decomposition retains accounting policy and records in the scheduler.
+   Replayed capture and consuming recovery validation MUST require foreground, child
+   and scheduler budgets to share one actual owner. Equal counter snapshots MUST NOT
+   substitute for shared ownership or permit independently charged recovery components.
+   Journal-first staging MUST require the live foreground and child machines to share
+   one budget owner before cloning them onto a private staging budget. Equal projections
+   MUST NOT silently normalize independently charged children; refusal MUST reserve no
+   publication and change no machine or coordinator facts. The coordinator's committed
+   budget projection remains independently validated as the predecessor frontier.
+   Installing a newly submitted child onto a private transaction budget MUST require
+   its complete budget snapshot to match that private budget before rebinding. Installation
+   MUST NOT discard independently charged progress. Refusal MUST insert no child machine
+   or admission guard, leaving a legitimate submission retry available.
+   Child installation MUST also require identical executable content with the staged
+   foreground before cloning or creating admission guards. Matching task coordinates
+   and counters MUST NOT authorize substituted instructions; identical independent
+   program copies remain eligible. This validates consistency, not artifact authenticity.
+   Graph capture MUST also require identical executable program content across foreground
+   and child machines before constructing a checkpoint. Matching body identities and budgets
+   MUST NOT authorize different instructions; independent copies of identical programs remain
+   eligible. This consistency check does not authenticate the program's provenance.
+   For retained source-body child machines, immutable creation captures MUST exactly match
+   the executable body's capture names, types and mutability. Valid logical values MUST NOT
+   authorize extra or missing capture declarations. Child-local mutable values need not equal
+   original capture snapshots; this check compares contracts, not historical value contents.
+   Their immutable creation result type MUST also equal the executable body's result type,
+   including detached children without a remaining lexical handle. Handle removal MUST NOT
+   permit result-contract substitution at capture, decode or recovery admission.
+   When a settled child's machine is absent, executable source-body contracts MUST resolve
+   unambiguously from its retained workflow and spawn site before result/capture validation.
+   Multiple closed-body matches MUST refuse rather than guess. Legacy creation facts with no
+   matching source body retain existing checks; machine removal MUST NOT erase a known contract.
 <a id="GNT-3.7"></a>
 
 7. An implementation claiming the durable-runtime profile MUST make Gantry
@@ -2222,6 +2422,10 @@ before body evaluation: `fork` copies the parent's committed transcript and
 `new` uses the empty transcript. Exit restores the prior session. Session
 creation is part of the transition's semantic state and must satisfy the
 commit rule in Section 3.6 before an operation can use it.
+Executable lowering of a value-producing agent or session context MUST preserve
+the entire body in source order, including discarded operations and its trailing
+value, before restoring the prior context. Selecting a nested operation as the
+enclosing context's result MUST NOT omit sibling work or context entry and exit.
 
 ### 3.5 Operations, tasks, cancellation, and failure
 
@@ -3486,6 +3690,12 @@ Format major changes may alter eligibility, framing, order, or hashing; a minor 
       finite binary64 value; it otherwise returns `None`, including when
       parsing, range checking, or normalization fails. These parsers do not
       trim and never fail the task for invalid input.
+      Runtime Float token admission MAY borrow the String and share the strict JSON number
+      scanner and exact decimal range converter without constructing a JSON document.
+      Exact decimal normalization MAY borrow its significant span without materializing digits;
+      exact ordering, integer conversion and zero normalization MUST remain unchanged.
+      This MUST NOT restrict admitted noncanonical number spellings or alter rounding,
+      normalized zero, transition charging or refusal. It declares no work or cancellation bound.
     `List<String>.join(separator) -> String` joins items in list order with the
     exact separator only between adjacent items. It returns the empty String
     for an empty list and the sole item unchanged for a one-item list. `join`
@@ -3506,7 +3716,17 @@ Format major changes may alter eligibility, framing, order, or hashing; a minor 
     evaluation error and the operation remains undispatched. Concatenation,
     case mapping, replacement, splitting, and joining
     are atomic: a `string-size-limit` or `list-size-limit` deterministic-
-    evaluation error leaves the assignment target unchanged. The same checks
+    evaluation error leaves the assignment target unchanged. Concatenation, replacement and joining
+    MUST check each next output piece's Unicode-scalar contribution before allocating
+    or appending that piece; exceeding the captured String limit MUST publish no
+    result or partial state. Replacement text MUST NOT be rescanned. This bounds
+    output construction, not semantic work or cancellation latency. Case mapping MUST
+    check each pinned scalar mapping before appending it to accumulated output, while
+    retaining contextual Unicode rules. Bounded per-scalar scratch and input-context
+    scanning are not output publication or a cancellation/work budget. Splitting MUST
+    check the next segment against the captured List-item limit before constructing
+    that segment; an excess segment MUST refuse with `list-size-limit` without
+    publishing the private prefix. The same checks
     apply recursively to source construction, entry input, hook output, and
     resumed values. Deterministic String operations dispatch no hook, create no
     model rationale or operation event, and consume no validation-retry budget.
@@ -12123,17 +12343,84 @@ outcome.
 
 <a id="GNT-20.1-operation-kinds"></a>
 
-**[GNT-20.1-operation-kinds] Operation kinds.** The closed vocabulary of operation
-kinds is exactly three members: a value action, a protected operation, and a
-live-resource operation. The three are distinct and exhaustive, and membership of a
-kind is decided once, at declaration. A value action and a protected operation
-produce a durable value and carry no live handle; a live-resource operation carries
-a live handle and MUST NOT be reported as a durable value. A live handle MUST be
-obtainable only from a live-resource operation, so an implementation MUST refuse to
-report a value action or a protected operation as a live resource, and MUST refuse
-to report a live-resource operation as a durable value. No operation changes kind
-after declaration, and no kind may be read as, reported as, or substituted for
-another.
+**[GNT-20.1-operation-kinds] Operation kinds.** Exactly three distinct, exhaustive kinds: value
+action, protected operation, and live-resource operation. Kind is fixed at declaration. For
+analyzer-authenticated executable metadata, a sealed analyzed result type identifies a protected
+operation; only that result type counts, not a sealed type mentioned by an operand, input, or
+effect. An unsealed non-live result cannot distinguish a value action from a protected
+operation.
+Both non-live kinds produce durable values with no live handles; a live-resource operation carries
+a live handle and MUST NOT be reported as a durable value. A live handle MUST come only from a
+live-resource operation. Implementations MUST refuse to report other kinds as live resources or a
+live-resource operation as a durable value. No operation changes kind after declaration or may be
+read as, reported as, or substituted for another.
+
+Executable admission MUST require each retained action signature to equal the canonical signature
+derived from its action path, recovery class, declaration-order parameters and successful result
+type. Present action metadata MUST belong to an action-kind operation, and its operand count MUST
+equal the declared parameter count. Every metadata-bearing operation instruction MUST consume
+its declared successful result type, or exactly `Result<successful-result, OperationError>` when
+attempted; neither result nor sealed error type may be substituted. Prompt and decision instructions
+MUST also refuse when named input names and types differ in count, or when the operand count differs
+from the checked sum of interpolation and named inputs. Contradictory workflow metadata
+MUST refuse with `InvalidOperationMetadata`; spawned-body
+validation wraps that refusal as `InvalidTaskBody`. Both MUST refuse before machine execution;
+retained decoding MUST NOT silently repair an in-memory contradiction. This consistency check
+does not authenticate the executable artifact or grant dispatch authority.
+
+The ordinary `Machine::complete_operation` logical-value path MUST refuse an authenticated
+live-resource result with `OperationCompletionError::LiveResourceValueRefused`, after pending
+identity and cancellation checks but before value validation or mutation. Refusal MUST retain
+the pending operation, operands, generation and settlement lease unchanged. For an attempted
+operation, a handle-free `Err(OperationError)` MAY proceed through the existing value-limit and
+expected-result-type validation and settle once; an `Ok` or an error payload of another kind
+MUST NOT bypass the live-resource refusal. Task cancellation still prevents error consumption.
+This preserves Section 5's catchable attempted failures and their exact durable replay without
+admitting a live handle as ordinary data. Until a separately
+declared live-handle completion path exists, ordinary serialized data MUST NOT substitute for
+that result; explicit operational failure and cancellation settlement remain available.
+
+The product start boundary using only raw-byte operation hooks MUST reject a package whose
+executable inventory contains an authenticated live-resource result with
+`unsupported-live-resource-transport` in the integration-preflight category, before mapping
+calls, root-session or execution identity allocation, and execution acceptance. The inventory
+includes workflow and spawned task-body operations, including attempted operations. This is
+an unsupported transport refusal, not a source-analysis error or a fabricated operation outcome.
+It does not remove the low-level handle-free attempted-error settlement contract above.
+Source-free durable resume MUST inspect the retained program's workflow and spawned-body
+operation inventory for the same authenticated live-resource result and refuse
+`unsupported-live-resource-transport` before mapping calls, lifecycle admission, journal repair
+or replacement-driver submission. Refusal MUST preserve the journal prefix and append no evidence;
+retained metadata does not grant an unsupported live-handle transport path.
+The same inventory MUST refuse reachable ordinary aggregation whose analyzed result type
+has the live-resource stored-member class, including empty live-resource declarations, absent
+options, empty lists, and payload-free enum variants. Ordinary aggregate data MUST NOT fabricate
+live-handle ownership or bypass static transport eligibility. Classification MUST use the configured
+frontend limits before integration preflight; unused live-resource declarations alone do not
+make otherwise ordinary executable instructions ineligible.
+The analyzer MUST retain the complete resource classification of reachable aggregate result
+types, including spawned-body aggregates, in the executable program. Exact types in this
+inventory MUST remain eligible for bounded capability queries even when no authored type
+annotation retains them elsewhere. Inventory membership does not bypass configured proof
+limits, infer capabilities, or admit unrelated descriptors. `GNTPRG06` carries this
+canonical type-to-class map alongside predecessor metadata; missing, extra, duplicate, reordered
+or unknown classification entries MUST refuse decoding. Predecessor wires retain absence rather
+than infer a non-live class. Source-free resume MUST require retained non-live classification for
+each aggregate; live or absent classification MUST refuse `unsupported-live-resource-transport`
+before mappings, lifecycle admission, repair or submission, without appending evidence. Retention
+does not itself authenticate a caller-supplied program or grant live-handle authority.
+Low-level machine aggregation MUST also refuse retained live-resource classification before
+copying operands or constructing ordinary values. The machine failure is
+`unsupported-live-resource-transport`, retained exactly through checkpoint recovery; task and
+event projections classify it as an internal-invariant failure of unsupported transport.
+This defense does not infer classifications for legacy unclassified programs or create a live handle.
+
+Ordinary JSON entry input MUST NOT supply a type whose analyzed stored-member resource class
+is live-resource, including enclosing aggregates. Once required entry input is present, product
+start MUST refuse such a type with `live-resource-entry-value-refused` in the entry-input-validation
+category before JSON parsing, normalization, integration preflight or execution acceptance.
+This is type-qualified transport admission, not authority derived from serialized fields; it
+does not create an affine live-handle entry path or change source type classification.
 
 <a id="GNT-20.2-logical-operation-and-resource-generation-identity"></a>
 
@@ -12168,8 +12455,9 @@ for one exact declaration, one exact site, and one exact resource generation, it
 never a transfer of ownership, it cannot be written as, decoded from, or substituted
 for an owner generation or a retained receiver, and it is released when the operation
 that holds it settles. A borrowed receiver MUST carry a loan sealed for that exact
-site and that exact resource generation, and an implementation MUST refuse a loan of
-another site or another generation rather than reinterpret it. `GNT-6.2f` is not this
+declaration, site and resource generation, and an implementation MUST refuse a loan of
+another declaration, site or generation rather than reinterpret it. Matching site and
+generation alone MUST NOT substitute for the declaration-qualified seal. `GNT-6.2f` is not this
 rule: that clause is the general argument-loan rule, and it explicitly excludes
 live-resource loans, so no receiver loan of this clause is admitted, sealed, or
 released by `GNT-6.2f` and this clause neither narrows nor extends it. An owner
@@ -12196,6 +12484,11 @@ be a declared upgrade of it, so a claim that would move progress backwards, incl
 an end of stream where a committed completion was observed or an unstarted observation
 where progress was observed, MUST be refused rather than recorded, and a refused claim
 MUST NOT replace the declared progress record.
+Each later observation MUST also equal or be a declared upgrade of retained progress.
+A non-upgrade MUST refuse with `ProgressObservationMismatch` before consuming observation
+allowance or changing progress or state. Existing fencing, accepted-settlement and unusable-state
+refusals retain precedence. An admissible EOF observation MUST close the operation state,
+including after partial advance; it remains distinct from committed completion.
 
 <a id="GNT-20.5-interruption-cancellation-and-late-completion"></a>
 
@@ -12208,7 +12501,19 @@ and changes no resource state. A cancellation request races with admission and
 dispatch and MUST NOT be reported as a definite not-started effect. One resource
 generation has exactly one settlement: the first settlement of one generation wins,
 and a duplicate, late, or wrong-generation completion MUST be refused rather than
-settled, so a cancellation race has exactly one winner. A settlement MUST NOT claim
+settled, so a cancellation race has exactly one winner. After accepted settlement, later
+progress observations MUST refuse with `SecondSettlement` before changing progress, state,
+or observation allowance, including when a partial settlement retains an open half.
+An existing generation fence MUST retain observation-refusal precedence. A later failure
+settlement MUST likewise refuse with `SecondSettlement` before changing state or issuing
+post-failure evidence; it MUST NOT manufacture poisoning authority after an accepted winner.
+An accepted failure settlement MUST retain its exact `PostFailureSettlement` as the terminal
+winner, distinct from an `OperationSettlement`. `failure_settlement()` MUST inspect that
+winner without fabricating a successful outcome, progress, or ordinary operation-state projection.
+Later completion, observation, or failure settlement MUST refuse with `SecondSettlement`
+without mutation; an existing generation fence retains observation-refusal precedence.
+Failure-winner refusal precedes repeated resource-poison or half-close classification.
+A settlement MUST NOT claim
 a completion the resource never observed, and MUST NOT claim an end of stream where
 only a short read or a short write was observed. A fenced generation records its
 observed outcome without reopening.
@@ -12250,7 +12555,15 @@ half-close, poisoning a poisoned resource MUST NOT be repeated, and a partial
 failure MUST NOT leave a resource in an undeclared or ambiguous state. An
 observation on a resource that has no open half, or whose generation was fenced,
 MUST be refused, and the category of a fenced generation MUST be preserved rather
-than relabelled.
+than relabelled. Repeated fencing MUST retain the first category, including after
+accepted settlement, without changing retained settlement, progress or observation allowance.
+
+Post-failure evidence issued by a `LiveResource` MUST retain that resource's accepting owner
+generation. Declaration-only `OperationAbi` failure classification has no accepting runtime
+owner and MUST NOT authorize runtime resource or adapter poisoning. After exact operation and
+resource-generation selection and applicable poison classification, the runtime MUST require
+that accepting owner to equal the admitted account's current owner before mutation. Missing
+provenance and stale-owner evidence MUST leave accounting and adapter state unchanged.
 
 <a id="GNT-20.8-half-close-and-post-failure-ownership"></a>
 
@@ -12258,7 +12571,10 @@ than relabelled.
 ownership.** A half-close is meaningful exactly while an open half survives: it
 preserves the still-open half, its resource generation, and its owner generation,
 and it MUST be refused for a resource that is closed, consumed, poisoned, or already
-half-closed. A half-close MUST NOT create, release, or rebind ownership, and the
+half-closed. After an accepted success or failure settlement, half-close MUST refuse
+with `SecondSettlement` before state classification or mutation, including when the
+winner retains an open half. Generation fencing remains available without rewriting
+the accepted settlement or its progress. A half-close MUST NOT create, release, or rebind ownership, and the
 surviving half remains the same generation under the same owner. Post-failure
 ownership is exactly one declared receiver arrangement for one failure: the
 arrangement is preserved unchanged by the failure, so a failure MUST NOT silently
@@ -12281,9 +12597,19 @@ forever, such as a zero generation bound with a zero instant bound, MUST be refu
 rather than published. Compaction MUST preserve the logical operation identity, the
 resource generation, the owner generation, and the durable settlement, so every
 identity needed to redispatch and to reconstruct the record after a restart survives
-compaction. A restart MUST NOT reconstruct an operation identity without the
+compaction. Compaction MUST preserve retired and rejected-stale-owner states and their
+owner fences; changed retention bounds MUST NOT turn either into dispatch proof.
+A restart MUST NOT reconstruct an operation identity without the
 settlement that gives it meaning, MUST NOT attach a settlement to a record that
 rejected a stale owner, and MUST refuse a settlement that names another identity.
+Restoration MUST also require the retained resource generation to belong to the
+presented operation, including rejected-stale-owner records without a settlement.
+Mixed operation/generation facts MUST refuse before publishing a restored record.
+Initial rejected-stale-owner construction MUST enforce the same correspondence and
+return `ForeignOperation` for mixed identities rather than normalize either input.
+Canonical settlement text MUST retain the observed external outcome independently of
+derived resource state. Accepted and rejected outcomes MUST remain distinct even when
+their progress and resulting state coincide; state alone MUST NOT substitute for outcome.
 
 <a id="GNT-20.10-retirement-and-stale-owner-fencing"></a>
 
@@ -12297,7 +12623,12 @@ evidence it does not have, and a stale owner MUST NOT advance it. A retired reco
 carries the advanced owner generation and fences every owner generation that does
 not succeed it: a fenced stale owner MUST be refused rather than admitted as a new
 invocation through that record, while a genuinely advanced owner is admitted as a
-fresh invocation. Fencing is not deletion: the settlement, the retirement evidence,
+fresh invocation. Recovery MUST preserve that advanced fence independently of the
+historical settlement owner. A restored retired record MUST carry a fence strictly
+newer than its settlement owner; equality or regression MUST refuse. Authoritative
+and compacted records still require their exact settlement owner. Restoration does
+not authenticate caller-supplied retirement evidence or authorize a new invocation.
+Fencing is not deletion: the settlement, the retirement evidence,
 and the fence category remain, and a fenced generation MUST NOT be reopened, reused,
 or reinstated.
 
@@ -14948,18 +15279,21 @@ or conditionally satisfied where it can only demonstrate one of these limits.
 contract.** This section defines closed liveness roots, logical measures independent of physical
 representation, atomic charging for copy, move, loan, update, and release, whole-resource
 lifetime settlement, closed quota families and owners, bounded renewal, deterministic durable
-reconstruction, and retention, compaction, retirement, and deletion fences. It extends without
+reconstruction, retention, compaction, retirement, and deletion fences, plus the separately
+scoped runtime admission mapping of `GNT-28.11-runtime-admission-mapping` and operation-state
+projection of `GNT-28.12-operation-state-projection`. It extends without
 redefining the ownership, receiver-loan, operation identity, operation `ResourceState`, poison,
 retention, and stale-owner contracts of `GNT-20.*`, and the stop and sealed emergency-cleanup
 contracts of `GNT-22.*` and `GNT-15.10`. The pure model is `crates/gantry-ir/src/resource.rs`
 and its analyzer-profile evidence lane is
 `crates/gantry-conformance/tests/resource_accounting.rs`.
 
-**Applicability.** These clauses apply to an implementation that declares the Section 28 pure
-resource-accounting model. They define model facts only: no clause here creates a runtime
-registry, evaluator behavior, checkpoint, journal schema, host trait, scheduler, or runtime
-integration claim. The analyzer profile records every clause `covered` only for the declared
-pure model and its conformance lane.
+**Applicability.** Clauses `GNT-28.1` through `GNT-28.10` apply to an implementation that
+declares the Section 28 pure resource-accounting model and define model facts only. Clauses
+`GNT-28.11` and `GNT-28.12` apply only to a runtime profile that separately declares a resource registry. No
+clause here creates evaluator behavior, a checkpoint, a journal schema, a host trait, or a
+scheduler. The analyzer profile records clauses `covered` only for the declared pure model and
+its conformance lane; it does not claim coverage of `GNT-28.11` or `GNT-28.12`.
 
 **Boundary.** `ResourceState` remains the Section 20 state of one operation. The
 whole-resource lifetime state defined here is distinct and MUST NOT be substituted for an
@@ -15038,6 +15372,9 @@ from that record reproduces those facts exactly and does not discover a live hos
 adapter, path, clock, process, environment fact, or journal implementation. This clause defines
 the portable reconstruction model only and does not define durable runtime recovery or a journal
 schema.
+Decoders of the closed reconstruction-record schema MUST bound input copying and parsing
+independently of untrusted input length, while admitting every canonical record of that schema.
+Excess bytes, nesting, nodes, strings, or list members MUST refuse without publishing partial facts.
 
 <a id="GNT-28.8-retention-and-compaction-fences"></a>
 
@@ -15064,12 +15401,823 @@ a distinct declared resource record.
 
 <a id="GNT-28.10-resource-accounting-non-claims"></a>
 
-**[GNT-28.10-resource-accounting-non-claims] Resource accounting non-claims.** This section does
+**[GNT-28.10-resource-accounting-non-claims] Resource accounting non-claims.** Except for the
+explicitly scoped admission mapping of `GNT-28.11-runtime-admission-mapping` and operation-state
+projection of `GNT-28.12-operation-state-projection`, this section does
 not promise a runtime resource registry, evaluator integration, host allocation accounting,
 checkpoint format, journal schema, runtime compaction implementation, automatic quota renewal,
 automatic resource revival, or host-resource reconstruction. These non-claims are closed: a
 model fact or test MUST NOT be presented as a runtime guarantee, and an implementation MUST NOT
 claim runtime integration merely because it implements this pure model.
+
+<a id="GNT-28.11-runtime-admission-mapping"></a>
+
+**[GNT-28.11-runtime-admission-mapping] Runtime admission mapping.** A runtime profile that
+separately declares a resource registry MUST derive each admission subject from the machine's
+authenticated Section 20 live-resource operation and its declared operation and resource
+generations; a caller-presented identity MUST NOT substitute for that subject. The registry MUST
+admit resource-accounting facts only through the declared reconstruction-record carrier and MUST
+refuse an ordinary serialization or ordinary durable-state carrier before reconstructing those
+facts. It MUST refuse a duplicate subject or an admission beyond its explicitly declared live
+account ceiling without replacing an existing account. A live account is one whose whole-resource
+lifetime is active or finishing; leaving those states releases its live-account place independently
+of retention and physical reclamation. Admission of an already-settled record MUST NOT consume a
+live-account place, but MUST retain the independent pending-work admission checks. This mapping concerns accounting admission only: it does not
+create, discover, reconstruct, or claim ownership of a physical host resource, and it does not
+define evaluator-wide uniqueness, a checkpoint format, or a journal schema.
+
+`Machine::pending_resource_abi` MAY derive a Section 20 live-resource ABI from the pending
+operation's retained action declaration, recovery class, exact site and machine generation.
+The caller MAY supply only the explicit receiver arrangement; a foreign loan MUST refuse
+under the existing ABI validation. Missing pending/action/generation facts or absent/non-live
+authentication MUST return no ABI. Inspection MUST change no machine, budget or lease fact.
+This derivation grants no admission, receiver authority, physical ownership or source transport;
+the caller remains responsible for authenticating the receiver arrangement independently.
+
+A registry MAY independently declare a retained-account ceiling
+through `with_accounting_limits`; every registry-held account consumes one retained place,
+including settled, retired and deleted accounts until eligible `reap_deleted` reclamation.
+Excess admission MUST refuse `RetainedResourceLimitReached` without changing accounting,
+physical inputs or pending-capacity bookkeeping. Duplicate, kind, carrier, live and pending
+refusals retain precedence. Existing constructors leave the retained ceiling absent.
+`new_with_budget_and_accounting_limits` MAY expose this policy through the shared coordinator.
+`reconstruct_with_retained_limit` MAY apply an independent retained ceiling to the complete
+reconstruction set, counting every record including terminal lifetimes. Duplicate, kind,
+carrier, owner-generation and live-capacity checks MUST precede the retained-capacity check;
+excess records MUST refuse without publishing a partial registry or fabricating pending work.
+Enabled empty-registry retained-account policy MUST use `GNTCDP07` carriage rather than
+silently omitting the ceiling; legacy empty-registry policy carriage remains available.
+
+A registry MAY separately declare a finite adapter-identity ceiling through
+`with_adapter_identity_limit`. Successful binding or substitution MUST reserve each distinct
+accepted identity before publishing the binding; aliases consume no additional place. Existing
+subject, owner and substitution checks MUST precede capacity admission. Excess identities MUST
+refuse `AdapterIdentityLimitReached` without changing bindings, accounting or reservations.
+Runtime replacement MUST additionally advance the held binding sequence after model substitution
+validation and before identity-capacity admission. Equal or decreasing sequences MUST refuse
+`BindingSequenceNotAdvanced` without changing the binding or consuming a reservation. The pure
+adapter model still leaves deployment sequence management to its caller.
+Reservations MUST survive settlement and account reclamation so later poisoning never discards
+a failed-identity reuse fence. Existing constructors leave this policy absent. Current graph and
+envelope capture MUST refuse configured adapter-identity policy, even when empty, rather than
+silently omit it; this policy grants no authority or durable adapter reconstruction.
+`with_adapter_bounded_resource_accounting_limits(live, pending, retained, adapters)` MAY configure
+fresh execution owners with all four finite ceilings. Sequential and concurrent owners MUST retain
+the same shared budget and adapter policy. Older accounting builders MUST clear adapter policy
+when replacing it. Durable start and resume MUST refuse configured adapter policy with
+`unsupported-durable-adapter-identity-policy` before mappings or execution admission and without
+appending evidence until a separately declared wire retains that policy.
+
+A registry's storage subject MUST qualify portable operation/resource-generation identity with
+the issuing execution and task. Equal portable identities from independent task-local counters
+MUST remain separate accounts and physical slots, each counted against the same registry ceiling.
+Capture and accounting reconstruction MUST preserve this qualification. Cohort order is portable
+operation, resource generation, execution, then task; deduplication MUST use all four identities.
+Exact runtime ownership MUST be selected before evidence mutates an account; a portable alias
+without that ownership may identify only a foreign-provenance refusal, never a mutable fallback.
+This qualification does not change Section 20's portable identity derivation or grant authority.
+
+A registry MAY separately admit accounting and one caller-authenticated process-local host value
+atomically. It MUST apply the accounting admission rules first, then require active lifetime and
+open operation state for physical acquisition. The machine admission lease MUST remain held through
+both insertions so cancellation cannot split acquisition. Refusal MUST return the host input
+untouched and change no account, physical slot or pending-capacity bookkeeping. Success retains
+one account and one physical slot without completing the machine operation. The coordinator MAY
+expose this route only under the same running-task, execution, cancellation, admission-closure and
+durable-publication fences as separate admission and attachment; success publishes once. Refused
+host inputs MUST remain owned outside the coordinator lock. This route grants no authority,
+enables no source live-handle transport and serializes no physical value.
+
+`ResourceRegistry::admit_host_value_with_charges` MAY additionally admit a caller-declared action
+and explicit whole charge vector after cancellation, capacity and physical eligibility checks.
+Charging and both insertions MUST share the machine lease. Refusal MUST return the physical input
+untouched and publish no account, slot, quota use or pending capacity. No charge is inferred from
+physical size; legacy acquisition remains uncharged and the caller still authenticates authority.
+`ExecutionCoordinator::admit_resource_host_value_with_charges` MAY expose this admission under
+the same task, cancellation, closure and publication fences. Successful charged accounting and
+physical acquisition MUST publish once; refusal MUST return the input outside the shared lock.
+
+A registry MAY separately declare a finite ceiling on admitted pending resource operations.
+Every successful live admission MUST retain its pending settlement lease even without that ceiling;
+unlimited admission does not discharge accepted-work ownership. Accounting reconstruction still
+MUST NOT fabricate pending work from retained records.
+Readmission of reclaimed accounting through the same retained machine lease MUST count that lease
+once, without consuming another pending place. New leases remain subject to the pending ceiling.
+That ceiling counts admitted machine settlement leases, not active accounting lifetimes. An
+accepted machine completion, failure, or settled cancellation closes its lease and releases its
+pending place; a refused completion or a cancellation request alone does not.
+Successful result completion and explicit operation failure through shared machine aliases MUST
+claim the pending lease once, after ordinary result validation and before local terminal publication.
+Already-settled or unreadable leases MUST refuse with `NotWaiting`; shared cancellation MUST refuse
+with `Cancelled`, without consuming pending work. The lease guard MUST release before value disposal
+or failure cleanup. Isolated durable projections retain independent claims until committed promotion;
+this process-local fence establishes no cross-recovery settlement or journal authentication.
+Storage reclamation MAY prune conclusively closed lease references even without another admission.
+It MUST retain pending or unreadable leases and MUST NOT close accepted work itself. The reaped
+account count remains independent of lease-reference reclamation.
+Machine-local cancellation MUST separately close new admission through current or saved subject
+bindings with `CancellationRequested` while retaining the pending place for accepted work. Recovery
+MUST restore that admission refusal from recorded cancellation; an uncommitted staged cancellation
+MUST NOT revoke authoritative admission, and committed cancellation MUST preserve pending capacity
+until settlement. These are separate facts of one process-local lease, not a new checkpoint field.
+Staged lease promotion MUST preserve cancellation or terminal settlement already recorded by a
+shared authoritative machine clone: publication may close acquisition or pending settlement,
+but MUST NOT reopen either fact from an older private projection.
+Physical attachment to an admitted account MUST also refuse machine-local cancellation while
+returning the input untouched and retaining pending capacity. It MUST check the admitted account's
+lease rather than a caller's recovered or speculative binding, and linearize acquisition against
+cancellation under that lease. Existing semantic settlement and physical cleanup remain available.
+Accounting finish, poison, emergency release, record deletion, and physical reclamation MUST NOT release a pending
+place while its machine lease remains open. Duplicate, kind, carrier, and live-account refusals
+retain their precedence before the pending ceiling. This optional policy is process-local and
+does not reconstruct pending work from accounting records or cover unadmitted evaluator work.
+
+A runtime MAY expose this accounting registry through an explicitly configured execution
+coordinator with a finite live-account ceiling and an optional separate pending-operation ceiling.
+Interpreter configuration MAY opt fresh execution owners into explicit finite live-account and
+pending-operation ceilings, including zero to deny admission. The default MUST leave accounting
+disabled. Fresh root construction MUST retain the shared execution budget when enabling this
+registry; ordinary source execution remains eligible with zero accounting ceilings. This policy
+MAY additionally select a retained-account ceiling through
+`with_bounded_resource_accounting_limits(live, pending, retained)`. Both sequential and concurrent
+fresh owners MUST retain that ceiling; zero permits ordinary source execution but denies new
+account records. Replacing this policy with `with_resource_accounting_limits` MUST clear the
+retained ceiling. Default retained policy is absent. This configuration
+MUST bind enabled live, pending and retained accounting policy to the durable execution-start
+configuration identity. Disabled accounting retains its legacy configuration encoding. Resume
+with changed ceilings, removed retained policy or disabled accounting MUST refuse
+`immutable-configuration-mismatch` without journal mutation; absent retained policy is distinct
+from a zero ceiling. This identity check does not itself reconstruct accounting or host resources.
+After validating execution-start identity, serial root-driver recovery MUST restore enabled empty
+accounting with the same live, pending and retained policy and the recovered machine's shared budget.
+It MUST create no resource records, physical slots or accepted-work leases. Concurrent resume MUST
+also compare recovered graph accounting policy with the identity-validated configuration before
+lifecycle admission, journal repair or replacement-driver submission. A disagreement MUST refuse
+`graph-accounting-policy-mismatch` without journal mutation. This configuration
+MUST NOT enable unsupported live-handle transport or grant host authority. The version-six combined
+graph recovers enabled empty-registry admission policy as declared below; resource records,
+physical handles and admitted pending work remain unsupported by that wire.
+Coordinator handles cloned from that owner MUST
+share one registry and serialize admission, atomic quota charging, accepted operation-state
+projection, accounting finalization, and emergency release. Charging retains the owner and
+whole-vector refusal rules of `GNT-28.3-atomic-copy-move-loan-update-and-release-charging`;
+projection retains every fence and non-claim of `GNT-28.12-operation-state-projection`.
+The coordinator MAY expose the registry's bounded quota renewal, explicit liveness-root closure,
+retirement, and deletion through that same owner and publication fence. These routes MUST retain
+the registry's exact provenance, current-owner, lifetime, root, renewal-allowance and retention
+checks. Success publishes once; refusal changes neither records nor publication. Root closure,
+retirement and deletion MUST NOT dispose a host value, settle pending machine work, or refund
+a live-account place already released by lifetime settlement. Logical retention instants and
+successor generations remain declared model inputs, never inferred host observations.
+Model-issued resource-poisoning evidence MAY settle accounting lifetime through that same
+owner, selecting its exact operation and resource generation under
+`GNT-20.7-resource-state-after-failure-and-poisoning`. Adapter-only failure MUST NOT settle
+whole-resource lifetime. Successful poisoning releases the live place and retains the record.
+The coordinator MAY expose registry adapter binding and model-issued adapter-failure poisoning
+under the same publication fence. Binding MUST retain exact runtime provenance, current ownership
+and the existing substitution checks. Adapter-failure poisoning MUST retain evidence-selected
+operation/resource generation, accepting-owner provenance, current ownership and the one-way
+reason ledger. Neither route settles whole-resource lifetime or pending machine work; adapter
+bindings and poison reasons remain process-local, not reconstructed accounting facts.
+Within one registry, successful adapter poisoning MUST fence every binding of that exact adapter
+identity and refuse later rebinding of the recorded poisoned identity. Such aliases are the same
+failed instance, not unrelated siblings. Distinct adapter identities and all accounting facts
+MUST remain unchanged; this fence makes no cross-registry or durable poison-record claim.
+Admission MUST require a pending machine operation from a running task of the same execution;
+foreign executions, absent or non-running tasks, and disabled registries MUST be refused without
+mutation. Recorded task or execution cancellation MUST close new accounting admission immediately,
+even before task settlement, with `TaskCancellationRequested`; it does not settle accepted work.
+Cooperative shutdown MUST separately close new accounting admission and physical attachment with
+`ResourceAdmissionClosed`, without cancelling tasks, closing accepted leases or changing accounting
+publication. Closure is monotonic and shared by coordinator clones; cleanup remains available.
+Shutdown MUST close existing handoff owners and close later owners before exposing them, without
+holding the execution registry lock while acquiring the coordinator lock. This process-local
+closure may proceed during reserved durable publication but is not recovered from graph records.
+A reserved durable publication MUST fence these accounting writes. Successful writes
+advance the coordinator publication; refusals change neither records nor publication. Immutable
+snapshot records are inspection only, not journal-committed resource state. Accounting cleanup
+MAY continue after task settlement, but MUST NOT reopen task admission. This optional boundary
+does not attach the registry automatically to evaluator dispatch or extend uniqueness beyond
+that coordinator, and its live-account ceiling does not bound retained records or snapshot size.
+
+The coordinator MAY be constructed atomically from declared resource reconstruction records.
+Each machine-issued binding MUST name that execution and a known task, including settled tasks
+retaining cleanup obligations. Carrier, authenticated kind, duplicate runtime subject, matching
+owner generation and live-ceiling checks MUST all succeed before exposing the coordinator.
+Reconstruction MUST create no physical slots, adapter bindings, pending-operation policy or pending
+work. This accounting-only construction does not authenticate journal provenance or replace a
+versioned durable graph resource member.
+`new_with_budget_and_recovered_resources` MAY retain a separately recovered shared execution-budget
+owner with the same accounting set. Budget execution identity MUST match task execution before
+record validation; mismatch MUST refuse with `InvalidTaskMachine`. The complete record set retains
+the same provenance, carrier, owner and quota checks before publication. Retaining a budget MUST
+NOT reconstruct physical ownership or pending work, or authenticate journal provenance.
+
+`new_with_budget_and_bounded_recovered_resources` MAY additionally accept explicit live,
+pending-operation and retained-account ceilings. The complete reconstructed set MUST satisfy
+live and retained bounds before publication; the supplied pending ceiling applies only to future
+admission and MUST NOT fabricate accepted-work leases. Budget, subject, carrier and owner checks
+retain their existing precedence. Legacy reconstruction entry points retain absent pending and
+retained policy; no entry point authenticates journal provenance merely by reconstructing records.
+
+`RecoveredResourceRecord::from_issuing_checkpoint` MAY derive accounting provenance from a
+separately retained issuing checkpoint and budget. Machine, executable metadata and generation
+validation MUST precede subject derivation; kind, carrier and current-owner checks MUST precede
+publication. The private recovered admission lease MUST be closed without changing the source
+machine's lease. This route MUST NOT reconstruct accepted work or physical ownership, and the
+caller remains responsible for authenticating journal provenance and current cleanup ownership.
+Validated records MAY retain immutable canonical issuing checkpoint bytes and their budget.
+Accounting reconstruction and declared capture MUST preserve this evidence independently of
+current lifetime, owner and cleanup-task facts. Legacy construction leaves evidence absent;
+inspection of retained bytes MUST NOT reopen admission or imply journal authentication.
+
+`RecoveredResourceRecord::stage_owner_advance` MAY build a same-cleanup-task ownership candidate
+through complete accounting reconstruction and the existing transfer fences. Active/open lifetime,
+strict successor generation, absent loan roots, closed machine work and settled historical containment
+MUST precede atomic move charging. Missing containment MUST remain unsettled. Success changes only
+current owner and explicit quota use, preserving issuing evidence, cleanup task, roots and historical
+containment. Refusal MUST preserve the source. This candidate grants no physical transfer, journal
+publication by itself; durable publication requires the separately declared exact ownership cut.
+
+`RecoveredResourceRecord::stage_task_handoff` MAY build a private cleanup-task candidate against
+a caller-authenticated task-state snapshot. The issuing execution MUST match; source and destination
+MUST be distinct known running tasks without task or execution cancellation. Current cleanup ownership
+and existing transfer obligations MUST validate before atomic Move charging and generation advancement.
+Success changes only cleanup task, current owner and explicit quota use, preserving issuing provenance
+and historical evidence. Refusal MUST preserve the source. This grants no physical transfer or journal
+publication by itself; the same-task ownership carrier MUST NOT authorize changing cleanup tasks.
+
+`ResourceOwnerEvidenceV1::new_task_handoff` MAY validate one exact cleanup-task handoff using task
+facts recovered from its complete predecessor graph, never a substituted caller snapshot. Source and
+destination MUST be distinct known running uncancelled tasks and the source MUST own cleanup.
+`GNTRWA02` MUST retain both task identities with the bounded authored Move vector; its journal kind
+MUST be `gantry.resource-owner-evidence/v2`, with exact kind/carrier correspondence. Same-task
+`GNTRWA01` bytes remain unchanged. `stage_resource_task_handoff` MAY privately stage this transition
+under `ResourceOwnerAdvance`, rechecking live cancellation and admission closure before submission.
+Only a validated receipt MAY install cleanup task, generation and quota use together. The existing
+authoritative predecessor, rollback, indeterminate fencing, empty protected-payload list and 4 MiB
+journal limits apply. This supplies no source-handle transfer, physical transfer or accepted-work recovery.
+
+`ResourceOwnerEvidenceV1` MAY validate exactly one same-cleanup-task owner advancement between
+complete executable-validated graphs. Applying the owner-qualified candidate and explicit Move
+vector at the canonical record index MUST reproduce the entire successor; unrelated graph, policy,
+budget, cleanup-task or historical changes MUST refuse. The `GNTRWA01` carrier MUST bound the
+authored vector to 128 members before deduplication, admit the caller's complete byte ceiling before
+input parsing and output checkpoint copying, and reject unknown quota tags, malformed framing,
+trailing bytes and noncanonical encodings. This validator grants no journal publication authority;
+ordinary graph writers and replay MUST continue refusing unadmitted ownership changes.
+
+The journal kind `gantry.resource-owner-evidence/v1` MAY carry `GNTRWA01` under an independent
+4,194,304-byte ceiling and the distinct `ResourceOwnerAdvance` cut. The writer MUST require the
+complete authoritative predecessor before storage; unknown, stale or locally drifted predecessors
+MUST refuse without submission. Protected-payload lists MUST be empty. `stage_resource_owner_advance`
+MAY privately stage one exact advancement, with no finish, operation, event or submission-resolution
+combination. Only a validated receipt MAY advance writer baselines and install reconstructed logical
+accounting. Pre-submission refusal or drop MUST roll back; indeterminate submission MUST retain
+publication fencing. Full-prefix and selector-eight snapshot replay MUST validate exact predecessor
+correspondence. Legacy compaction MUST refuse ownership histories rather than omit them. No cleanup-task
+transfer, physical transfer or accepted-work recovery is supplied, and terminal outcomes remain fixed.
+
+`RecoveredResourceRecord::stage_finish` MAY build a logical begin/complete finish candidate.
+It MUST validate the presented current owner before applying the existing ledger transition,
+preserve subject, cleanup ownership, issuing and containment evidence, roots and quotas, and
+leave its source record unchanged on success or refusal. Completion records only its declared
+logical instant. A candidate grants no physical finalization, accepted-work settlement or
+journal publication authority; publication requires the separately declared exact finish cut below.
+
+`stage_finish_with_charges` MAY privately admit an explicit whole release vector while active,
+then enter finishing atomically. Ownership and lifetime MUST precede quota validation; refusal
+MUST preserve its source. Success changes only lifetime and explicitly charged quota use, retaining
+all historical evidence. Complete candidates MUST refuse nonempty vectors rather than recharge
+accepted cleanup. Existing `GNTRFT01` evidence MUST NOT authorize additional quota changes; charged
+candidates require the separately declared `GNTRFT02` carrier below before publication.
+
+`ResourceFinishEvidenceV1::new_with_charges` MAY validate an explicit release vector with one
+exact Begin transition. The authored vector MUST contain at most 128 members before any
+deduplication, retaining order and duplicate keys for whole-vector ledger validation. Nonempty
+vectors select `GNTRFT02` and `gantry.resource-finish-evidence/v2`; empty vectors MUST retain
+`GNTRFT01` bytes and the version-one journal kind. Closed quota-owner/family tags, bounded counts,
+canonical framing and exact journal-kind/carrier correspondence MUST validate before replay.
+The same 4,194,304-byte journal ceiling and complete predecessor/successor fences apply.
+`stage_resource_finish_with_charges` MAY stage this transition privately; quota use and finishing
+MUST install together only after a validated receipt, with no physical cleanup authority.
+
+`ResourceFinishEvidenceV1` MAY validate one exact finish candidate between two complete graph
+checkpoints. Both graphs MUST validate against the executable; applying the owner-qualified
+transition at the supplied canonical record index MUST reproduce the entire successor exactly.
+Unrelated machine, task, session, budget, policy, provenance or record changes MUST refuse.
+The separate `GNTRFT01` binary carrier MUST enforce an independent total byte ceiling before
+input parsing and before copying encoded checkpoints into its output; unknown tags, malformed
+framing, trailing bytes and noncanonical encodings MUST refuse. This validator grants no journal
+publication or physical cleanup authority by itself.
+
+The journal kind `gantry.resource-finish-evidence/v1` MAY carry this exact evidence under an
+independent 4,194,304-byte ceiling. Both finish journal versions MUST refuse nonempty protected-payload
+lists before decoding: these carriers represent no protected-payload obligation.
+`commit_resource_finish` MUST require its complete predecessor
+to equal the writer's held committed graph before storage invocation. Unseeded, stale or unrelated
+predecessors MUST refuse; only a validated receipt advances the graph and accounting baselines.
+The complete graph baseline MUST be initialized only by authoritative prefix recovery or a
+validated graph receipt. Transaction capture of mutable machines MUST NOT seed it; predecessor
+coordinates and matching resource records alone do not prove complete graph correspondence.
+`DurableGraphTransaction::stage_resource_finish` MAY privately stage one begin or complete finish.
+Commit MUST use `ResourceFinish`, target the record's cleanup task, preserve every other graph fact,
+and install the reconstructed logical registry only after receipt validation. Dropping before
+submission MUST discard the private candidate; indeterminate submission MUST retain publication
+fencing. No callback, physical finalization or accepted-work recovery occurs. Full-prefix recovery
+MUST compare the embedded predecessor with the preceding authoritative graph before adopting the
+exact successor. Legacy version-seven snapshot compaction containing these cuts MUST refuse
+rather than omit them. Terminal outcomes MUST remain terminal when a later finish advances the tip.
+
+`ConcurrentFinishSnapshotV1` MAY retain the complete authoritative envelope history through the
+separate `GNTCSF01` carrier and snapshot selector eight. Its encoded history MUST fit both the
+caller-supplied ceiling and the independent 16,777,216-byte ceiling before envelope-body copying;
+decoding MUST admit bytes before parsing. Reconstruction MUST replay the retained history and
+suffix together, comparing the journal, frontier and exact retained identity/sequence bindings.
+Malformed framing, altered history, mismatched coordinates or noncanonical bytes MUST refuse.
+Legacy snapshot bytes remain unchanged. This is lossless history retention, not history reduction,
+storage authentication, protected-payload embedding or physical-resource reconstruction.
+
+The separately scoped `GNTRRE01` reconstruction envelope MAY carry canonical issuing checkpoint
+bytes, issuing budget, current cleanup-task identity and the declared subject-free record.
+Encoding and decoding MUST enforce a caller-supplied total byte ceiling independent of input
+length before copying the checkpoint or parsing input. Decoding MUST rederive the subject from
+validated issuing evidence, compare cleanup ownership with a separately supplied expected task,
+and validate the record against a separately supplied current owner. Malformed framing, trailing
+bytes, missing issuing evidence or noncanonical encodings MUST refuse without publishing partial
+facts. This envelope grants no journal authentication, physical ownership or accepted-work recovery
+and does not relax combined-graph resource-state refusal.
+
+`declared_records_with_containment` MAY explicitly capture historical containment ownership and
+its optional accepted effect/outcome winner. Reconstruction MUST preserve that owner independently
+of current accounting ownership and validate the winner through the Section 23 settlement model;
+an accepted winner MUST continue refusing a second settlement. `GNTRRE02` carries this explicit
+projection, including an unsettled state, under the same independent admission bounds. Historical
+containment ownership MUST NOT exceed current accounting ownership. Direct registry reconstruction
+MUST enforce this fence before restoring containment or publishing the complete set, refusing future
+history with `Containment(StaleGeneration)`. Unknown tags, impossible
+effect/outcome pairs and trailing containment bytes MUST refuse. Records without explicit
+containment evidence retain `GNTRRE01` bytes and legacy accounting-only reconstruction semantics;
+ordinary declared capture still opens fresh containment on reconstruction. This projection creates
+no adapter bindings, physical ownership or pending work and does not qualify journal provenance.
+
+`capture_recovery_envelopes` MAY capture the complete registry in canonical runtime-subject order
+under one total ceiling accounting for an eight-byte count and each eight-byte member length.
+Pending admitted work, live loan roots, physical slots, adapter bindings and retained poison history
+MUST refuse before record projection because these envelopes cannot preserve those obligations.
+Missing issuing evidence or aggregate byte exhaustion MUST refuse the whole capture without
+publishing partial output or changing accounting. Capture MUST project members incrementally
+after admitting their framing rather than eagerly cloning the complete accounting set.
+This bounds projection to the processed prefix, not total transient heap usage.
+This capture does not relax graph eligibility.
+
+`reconstruct_recovery_envelopes` MAY atomically restore a complete canonical set under separately
+supplied current owners, cleanup tasks and optional live, pending and retained ceilings. Aggregate
+framed byte admission MUST precede decoding. Duplicate or reordered subjects, malformed members,
+missing explicit containment evidence and live loan roots MUST refuse the complete set. Live and
+retained capacity checks MUST succeed before exposing the registry; pending policy governs future
+admission only and MUST NOT create accepted-work leases. This restore does not authenticate journal
+provenance or relax combined-graph resource-state refusal.
+
+`new_with_budget_and_recovered_resource_envelopes` MAY bind this restore to a coordinator.
+The current budget MUST name the task execution before envelope decoding; issuing execution,
+issuing task and cleanup-task membership MUST validate before publication. Every issuing budget
+MUST be a valid predecessor of the current budget frontier, and that frontier MUST remain unchanged
+during validation. Issuing checkpoint task coordinates MUST match retained task facts; source-body
+origins MUST also match immutable creation workflow, spawn site, result and capture contracts.
+Known membership MUST NOT authorize a substituted issuing body. Success retains the shared current budget and exact optional accounting policy
+without creating physical slots or accepted-work leases. Journal provenance remains caller-authenticated.
+
+`admit_pending_operation_with_issuing_evidence` MAY retain validated issuing evidence during
+live accounting admission under an explicit envelope byte ceiling. Evidence validation and byte
+admission MUST precede registry insertion; ordinary authoritative machine-lease and quota checks
+MUST still succeed. Success MUST retain the authoritative lease, not the closed private recovery
+lease, so machine settlement releases pending capacity while historical issuing facts remain.
+Refusal MUST publish no account or pending capacity. This route grants no host or journal authority.
+The coordinator MAY expose this route as `admit_resource_with_issuing_evidence`, retaining its
+ordinary publication-reservation, execution, task, cancellation, shutdown and enabled-registry
+checks before evidence admission. Success MUST publish once; refusal MUST change neither
+accounting nor publication. Historical evidence remains inspection, not committed journal state.
+
+Until a reviewed graph wire carries resource reconstruction records and runtime policy, coordinator
+graph capture and staging MUST refuse `ResourceStateUnsupported` when retained accounts, physical
+slots, adapter poison history or admitted pending work would be omitted. Failed-adapter identity
+evidence MUST retain this refusal even after all accounts have been reclaimed; policy-only recovery
+MUST NOT reset that evidence and re-enable an identity. Refusal MUST precede private machine cloning or
+publication reservation and leave accounting, machines and publication unchanged. An empty configured
+registry alone does not require refusal. Versions four through seven do not implement resource-record recovery.
+For an enabled empty registry, combined graph capture MAY retain the exact optional live-account
+and pending-operation ceilings in `GNTCDP06`. Absent accounting and enabled unlimited accounting
+MUST remain distinct. Capture, staging, replay and coordinator-backed driver recovery MUST preserve
+this policy without creating resource records, physical slots, adapter bindings or accepted work.
+Legacy `GNTCDP04` and `GNTCDP05` bytes remain unchanged and identify absent accounting policy;
+exact-version decoders MUST reject another version. Policy cannot change within a replayed graph.
+`GNTCDP07` additionally carries an enabled empty registry's retained-account ceiling as an exact
+unsigned integer, including zero. Legacy v4–v6 encodings remain unchanged. Capture, staging,
+replay and coordinator-backed driver recovery MUST retain all ceilings; every graph transition
+MUST reject a changed or removed retained ceiling. This carries policy only, not resource records.
+Machine-only recovery consumption MUST refuse policy-bearing graphs and return the complete
+recovered owner unchanged; coordinator-backed driver admission retains that policy instead.
+`GNTCDP08` MAY carry a nonempty complete accounting set with validated issuing and containment
+evidence and exact optional live, pending and retained policy. The complete resource section,
+including count, current-owner and cleanup-task framing and envelope bytes, MUST fit an independent
+1,048,576-byte ceiling. Framing admission MUST precede resource-member decoding. Capture and
+staging MUST refuse unsupported pending work, live loans, physical slots, adapter bindings and
+poison history before private machine cloning or publication reservation. Missing issuing evidence
+or excess bytes MUST also refuse without mutation. Coordinator-backed recovery MUST atomically
+validate issuing execution, known issuing/cleanup tasks, budget predecessors, current owners,
+canonical subject order, containment winners and policy ceilings before exposing accounting.
+When the graph retains the issuing task's machine, its execution, task and task path MUST match
+the validated issuing checkpoint. Its executable task-body identity, including absence for a
+workflow-root machine, MUST also match; equal task coordinates and generation counters MUST NOT
+authorize a different executable body. Its retained generation counter for that operation site
+MUST be no earlier than the issued generation. A shared budget alone MUST NOT substitute for
+that machine history. Settled children without a retained machine still require validated issuing
+evidence matching immutable task creation's execution, task path, lexical spawn site and
+executable-resolved enclosing workflow. A retained source body's result and capture contracts
+MUST match creation facts even when its driver is absent. Known task membership alone MUST NOT
+authorize foreign issuing bodies; this correspondence check is not journal authentication.
+Consuming driver admission MUST revalidate the actual machine graph after mutable recovery access
+and before exposing coordinator-backed resource records. Prior checkpoint validation alone MUST
+NOT authorize a substituted machine with missing issuing-generation history.
+No physical ownership, adapter binding or accepted-work lease is reconstructed. Version-eight
+records MUST remain unchanged across every ordinary replayed graph transition; only the separately
+declared exact `ResourceFinish` cut may change them. Coordinator staging and capture MUST compare the committed resource
+image before cloning or reservation; changed local accounting MUST NOT enter a new journal cut.
+Graph committers MUST reject resource-image drift before storage invocation and retain the image
+only after a validated receipt. Recovered owners MUST seed that image from validated recovery.
+The same predecessor baseline MUST retain exact optional live, pending and retained accounting
+policy, including disabled versus enabled-unlimited accounting. Changed or removed policy MUST
+refuse before storage invocation; successful receipt validation alone advances the held baseline.
+An unknown predecessor image MUST NOT be inferred empty from a record-free successor; recovered
+graph writes require a validated predecessor image even when the proposed set is empty.
+`DurableCommitCoordinatorV1::from_concurrent_prefix` MAY initialize this image by validating an
+authoritative full or snapshot prefix for the sink's exact journal. It MUST derive execution,
+root task, authoritative journal tip and complete resource baseline from that recovery, without
+writing evidence. A mismatched journal MUST refuse. Caller authentication of storage evidence
+and ownership remains required; this route MUST NOT authorize resource-image mutation.
+Machine-only extraction MUST refuse rather than discard records;
+all recovery owners and replay captures MUST retain them. Record-free v4–v7 bytes remain unchanged.
+Durable lifecycle owners MUST retain the committed accounting image independently of graph-driver
+lifetime. Shutdown MUST report active or finishing committed accounts as `UnsettledAccounting`,
+including after terminal language publication, and MUST NOT report orderly resource cleanup merely
+because journal ownership was released. Observation MUST preserve the first cleanup failure,
+fixed language outcomes, accounting and journal evidence; it grants no implicit settlement or
+physical cleanup authority. Uncommitted local accounting drift MUST NOT replace this image.
+Sequential committed-root installation MUST likewise refuse `ResourceStateUnsupported` before
+changing task, session, budget, event or retained-root projections when resource state would be
+omitted. This refusal does not undo a previously committed journal cut or claim its completeness.
+
+An implementation MAY separately bind one consumed active/open accounting account to one owned
+process-local host value through `OwnedHostResource`. The embedding caller MUST authenticate
+the value/account association and supply authority; this binding grants none. Binding MUST check
+active lifetime first, then open operation state; a non-open operation state MUST refuse with
+`IllegalLifetimeTransition` and return both inputs unchanged. Binding MUST check
+the consumed account's machine lease and refuse recorded cancellation with `CancellationRequested`,
+returning both inputs untouched. An unreadable lease MUST refuse with `PendingOperation` rather
+than authorize acquisition. The check and physical binding MUST linearize against cancellation
+under that lease; ordinary binding MUST NOT close pending settlement or change accounting facts.
+`bind_with_charges` MAY additionally admit one explicit Section 28 action and complete charge vector.
+Active/open eligibility and cancellation MUST precede quota admission under the same account lease.
+Quota refusal MUST return both owned inputs unchanged, spending nothing. Successful charging and
+physical binding MUST commit together with no remaining fallible acquisition step. Other accounting
+facts and pending settlement MUST remain unchanged; legacy binding stays uncharged, and physical
+size supplies no implicit charge or authority. Invocation MUST
+check current ownership and active lifetime before running a bounded synchronous callback.
+Fresh direct invocation MUST then check the admitted account's cancellation lease and refuse
+recorded cancellation with `CancellationRequested`, or an unreadable lease with `PendingOperation`.
+Admission linearizes under that lease, but callback execution and unused callback destruction MUST
+run after releasing it. Cancellation after admission MUST NOT undo the accepted callback; existing
+loan settlement and explicit cleanup remain available. Refusal MUST preserve accounting and ownership.
+`invoke_with_charges` MAY admit one explicit Section 28 update-charge vector under that same
+lease after eligibility, adapter and cancellation checks. A poisoned transport MUST refuse before
+charging. Quota refusal MUST spend nothing and contain unused callback destruction outside the
+lease lock. Once admitted, charges MUST remain after callback error or panic; accepted work is
+not rolled back. Legacy uncharged invocation remains separate and no physical-size charge is inferred.
+Integration panics MUST be contained and poison the transport boundary without fabricating
+resource-poisoning evidence. Unused callbacks MUST be disposed under containment on every
+refusal, including an already-poisoned boundary, without executing their bodies. A callback
+destruction panic takes precedence over the original refusal and poisons the transport boundary.
+Explicit finish MUST enter finishing before its callback and record
+finished only after callback and contained disposal succeed. Before entering finishing, bound
+finalizer dispatch MUST pass the admitted account's recovery-class adapter checks after existing
+loan, owner and lifetime refusals. Admission refusal MUST preserve accounting and physical ownership;
+sealed emergency cleanup remains available. A failure after admitted finish remains finishing,
+is not implicitly retried, and does not roll back accepted external work. Sealed emergency release
+MUST settle accounting before physical disposal; disposal failure MUST NOT undo semantic release.
+`finish_with_charges` MAY admit an explicit whole release-charge vector atomically with entering
+finishing. Loan, owner, lifetime, adapter, physical-presence and transport checks MUST precede quota
+admission. Quota refusal MUST leave active accounting and physical ownership unchanged; admitted
+callback error or panic MUST retain charges and finishing state. Cleanup adds no cancellation gate,
+implicit retry or inferred physical-size charge. Legacy uncharged finish remains unchanged.
+The wrapper MAY expose `poison_from_failure` for normal evidence-qualified cleanup. It MUST
+refuse an outstanding transport loan before mutation, validate the exact operation, generation,
+accepting owner and resource-poisoning evidence through the accounting owner, then settle lifetime
+before contained disposal. Refusal preserves accounting and physical ownership; disposal failure
+cannot undo poisoning. This route MUST NOT settle pending machine work or close liveness roots.
+Physical disposal MUST remove the held value before destruction and contain destructor panics.
+Dropping the wrapper performs physical disposal only, never implicit semantic finalization.
+The wrapper MAY expose consuming process-local transfer to a strictly succeeding owner
+generation. Transfer MUST require active lifetime and open operation state, no declared loan root,
+a closed machine admission lease, settled historical containment, no bound adapter, and an
+unpoisoned transport holding its value. Refusal MUST return the complete affine owner unchanged.
+Success changes only current accounting ownership and moves the same host value; subject, quotas,
+roots and historical containment evidence MUST remain unchanged. This does not rebind an adapter,
+reopen settlement, grant authority, or implement source-task transfer.
+`transfer_with_charges` MAY additionally admit an explicit whole move-charge vector after all
+transfer eligibility checks. Charges and successor ownership MUST publish atomically; refusal
+MUST return the complete owner with unchanged accounting and physical ownership. Success changes
+only the current owner and explicitly charged quota use, preserving subject, roots and historical
+containment. No physical-size charge is inferred and legacy uncharged transfer remains unchanged.
+The wrapper MAY admit an exclusive `HostReceiverLoan` only from an unsettled borrowed
+`LiveResource` with its exact operation, site, resource generation and current owner, while
+active/open accounting retains a declared loan root. Its recovery class MUST equal the admitted
+account's issuing executable recovery class; absent or mismatched metadata MUST refuse `ForeignLoan`
+without consuming the handle or changing accounting. Equal subject identity alone does not authorize
+recovery-contract substitution. After those eligibility checks, loan admission
+MUST check the admitted account's machine lease and refuse recorded cancellation with
+`CancellationRequested`, or an unreadable lease with `PendingOperation`, returning the model handle
+unchanged. The cancellation check and loan acquisition MUST linearize under that lease; refusal
+MUST NOT change accounting, poison transport, or settle pending work. Loan acquisition
+MAY accept an explicit charge vector through `borrow_receiver_with_charges`.
+Eligibility and cancellation MUST precede quota admission. The complete Section 28 loan vector
+MUST commit under the same lease before acquiring the loan, with no remaining fallible step;
+quota refusal MUST return the handle unchanged and acquire no loan. No charge is inferred from
+physical size or observation allowance. Ordinary borrowing uses an empty vector. Accepted loan
+settlement and sealed cleanup remain available after cancellation.
+`borrow_receiver_from_pending` MAY derive and acquire the loan from a supplied pending machine.
+Current-owner validation MUST precede pending-subject validation. Its exact runtime-qualified
+subject MUST equal the admitted account's subject before deriving ABI or loan facts; a foreign
+execution or task MUST refuse `ForeignSubject`, and absent pending work MUST refuse
+`PendingOperation`. Declaration, recovery, site and generation MUST come from the machine,
+not caller text. Observation allowance and explicit charges remain declared caller inputs.
+The existing transport, loan-root, account-lease cancellation and whole-vector quota fences
+MUST still apply before acquisition. After cancellation validation, the admitted account's
+authoritative lease MUST still be pending under the same guard as charging and acquisition;
+otherwise `PendingOperation` MUST refuse without spending quota or acquiring a loan. A recovered
+caller's pending lease MUST NOT reopen settled authoritative work. Historical unqualified
+borrowing remains unchanged. Refusal MUST change no accounting or machine fact.
+Cancellation retained by the supplied machine MUST also refuse `CancellationRequested`
+at the cancellation-admission boundary, even when the admitted account's lease is uncancelled.
+Refusal MUST NOT propagate that alias cancellation into the authoritative account or machine.
+This route grants no receiver authority, physical ownership, source transport or machine settlement.
+Accepted Section 20 settlement MUST project
+only operation state and close that loan root; refused settlement MUST retain the guard and
+observed progress. No loan settlement releases whole-resource lifetime or pending machine work.
+An acquired `HostReceiverLoan` MAY expose `invoke_with_charges` for an explicit whole update
+vector. Loan, adapter, disposal and transport eligibility MUST precede quota admission; refusal
+MUST retain the loan and progress without spending quota. Admitted callback error or panic MUST
+retain charges. This route MUST NOT reacquire cancellation admission for already-owned loan work
+or implicitly settle it; explicit settlement and sealed cleanup remain available. Legacy uncharged
+loan invocation remains unchanged and no physical-size or observation charge is inferred.
+The guard MAY explicitly settle a classified adapter or resource failure through the retained
+Section 20 failure winner. Failure settlement MUST project only that winner's operation state
+and close only the loan root; adapter failure additionally poisons the transport boundary.
+Repeated success or failure settlement MUST refuse `LoanSettled` without mutation. Refused
+failure classification retains the guard, loan root, and observed progress. Failure settlement
+does not dispose the host value or settle whole-resource lifetime or pending machine work.
+Explicit transport finish MUST refuse a poisoned operation generation before entering finishing
+or invoking its finalizer, retaining current-owner validation precedence. This refusal leaves
+accounting unchanged; sealed emergency release and contained physical disposal remain available.
+Owner invocation, finish and transfer MUST remain fenced while the transport loan is pending,
+even if its guard is forgotten. Dropping an unsettled guard MUST poison transport and retain
+the pending fence without fabricating settlement. Sealed emergency release remains available.
+Callbacks, including unused callbacks after settlement, retain the same containment boundary.
+This optional synchronous boundary is not the accounting registry, does not add host values to
+`LogicalValue`, raw hook bytes, or reconstruction records, and claims no source-resource evaluation,
+asynchronous cancellation, task transfer, host authority admission, or durable host reconstruction.
+
+The registry MAY separately retain one process-local physical slot for an existing active/open
+account. Attachment MUST check current ownership and refuse duplicate slots while returning the
+physical input untouched; it MUST NOT remove the account or change quota facts. Typed bounded
+synchronous physical access MUST also require the issuing execution and task provenance of the
+machine binding to match the selected account. Matching portable operation and resource-generation
+identities alone MUST NOT authorize attachment, invocation, presence inspection or disposal across
+runtime owners. This provenance is derived from machine context and retained across its recovery;
+it does not change portable identity derivation or add a physical value to accounting records.
+Subject-addressed accounting mutations, containment and adapter changes, and sealed single/cohort
+emergency release MUST likewise require matching issuing execution/task provenance after account
+selection and before mutation. Foreign provenance MUST refuse with `ForeignSubject` and preserve
+accounting and bindings, so semantic release cannot bypass the physical-access fence.
+Typed bounded synchronous invocation MUST retain account and containment fences, including contained unused
+callback destruction. After provenance, current-owner and active/open checks, a poisoned bound
+adapter MUST refuse physical invocation with `AdapterInstancePoisoned` before executing the callback.
+Bound-adapter callbacks through registry, affine-owner and admitted receiver-loan routes MUST
+also enforce retired-instance and dispatch-right checks using the admitted account's issuing
+operation recovery class. That class MUST come from authenticated executable action metadata,
+not a caller-selected ABI or recovered alias. Missing metadata MUST refuse
+`UnauthenticatedRecoveryClass`; insufficient rights MUST refuse `AdapterRightsInsufficient`.
+Refusal MUST retain accounting and physical ownership and contain unused callback destruction.
+Unbound callbacks retain their separate embedding-authority contract; these checks grant no authority.
+Eligible fresh registry invocation MUST check the admitted account's cancellation lease rather than
+a caller's recovered or speculative binding. Recorded cancellation and unreadable leases MUST
+refuse with `CancellationRequested` and `PendingOperation` respectively; integration and callback
+destruction MUST run outside that lease lock. Accepted callbacks and explicit cleanup remain separate.
+`invoke_host_value_with_charges` MAY additionally admit an explicit whole update-charge vector.
+Account, adapter and cancellation checks MUST precede physical type/transport checks, which MUST
+precede charging under the same admitted lease. Refused work MUST spend no quota; admitted callback
+error or panic MUST retain its charges. Integration and unused callback destruction MUST run after
+releasing the lease. Legacy uncharged invocation remains unchanged and no callback runs under a
+coordinator lock. This boundary supplies no source transport or implicit physical-size charges.
+Refusal MUST retain accounting and physical ownership and leave unrelated adapters usable; unused
+callback destruction MUST retain containment and panic precedence. Accounting finalization MUST refuse while a physical value remains held.
+Contained destruction failure MUST remain recorded after the physical slot becomes empty;
+repeated disposal MUST report that failure without destroying again, and normal finalization
+MUST refuse without mutation. Sealed emergency release remains available from finishing.
+Explicit physical disposal is permitted only after accounting leaves active, including finishing,
+and MUST NOT itself release semantic quota. Terminal semantic release remains effective before
+disposal and despite destruction failure. A deleted account MUST remain retained until its physical
+value is disposed. Failed disposal MUST additionally retain its slot and deleted account during
+reaping so reclamation cannot erase the reportable failure or permit same-subject readmission.
+This retention MUST NOT restore physical presence or undo semantic quota release.
+Captures and reconstruction MUST omit physical slots, and no coordinator callback
+route may invoke integration under its shared lock. This boundary grants no host authority and
+does not establish automatic evaluator integration or physical reconstruction.
+
+The registry MAY advance same-task current ownership without moving its account or physical slot.
+It MUST require exact runtime provenance and current owner before checking physical eligibility,
+then enforce the standalone transfer obligations: active/open accounting, a strict successor,
+no loan root, settled machine work and historical containment, and no bound adapter. A poisoned,
+disposed, or disposal-pending physical slot MUST refuse advancement. Success changes only current
+accounting ownership; subject, quotas, roots, historical containment and physical ownership remain
+unchanged. Refusal MUST mutate nothing. The coordinator MAY expose this advancement and the
+existing containment settlement under its durable-publication fence: success publishes once and
+refusal publishes nothing. Neither route grants authority, settles whole-resource lifetime or
+pending machine work, or implements source-task transfer.
+
+The coordinator MAY separately hand off runtime cleanup responsibility between distinct known,
+running tasks of the same execution. It MUST reject cancellation of either task, closed admission,
+reserved publication, a mismatched current cleanup task, or any existing owner-advancement
+obligation before mutation. Success MUST strictly advance the owner generation and change only
+the current cleanup task and owner generation, publishing once. The immutable issuing subject,
+registry key, physical slot, quotas, roots and historical containment MUST remain unchanged.
+Inspection and accounting reconstruction MUST preserve the current cleanup task separately from
+issuing provenance; coordinator reconstruction MUST validate both tasks. Task-selected emergency
+cleanup and new physical attachment MUST use the current cleanup task, while subject provenance
+and current-generation fences remain required. This route grants no authority, source syntax,
+copyable handle or durable graph format and does not settle accepted machine work.
+
+`transfer_resource_task_owner_with_charges` MAY additionally admit an explicit whole move vector
+after all task, provenance, physical and ownership fences. Quota use, successor generation and
+cleanup-task ownership MUST commit together with one publication; refusal MUST preserve every
+accounting fact, the physical slot and publication. Legacy handoff remains uncharged, and no
+physical-size charge, authority or durable ownership transition is inferred.
+
+The coordinator MAY expose physical attachment and disposal over its existing registry. Attachment
+and disposal extraction MUST respect the durable-publication reservation and current account owner.
+Physical attachment MUST additionally require the issuing execution to match and the current cleanup task
+to be known and running. Task settlement closes physical admission without disabling cleanup;
+recorded task or execution cancellation also closes admission before settlement. Refusal MUST leave
+the physical input and accounting unchanged, and accepted-account cleanup MUST remain available.
+Refused attachment MUST return the physical input without destroying it under the coordinator lock.
+Disposal MUST mark a process-local pending status before extracting exclusive physical ownership,
+then execute contained destruction with neither coordinator nor status mutex held. Pending cleanup
+MUST fence finalization and record reclamation; repeated disposal MUST refuse while cleanup is pending.
+Completion records success or retained failure without changing accounting publication or semantic
+quota. These physical statuses are not journal-committed state or durable recovery evidence.
+Physical shutdown quiescence MUST require both settled task drivers and no held or in-flight
+attached host value. Disposal completion MUST wake registered quiescence observers after unlocking,
+including after contained destruction failure. Physical quiescence does not imply successful
+finalization, and this observer does not initiate resource cleanup itself.
+
+The coordinator MAY consume a sealed emergency-cleanup cohort through the registry's canonical
+settled-prefix sweep. Semantic refusal MUST preserve earlier releases and leave later members
+unchanged. Only the settled prefix's physical cleanup may be extracted, and all extracted jobs
+MUST run after unlocking even if one destruction fails. The report MUST distinguish semantic
+settlement/refusal from each member's physical outcome. A nonempty settled prefix advances
+accounting publication once; an empty prefix does not. Physical failure never rolls back release.
+
+An explicitly witnessed emergency cohort MAY be submitted to bounded blocking-work ownership.
+Submission MUST transfer only sealed witnesses and a coordinator handle, never extracted physical
+values. Refusal or service cancellation before start MUST leave accounting and physical slots
+unchanged while consuming the supplied witnesses. Started work MUST preserve canonical prefix
+settlement and independent physical outcomes after observer abandonment. Submission and observation
+retain integration containment; this route grants no escalation authority or machine settlement.
+
+The coordinator MAY select emergency cleanup by issuing task identity rather than caller-presented
+resource subjects. Every selected task MUST be known, fixed as cancelled and physically settled
+before any resource mutation. Validation, registry-owned subject selection and semantic settlement
+MUST share one coordinator lock and retain the publication fence. Selection includes only active
+or finishing accounts of the named tasks in canonical runtime-subject order; terminal accounts
+remain excluded. The caller MUST authenticate the supplied sealed escalation's association with
+the task cohort. This route creates no escalation authority and closes no pending machine lease.
+Its bounded blocking submission MUST perform the same validation when the accepted job starts.
+
+The coordinator MAY separately sweep physical obligations of accounts whose lifetime is already
+settled, retired or deleted. Active and finishing accounts MUST remain untouched. Selection and
+extraction MUST respect publication reservations and canonical runtime-subject order; every extracted
+job MUST run after unlocking, with independent results and retained failures. Successful disposed
+slots need no repeated cleanup. This sweep MUST change neither accounting publication nor quota
+facts or pending machine work, and MUST NOT fabricate semantic settlement.
+
+The sweep MAY be submitted to the bounded blocking-work service. Submission MUST capture only
+the coordinator, not extracted physical values, so refusal or service cancellation before start
+leaves physical slots held. Started cleanup MUST remain service-owned to physical completion
+even if its observer or completion future is dropped. Submission, completion polling and observer
+handle disposal MUST retain integration containment. Repeated observation returns the same sweep
+result; service completion and per-resource destruction outcomes remain distinct.
+Nondurable execution cancellation MUST submit any already-settled physical obligations after driver
+drainage and before observing shutdown quiescence.
+Failure of either semantic or physical driver-grace timing MUST retain an executor failure, not
+be interpreted as successful grace expiry. Cancellation MUST still retain abort-and-drain ownership
+and attempt settled physical cleanup; after successful drainage and quiescence it returns the
+retained executor error rather than a successful cancellation result. The lifecycle independently
+retains the first `Executor` cleanup classification without changing fixed language outcomes.
+For positive cancellation grace, the runtime MUST declare a supervisor stop before starting each
+driver-grace timer, using phase-relative logical microseconds with request instant zero and the
+configured cancellation drain duration as the declared grace and drain. Only a successful timer
+expiry MAY issue sealed escalation at that declared deadline. Zero duration, timer failure or
+cancellation observation MUST NOT fabricate escalation authority. After abort-and-drain succeeds,
+automatic emergency resource cleanup MUST select only tasks whose supervision records confirm
+both `Stopped` abortion and `Stopped` physical completion. The task-qualified cleanup route MUST
+then recheck cancelled semantic status and physical cessation under its settlement lock and run
+destruction through bounded blocking ownership. Failed, ambiguous or already-settled abortion
+MUST NOT authorize emergency release. Pending external machine work remains independently owned;
+emergency accounting release and physical destruction MUST NOT close its settlement lease.
+Already-terminal language outcomes MUST NOT bypass this physical cleanup and quiescence phase;
+successful observation retains the `AlreadyTerminal` result without changing fixed outcomes.
+When no held or in-flight physical value and no retained disposal failure requires cleanup,
+and no unsettled accounting or admitted pending work remains, an already-terminal request MAY
+return immediately without waiting for unrelated driver completion.
+Observation MUST use the configured cancellation drain deadline; timeout stops observation without
+cancelling started destruction. Service/coordinator
+failures and per-resource disposal failures MUST remain distinct. The first operational cleanup
+failure MUST remain visible in lifecycle snapshots independently of immutable language outcomes,
+including after terminal publication, rather than claiming successful cleanup. Recording errors
+MUST propagate; recording MUST NOT rewrite cancellation, foreground or terminal state. The bounded
+classification is service, disposal, deadline, executor, unsettled accounting or pending resource work. Physical-quiescence observation timeout
+or executor failure MUST retain the same independent operational record, including when active
+resource ownership prevents quiescence after terminal publication.
+Active and finishing resource lifetimes remain explicit obligations; this
+phase MUST NOT fabricate semantic release or enable source live-handle transport. Durable cancellation
+resource integration remains outside this scoped phase.
+After physical quiescence, cancellation MUST independently refuse cleanup completion with
+`ResourceObligations` if active/finishing accounting or admitted pending machine work remains.
+It MUST retain `UnsettledAccounting` or `PendingResourceWork` respectively, preserve an earlier
+failure classification, and leave accounting and machine leases unchanged. Explicit later
+settlement remains available; physical absence never substitutes for semantic disposition.
+
+Interpreter shutdown MUST inspect retained nondurable execution owners, including terminal owners
+outside its semantic cancellation cohort, before closing the blocking-work service. It MUST submit
+already-settled physical obligations while that service still accepts work, then observe any held or
+in-flight physical ownership under the shutdown drain deadline. Cleanup failure, prior retained
+cleanup failure, or failure to reach physical quiescence MUST prevent an orderly report and retain
+the independent lifecycle failure classification. Fixed language outcomes remain unchanged;
+active and finishing accounts MUST NOT be implicitly released or disposed by this phase.
+Unsettled active or finishing accounting MUST independently prevent an orderly report, even
+without a physical slot. Shutdown MUST retain `UnsettledAccounting` as its operational cleanup
+classification unless an earlier cleanup failure is already recorded; this creates no settlement.
+Admitted pending resource work MUST independently prevent an orderly report after accounting or
+physical release. Shutdown MUST retain `PendingResourceWork` unless an earlier cleanup failure
+is recorded, without closing its machine lease or releasing accepted pending capacity.
+The immutable shutdown report MUST separately retain the first cleanup failure per execution in
+execution-identity order, including terminal owners outside the semantic cancellation cohort.
+This evidence MUST NOT expand that cohort, and any retained cleanup failure prevents an orderly
+report. Clean and unclean report construction preserve the same recorded failure projection.
+
+<a id="GNT-28.12-operation-state-projection"></a>
+
+**[GNT-28.12-operation-state-projection] Runtime operation-state projection.** A runtime profile
+that separately declares a resource registry MAY project the Section 20 operation state of an
+admitted subject into its accounting record only from the settlement retained by the same
+`LiveResource` after that resource accepts the settlement under `GNT-20.5-interruption-cancellation-and-late-completion`.
+The runtime MUST select the account by that settlement's logical operation and resource generation,
+and MUST require its owner generation to equal the account's current owner generation before any
+fact changes; an absent subject or stale owner MUST be refused without mutation. The projected
+evidence MUST additionally be accompanied by a machine-issued subject binding naming the same
+operation and resource generation and the selected account's issuing execution/task. Mismatched
+portable subject identity MUST refuse with `EvidenceSubjectMismatch`; foreign runtime provenance
+MUST refuse with `ForeignSubject`. Registry failure settlement and adapter-failure poisoning MUST
+require the same accompanying binding. Unsettled projection and absent evidence-selected accounts
+retain their existing refusal precedence. These bindings supply runtime context, not host authority.
+Ordinary and failure state projection MUST also match the live handle's recovery class against
+the selected account's machine-authenticated issuing recovery metadata, after current-owner
+validation and before state mutation. Missing or mismatched metadata MUST refuse with
+`RecoveryContractMismatch`, without changing accounting or advancing coordinator publication.
+Matching portable identities MUST NOT authorize a substituted recovery contract.
+The projected operation state MUST equal the accepted settlement's derived `ResourceState`, except
+that a generation fenced under Section 20 MUST project `Poisoned` regardless of that outcome.
+Projection MUST preserve the fence without rewriting the accepted settlement or its progress;
+once accounting retains `Poisoned`, a non-poisoned projection MUST refuse with
+`PoisonedOperationStateRevival` without mutation, even from an older accepted model clone.
+Once accounting retains `HalfClosed`, `Consumed` or `Closed`, a projection that restores an open half MUST
+refuse with `TerminalOperationStateRevival` without mutation. Current-owner validation retains
+precedence; repeated terminal projection and subsequent poison fencing remain available.
+The state is never caller-selected. This projection changes only the distinct Section 20 operation-state fact of that admitted
+account: it MUST NOT change whole-resource lifetime, quotas, liveness roots, ownership of a physical
+host resource, or the Section 20 settlement, progress, or generation. It creates no evaluator-wide
+settlement uniqueness, checkpoint format, or journal schema.
+A separate `failure_state_projection()` MAY derive the same opaque state carrier only from the
+exact `PostFailureSettlement` retained by a `LiveResource`. It MUST preserve accepting-owner
+provenance and generation fencing without fabricating a successful outcome or changing progress.
+Ordinary `operation_state_projection()` remains absent for failure winners. Exclusively admitted
+receiver-loan failure settlement MAY consume this separate projection under the same current-owner
+and terminal-state fences, then close only the loan root as declared by `GNT-28.11`.
+The registry MAY separately expose `project_failure_state`, and its coordinator MAY expose
+`project_resource_failure_state`, consuming only this retained failure projection with the same
+exact subject, runtime provenance, current-owner, terminal-state and publication fences as ordinary
+projection. These routes MUST change only operation state: lifetime, quotas, roots, physical
+ownership and pending machine work remain unchanged. Refusal MUST advance no publication.
 
 ## 29. Portable Host-Domain and Standard Host-Family Contracts
 
@@ -15677,6 +16825,10 @@ A name that denotes a declared callable or a declared action is refused as a val
 
 **[GNT-40.7-canonical-integer-overflow-modes] Canonical integer overflow modes.** This section publishes the explicit overflow modes of `GNT-35.3-checked-arithmetic-and-overflow-modes` — `refuse`, `wrapping`, and `saturating` — for the five binary checked integer algorithms of `GNT-40.2-checked-integer-algorithms` over the canonical `Int` domain of `GNT-5.1`. In `refuse` mode an algorithm publishes exactly one canonical `Int` value when the exact mathematical result of its two operands lies inside the domain and is refused under `integer-overflow` when it does not. In `saturating` mode it publishes that exact result when it lies inside the domain and otherwise the domain's nearer bound, so the mode is total wherever the algorithm is defined. In `wrapping` mode it publishes the canonical value whose distance above the domain minimum equals the exact result's distance above that minimum reduced modulo the domain's span of `2^54 - 1` values, so the mode is total wherever the algorithm is defined as well. Because the canonical `Int` domain is declared as a range inside a 64-bit representation, neither the wrapping nor the saturating behaviour here is the declared-width behaviour `GNT-35.3-checked-arithmetic-and-overflow-modes` gives a fixed-width scalar, the declared-width fallback is not used, and no mode applies implicitly. An algorithm whose divisor is zero publishes no value in any mode and is refused under `integer-division-by-zero` or `integer-remainder-by-zero` of `GNT-40.2-checked-integer-algorithms`, because no mode changes that failure. No mode depends on a host facility, an ambient rounding mode, timing, prior calls, or global state, no mode publishes an unspecified or implementation-defined result, and no mode changes an operand, an algorithm, or another clause's semantics. `apply_in_mode` publishes these modes in the model; this section publishes no mode for the unary negation of `GNT-40.2-checked-integer-algorithms`, whose symmetric domain makes it total, no mode for the conversions, bit operations, or finite-float algorithms, no implicit overflow behavior, no unchecked arithmetic, no operand narrower or wider than the canonical `Int`, no coercion across numeric types, and no work limit, cancellation safe point, quota, schema, recovery, durability, boundary encoding, lowering, machine representation, or family behavior, and no performance, storage layout, or physical-representation claim is made.
 
+<a id="GNT-40.8-numeric-module-names"></a>
+
+**[GNT-40.8-numeric-module-names] Declared numeric module names.** This clause declares the closed public module set of the pure `std.num` family of `GNT-34.1-canonical-hierarchy-and-package-names` and fixes, for each declared module, the clauses that publish its behavior. The declared modules are exactly seven, in canonical name order — `std.num::bits`, `std.num::conversions`, `std.num::floating`, `std.num::integer`, `std.num::overflow`, `std.num::prng`, and `std.num::text` — and no other module, item, alias, or spelling is declared; an identity naming another module is not declared here. Each declared module is classified as one module of `GNT-34.2-name-classification` at the stable tier of `GNT-34.6-stability-tiers`, and the family's declared applicability is exactly the portable and application semantic modes over the library and binary target kinds that `GNT-34.1-canonical-hierarchy-and-package-names` and `GNT-34.7-applicability-and-feature-granularity` already fix. Every declared module binds the scope clause `GNT-40.0-deterministic-numeric-scope` and this clause, a module whose behavior a clause of this section publishes additionally binds that clause, and the module rows store their clauses in specification order: `std.num::prng` binds `GNT-40.1-deterministic-prng-identity`, `std.num::integer` binds `GNT-40.2-checked-integer-algorithms`, `std.num::conversions` binds `GNT-40.3-numeric-conversions`, `std.num::bits` binds `GNT-40.4-integer-bit-operations`, `std.num::floating` binds `GNT-40.5-finite-float-algorithms`, `std.num::text` binds `GNT-40.6-canonical-numeric-text`, and `std.num::overflow` binds `GNT-40.7-canonical-integer-overflow-modes`. The model's `DeclaredModuleRow` values in `NUM_MODULE_ROWS` and the `NUM_MODULE_CLAUSES` vocabulary publish these rows and their clause vocabulary. The declared set is closed: a candidate set that omits, adds, duplicates, or reorders a row, or that changes the class, tier, applicability, or clauses of a row, is not this declared set and is refused by the conformance lane rather than repaired, inferred, or substituted. This clause publishes module names, their classification, tier, applicability, and owning clauses only: it declares no callable signature, operation, conversion, algorithm, or behavior, no exported item row, declare or admit surface, aggregate or catalog export, or interface identity, no edition prelude member, no `std.random` module or capability, no durable, test, example, or benchmark expansion, and no adapter dependency or internal dependency-DAG change. Stable namespace compatibility here is neither a stable-edition status nor runtime availability. This clause does not restate, change, or widen any behavior of `GNT-40.1-deterministic-prng-identity` through `GNT-40.7-canonical-integer-overflow-modes`, and it claims no performance, storage layout, or physical representation.
+
 ## 41. Text Foundation
 
 <a id="GNT-41.0-text-foundation-scope"></a>
@@ -15726,6 +16878,10 @@ A name that denotes a declared callable or a declared action is refused as a val
 <a id="GNT-41.11-canonical-text-value-bound"></a>
 
 **[GNT-41.11-canonical-text-value-bound] Declared published-value bound.** Every operation of this section that publishes a value publishes one holding at most `TEXT_VALUE_SCALAR_BOUND` scalar values: an operation whose result would hold more than the declared bound refuses under `text-value-bound`, naming the observed scalar count and the declared bound, while it composes that result and before it publishes any value, prefix, or partial state. The bound therefore holds of every value this section publishes and not only of the values its admissions accept: the boundary of `GNT-41.10-canonical-text-admission-bound` is the same bound, and this clause publishes no bound on the sequences a caller examines, on the values it holds, or on values published by other sections. Together with `GNT-41.10-canonical-text-admission-bound` this clause makes the declared bound a property of the section's published values: a transform or builder whose composition would exceed it refuses rather than publishing a larger value. Every value an operation of this section takes as an operand is a value this section published, and every value this section publishes satisfies the declared bound, so an operation that publishes a part of its operand — a scalar slice, a matched span, or a grapheme cluster — also publishes a value satisfying it; a value that no operation of this section published lies outside this section's contract. This clause publishes a declared published-value bound only: it admits no work limit, no cancellation safe point, no memory or time limit, no quota or resource accounting, no suspension, cutoff, or resumption, no durable or recoverable state, no change to any canonical result of an operation that stays within the bound, no boundary schema, source literal grammar, lowering, or machine representation, and no family behavior.
+
+<a id="GNT-41.12-text-module-names"></a>
+
+**[GNT-41.12-text-module-names] Declared text module names.** This clause declares the closed public module set of the pure `std.text` family of `GNT-34.1-canonical-hierarchy-and-package-names` and fixes, for each declared module, the clauses that publish its behavior. The declared modules are exactly nine, in canonical name order — `std.text::builders`, `std.text::case_mapping`, `std.text::comparison`, `std.text::conversions`, `std.text::graphemes`, `std.text::matching`, `std.text::normalization`, `std.text::traversal`, and `std.text::values` — and no other module, item, alias, or spelling is declared; an identity naming another module is not declared here. Each declared module is classified as one module of `GNT-34.2-name-classification` at the stable tier of `GNT-34.6-stability-tiers`, and the family's declared applicability is exactly the portable and application semantic modes over the library and binary target kinds that `GNT-34.1-canonical-hierarchy-and-package-names` and `GNT-34.7-applicability-and-feature-granularity` already fix. Every declared module binds the scope clause `GNT-41.0-text-foundation-scope`, the clause that publishes the behavior it names, the published-value bound of `GNT-41.11-canonical-text-value-bound`, and this clause; `std.text::values` and `std.text::conversions` additionally bind the admission bound of `GNT-41.10-canonical-text-admission-bound`, and the module rows store their clauses in specification order: `std.text::builders` binds `GNT-41.4-canonical-text-builders`, `std.text::case_mapping` binds `GNT-41.3-canonical-text-case-mapping`, `std.text::comparison` binds `GNT-41.6-canonical-text-comparison`, `std.text::conversions` binds `GNT-41.9-canonical-text-conversions`, `std.text::graphemes` binds `GNT-41.7-canonical-grapheme-clusters`, `std.text::matching` binds `GNT-41.8-bounded-text-matching`, `std.text::normalization` binds `GNT-41.2-canonical-text-normalization`, `std.text::traversal` binds `GNT-41.5-canonical-text-traversal`, and `std.text::values` binds `GNT-41.1-canonical-text-values`. The model's `DeclaredModuleRow` values in `TEXT_MODULE_ROWS` and the `TEXT_MODULE_CLAUSES` vocabulary publish these rows and their clause vocabulary. The declared set is closed: a candidate set that omits, adds, duplicates, or reorders a row, or that changes the class, tier, applicability, or clauses of a row, is not this declared set and is refused by the conformance lane rather than repaired, inferred, or substituted. This clause publishes module names, their classification, tier, applicability, and owning clauses only: it declares no callable signature, operation, conversion, algorithm, or behavior, no exported item row, declare or admit surface, aggregate or catalog export, or interface identity, no edition prelude member, no durable, test, example, or benchmark expansion, and no adapter dependency or internal dependency-DAG change. Stable namespace compatibility here is neither a stable-edition status nor runtime availability. This clause does not restate, change, or widen any behavior of `GNT-41.1-canonical-text-values` through `GNT-41.11-canonical-text-value-bound`, and it claims no performance, storage layout, or physical representation.
 
 ## 42. Codec Foundation
 
@@ -16807,3 +17963,45 @@ redaction or release permission, backpressure, delivery policy, cancellation or 
 sink failure behavior, runtime event, telemetry operation, adapter, or runtime availability. It
 does not change Section 12's event contract or Section 15's protection and release rules, and it
 claims no performance, storage layout, or physical representation.
+
+<a id="GNT-49.0-environment-foundation-scope"></a>
+
+**[GNT-49.0-environment-foundation-scope] Environment foundation scope.** This section publishes
+the declaration surface of the capability-backed `std.env` family of
+`GNT-34.1-canonical-hierarchy-and-package-names`. Its intended source-level domain is bounded
+immutable arguments and environment snapshots plus logical working-directory data, subject to the launch
+snapshot and capability-closure contract of `GNT-30.2-bounded-launch-snapshot-and-capability-closure`
+and the exact values and attenuation rules of `GNT-30.3-arguments-environment-and-logical-cwd`.
+Logical working-directory data is not directory authority. This section declares only the family
+identity, its closed module rows, and their applicability; it does not read or mutate ambient
+process state, expose credentials, grant environment or directory authority, or implement a
+launcher, adapter, host trait, or runtime facility.
+
+<a id="GNT-49.1-environment-modules-and-item-rows"></a>
+
+**[GNT-49.1-environment-modules-and-item-rows] Environment modules and item rows.** This clause
+declares exactly three public modules of `std.env` — `std.env::arguments`, `std.env::environment`,
+and `std.env::working_directory` — in canonical name order. Each row is classified as a module at
+the stable tier of `GNT-34.2-name-classification` and `GNT-34.6-stability-tiers`, and each row has
+exactly the application semantic mode over the library and binary target kinds. No other module,
+item, alias, or spelling is declared. The model's `EnvItemRow` and `ENV_ITEMS` publish these rows;
+`declare_env_surface` and `admit_env_surface` declare and admit exactly this closed surface over
+one standard-library graph, refusing a missing, partial, extra, or mismatched declaration rather
+than repairing it.
+
+This clause publishes names, classification, tier, and applicability only. It declares no
+argument or environment encoding, lookup or enumeration operation, mutation, native directory
+handle, environment inheritance, protected-value release, adapter, capability grant, or runtime
+availability; those require their own normative contracts. It does not change Section 30's launch
+snapshot or attenuation rules and claims no process-global access, performance, storage layout, or
+physical representation.
+
+## 50. Random Foundation
+
+<a id="GNT-50.0-random-foundation-scope"></a>
+
+**[GNT-50.0-random-foundation-scope] Random foundation scope.** This section publishes the declaration surface of the capability-backed `std.random` family of `GNT-34.1-canonical-hierarchy-and-package-names`: its family identity, its closed module row, and its applicability. The family's declared error categories and the absence of any granted entropy are those of `GNT-29.8-time-randomness-and-secret-contracts`, and its declared target applicability is the application-only randomness mapping of `GNT-29.10-target-applicability` and `GNT-34.7-applicability-and-feature-granularity`, which this section consumes and never restates or widens. `GNT-29.8-time-randomness-and-secret-contracts`, `GNT-29.15-host-contract-non-claims`, and `GNT-34.1-canonical-hierarchy-and-package-names` declare the family identity and its category and applicability bounds; none of them declares a module of this family, so this section is the clause that declares the module names. A declared module of this section names a capability-backed namespace only: it is not a raw entropy API, a draw operation, a capability grant, or an authority grant, and no module name of this section may be read as authorizing a host entropy source, a fresh secure draw, or access to secret material. Fresh secure draws and the recording of returned bytes are distinct: a recorded result can be replayed, but a replay is not a fresh draw, so no declared module of this section promises that a fresh draw is durable or that recovery redraws. This section declares no draw signature, request or byte bound, failure mapping, cancellation or concurrency rule, accepted-work settlement, crash cut, redraw-on-recovery behavior, hidden entropy fallback, or substitution for the deterministic generator of `std.num`; those require their own normative contracts, which this section neither publishes nor anticipates. The section creates no adapter, host trait, capability grant, queue, entropy buffer, runtime availability, or behavior, and no clause of this section may be read as publishing, implying, or substituting a facility it does not declare.
+
+<a id="GNT-50.1-random-modules-and-item-rows"></a>
+
+**[GNT-50.1-random-modules-and-item-rows] Random modules and item rows.** This clause declares exactly one public module of `std.random` — `std.random::entropy` — in canonical name order. The row is classified as a module of `GNT-34.2-name-classification` at the stable tier of `GNT-34.6-stability-tiers`, and its declared applicability is exactly the application semantic mode over the library and binary target kinds. No other module, item, alias, or spelling is declared; an identity naming another module is not declared here, and `GNT-34.1-canonical-hierarchy-and-package-names` and `GNT-29.8-time-randomness-and-secret-contracts` do not declare this module. The row binds the scope clause `GNT-50.0-random-foundation-scope` and this clause, in specification order. The model's `DeclaredModuleRow` value in `RANDOM_MODULE_ROWS` and the `RANDOM_MODULE_CLAUSES` vocabulary publish this row and its clause vocabulary. The declared set is closed: a candidate set that omits, adds, duplicates, or reorders the row, or that changes the class, tier, applicability, or clauses of the row, is not this declared set and is refused by the conformance lane rather than repaired, inferred, or substituted. This clause publishes the module name, its classification, tier, applicability, and owning clauses only: it declares no exported item row beyond the module, no declare or admit surface, no aggregate or catalog export, no interface identity, no draw operation or callable signature, no request, byte, work, quota, or retention bound, no capability or authority grant, no adapter dependency, no edition prelude member, no entry in the pure dependency graph, no durable, test, example, or benchmark expansion, and no runtime availability. Stable namespace compatibility here is neither a stable-edition status nor runtime availability, and this clause claims no performance, storage layout, or physical representation.

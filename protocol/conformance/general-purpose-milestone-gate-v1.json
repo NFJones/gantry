@@ -4,11 +4,11 @@
  "status": "verified",
  "specification": {
   "path": "SPEC.md",
-  "sha256": "ee9282d1a6a80cbf73d1e7f398fff210a61fba61884348dd62a788b1c7e8f745"
+  "sha256": "7e2a8d5867b7102de2b3dbab9f432855fe2626d3beade56f485a0effad104b13"
  },
  "prerequisite_source": {
   "path": "protocol/catalogs/general-purpose-preregistration-v1.json",
-  "sha256": "ffdf8997900a1086176b67670c901094f8e310946b487e4c7b63ebf3f472e887"
+  "sha256": "98c057f7113df0c9bf31d3a68c3040e3de1f6c6657af67022411d047aa02f78b"
  },
  "verifies": [
   "artifact-digest-integrity",
@@ -123,7 +123,7 @@
  "artifacts": [
   {
    "path": "protocol/catalogs/general-purpose-preregistration-v1.json",
-   "sha256": "ffdf8997900a1086176b67670c901094f8e310946b487e4c7b63ebf3f472e887"
+   "sha256": "98c057f7113df0c9bf31d3a68c3040e3de1f6c6657af67022411d047aa02f78b"
   },
   {
    "path": "protocol/catalogs/std-test-surface-v1.json",
@@ -131,15 +131,15 @@
   },
   {
    "path": "protocol/catalogs/stdlib-hierarchy-v1.json",
-   "sha256": "346f4570eea94eb7aedb2370b3d87098d5940a8a4fc8da76f3ce0e50c1329719"
+   "sha256": "3bcaae51c9fc6067b6604a9785aec949e9a4321b87e4e3998641b96f9e1a6484"
   },
   {
    "path": "protocol/conformance/general-purpose-foundation-gate-v1.json",
-   "sha256": "c71d88b06bc2e43045bd93d1d9f880584cb5aaf1f273c4951d2a80ddc572cbf5"
+   "sha256": "d810c0d3d1a9dcb7ebbebc82d7aa73540b5bf91fe4ac3f7d0bc79f0dd98d4c5f"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "74ff0221edd6ba6dd0ce9244e08a9a084dd8072d35f2b44222838e6144349e72"
+   "sha256": "fff3a1d0a24dce290da227bba51f91b366da644217d09d830f39ff8d575c7e7a"
   }
  ],
  "evidence": [

@@ -75,11 +75,11 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         "crates/gantry-conformance/tests/executable_bridge.rs",
-        "b1c5d2e254c6e9e3e05ee6bc37c33f415e60a0c5eef4e15e1edd450fbb4e2f2b",
+        "08166ed08850e77e14300e11d5c6cdaa53f346106cbc89f321d448dacb35644f",
     ),
     (
         "crates/gantry-conformance/tests/source_spawn.rs",
-        "85cd772a6fce8d79c15b8fa46ec07b33803aa6988f424b8cb99a6f4a7d873ed0",
+        "f1b04aa76baddd6cf78eb6c0252d7e06982a5bfedca06ac8068ac19614d9675c",
     ),
     (
         "crates/gantry-conformance/tests/source_spawn_tokio.rs",
@@ -87,43 +87,43 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         "protocol/conformance/async-cancellation-v1.json",
-        "24eee0618c8c517491d080cb953cad0dd40b9cfbbb7f03962af0cb1e7f376e57",
+        "d73d309c8dcf370a6aac1c82b4033b8ff36b403ca9ec993c56d1dc2841a499c3",
     ),
     (
         "protocol/conformance/async-coordinator-model-v1.json",
-        "1b09db8552867e828e86c6283e094b130017b5f6dc1a459fe13c418e23050ae9",
+        "70260f382f6185e1d51d237bb470da6d4f92c0ca4b5c05d856acc0c8c1ef4d45",
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
-        "2b5eaabe025e3e3feb604cea911699d2e8c47d0f82574c4d9a00b2d96740c988",
+        "a02b9cabcda3fb9e5bca55cab2d6a975f2bf78954c1d4b143d1bf8e8f94f37bf",
     ),
     (
         "protocol/conformance/async-execution-observation-v1.json",
-        "474a973d54587d18e301555ba4f46d4bed547300414aea7c448f47e3b7672155",
+        "a2fccc6123614bf9e8252c8a7c8094592c85a910c62693cd545668efac6ae8dd",
     ),
     (
         "protocol/conformance/async-source-lowering-v1.json",
-        "28a9cb842ac6f038ce702db70a41301a83a03a96e56f53facdd448b81158c0b1",
+        "0f351079f6eda18fb8242f0727d7f37f58c7190f3a902cca301ae70252a8173a",
     ),
     (
         "protocol/conformance/durable-coordination-v1.json",
-        "342e45ab60d4e9da2f1dc0e26207665fd56724f3bc4398ea790cc92cd3da189f",
+        "908996094498e771a3827da4e7fd61f5da740601e0791ae44aef653c6f3d5c9d",
     ),
     (
         "protocol/conformance/executable-task-ir-v1.json",
-        "98baa1d5e15791d7095496f5c0ad303c4cde55327aca1e8533c87cf2dfffb9f8",
+        "5165f094bfb269284d10fb80688ccc17f738b1c7f46ba177bc58b37eb0a929c9",
     ),
     (
         "protocol/conformance/source-join-v1.json",
-        "e0a7e185b49a9b2dc67bc2b67d2e80f0158dd97463f10088448415c928c915f0",
+        "1b4ddff192263dc28a984b9b006d1e907ca3cc0c6e590f408330e06eb1d5e05e",
     ),
     (
         "protocol/conformance/source-spawn-v1.json",
-        "965865ec2bc9401103d7eb88fc367301482bf4edfb42996c85df61b556c0090b",
+        "dc6833ba10628522b78daf05e35e59699e8a6065bbd776633813087895166db2",
     ),
     (
         "protocol/conformance/tokio-executor-v1.json",
-        "b8d6485ee2d34bcf16958f8f114de638ce3bb33488724b3fe1afa4ca94c91651",
+        "02525d87aec0edec3b055cbf451cf83ffce05ab60a77e831aae0fdb84443bd39",
     ),
 ];
 
