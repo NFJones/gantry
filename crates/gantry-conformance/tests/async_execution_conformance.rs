@@ -24,28 +24,28 @@ const PREREQUISITES: [(&str, &str, &str, &str, &str); 5] = [
         "98d91f33e6206688a5354dc7d5260dbc1afaf5d6",
         "Adopt multithread CLI runtime policy",
         "protocol/conformance/cli-runtime-policy-v1.json",
-        "0d63d7dd5a532b1c9966a5f9f8facde9a97f05cd52b2cacb28dedf7696520cd6",
+        "a433784c355c708afa38eb1fd6b8f19b8698a5d9cc06863645d204cd019ef6e1",
     ),
     (
         "GNT-ASYNC-GATE-200",
         "a6915ef212b9e245da00fd383f79bc81f05c3556",
         "Close the native source concurrency evidence gate.",
         "protocol/conformance/native-source-concurrency-gate-v1.json",
-        "33eef1ea497d0bcc4c0f2e4bafbd0902258b0d189da6ffb98dc0c0b6180b3f8f",
+        "b91cf779b7f75ff72fb2a39501244793ce72ca7cfda14d6569e61688acad8d18",
     ),
     (
         "GNT-ASYNC-PROOF-001",
         "ca413e8e23f714e33d72511a74f02a2eeccc4032",
         "Compose async execution refinements",
         "protocol/conformance/async-execution-refinement-v1.json",
-        "491fa86eb4a2507a21c1b12e274feef05cf08d9118f23b425ad266bd4ac3ab73",
+        "8c313f08a81f726e927694f0e6337da156970866b1c4832087a3c8a70ff05c8a",
     ),
     (
         "GNT-ASYNC-REC-001",
         "d5d34c22107d8f16739b21baf6a0f6f773de276a",
         "Qualify executor-backed recovery",
         "protocol/conformance/async-recovery-v1.json",
-        "75f7dfbc1bf6dd2d25a5269eeddb088dfc2283348a8ed51399633f1a4d8eec12",
+        "40b04d17108faba78aa2a2dcdf9dae8b23a1bb569a612942362df616cb19a050",
     ),
 ];
 const ARTIFACTS: [(&str, &str); 8] = [
