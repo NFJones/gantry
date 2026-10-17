@@ -963,17 +963,18 @@ pub enum ResourceOriginRecoveryError {
 /// anything, because completion is the registry route below.
 ///
 /// A carrier authenticates four facts together: the issuing subject and provenance of the account,
-/// the owner generation that currently holds it, the machine-issued admission lease identity that
-/// was issued with that account, and the presence of the registry-owned slot. A carrier from
-/// another registry, a superseded owner, and a disposed slot are each refused, so holding a
-/// carrier is never authority for any operation and never a substitute for the exact requirement
-/// facts of the owning operation.
+/// the owner generation that currently holds it, the unforgeable identity of the exact physical slot
+/// this registry attached, and the presence of that slot. The slot identity is allocated once per
+/// slot, so admitting the same cloned subject into two registries gives them different identities
+/// and a carrier issued by one is refused by the other. A superseded owner and a disposed slot are
+/// refused the same way, so holding a carrier is never authority for any operation and never a
+/// substitute for the exact requirement facts of the owning operation.
 #[derive(Debug)]
 pub struct MachineResourceCarrier {
     subject: ResourceSubjectBinding,
     owner: OwnerGeneration,
     value_type: std::any::TypeId,
-    lease: Arc<Mutex<crate::machine::ResourceOperationLease>>,
+    slot_identity: std::sync::Arc<()>,
 }
 
 impl MachineResourceCarrier {
@@ -1036,11 +1037,16 @@ impl ResourceRegistry {
             return Err(HostResourceError::CancellationRequested);
         }
         drop(admission);
+        let slot_identity = self
+            .physical
+            .get(&key)
+            .ok_or(HostResourceError::NotAttached)?
+            .identity();
         Ok(MachineResourceCarrier {
             subject: account.subject().clone(),
             owner,
             value_type: std::any::TypeId::of::<T>(),
-            lease,
+            slot_identity,
         })
     }
 
@@ -1059,7 +1065,12 @@ impl ResourceRegistry {
         if account.subject().runtime_owner != carrier.subject().runtime_owner {
             return Err(HostResourceError::ForeignSubject);
         }
-        if !Arc::ptr_eq(&account.subject().admission_open, &carrier.lease) {
+        let key = self.selection_key(carrier.subject());
+        let slot = self
+            .physical
+            .get(&key)
+            .ok_or(HostResourceError::NotAttached)?;
+        if !std::sync::Arc::ptr_eq(&slot.identity(), &carrier.slot_identity) {
             return Err(HostResourceError::ForeignSubject);
         }
         account

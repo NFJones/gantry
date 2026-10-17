@@ -768,6 +768,7 @@ pub(crate) struct HostValueSlot {
     value: Option<Box<dyn std::any::Any + Send>>,
     poison: AdapterPoison,
     disposal: std::sync::Arc<std::sync::Mutex<DisposalState>>,
+    identity: std::sync::Arc<()>,
 }
 
 /// Process-local cleanup status shared with the private unlocked disposal job.
@@ -834,10 +835,20 @@ impl HostValueSlot {
     /// Consumes one physical value without deriving authority or a durable representation.
     pub(crate) fn new<T: std::any::Any + Send>(value: T) -> Self {
         Self {
+            identity: std::sync::Arc::new(()),
             value: Some(Box::new(value)),
             poison: AdapterPoison::default(),
             disposal: std::sync::Arc::new(std::sync::Mutex::new(DisposalState::Ready)),
         }
+    }
+
+    /// Returns the unforgeable process-local identity of this slot.
+    ///
+    /// Every slot allocation creates one fresh identity, so two registries handed the same cloned
+    /// subject still hold different identifiers and can never authenticate machines issued by the
+    /// other. The identity is opaque outside the runtime crate and carries no payload.
+    pub(crate) fn identity(&self) -> std::sync::Arc<()> {
+        std::sync::Arc::clone(&self.identity)
     }
 
     /// Reports physical presence without exposing host identity or contents.

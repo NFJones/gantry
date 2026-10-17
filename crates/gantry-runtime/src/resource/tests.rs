@@ -404,15 +404,9 @@ fn machine_carrier_is_bound_to_one_registry() {
         Some(crate::HostResourceError::UnknownSubject)
     );
     let mut sibling = ResourceRegistry::new();
-    let sibling_subject = ResourceSubjectBinding::derive(
-        &CanonicalPath::new("crate::carrier").unwrap_or_else(|error| panic!("path: {error}")),
-        CanonicalPath::new("crate::carrier").unwrap_or_else(|error| panic!("path: {error}")),
-        StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("site: {error}")),
-        0,
-        Some(gantry_ir::OperationKind::LiveResource),
-        Arc::new(Mutex::new(crate::machine::ResourceOperationLease::open())),
-        (subject.runtime_owner.0, subject.runtime_owner.1),
-    );
+    // The subject is cloneable, so a sibling registry may be handed the very same machine-issued
+    // admission lease. Only the physical slot identity may authenticate a carrier.
+    let sibling_subject = subject.clone();
     sibling
         .admit(
             sibling_subject.clone(),
@@ -429,6 +423,15 @@ fn machine_carrier_is_bound_to_one_registry() {
         sibling.authenticate_carrier(&carrier).err(),
         Some(crate::HostResourceError::ForeignSubject)
     );
+    sibling
+        .begin_finish(&sibling_subject, owner)
+        .unwrap_or_else(|error| panic!("begin finish: {error:?}"));
+    assert_eq!(
+        sibling.complete_carrier::<u64>(carrier),
+        Err(crate::HostResourceError::ForeignSubject)
+    );
+    assert!(registry.has_host_value(&subject));
+    assert!(sibling.has_host_value(&sibling_subject));
 }
 
 /// Completion waits for semantic settlement and happens exactly once.
