@@ -45,6 +45,8 @@ use gantry_adapter_tokio::TokioExecutor;
 use serde_json::{Map, Value, json};
 
 mod services;
+#[cfg(feature = "evaluator")]
+mod test_command;
 
 const EXIT_SUCCESS: u8 = 0;
 const EXIT_SOURCE_INVALID: u8 = 1;
@@ -53,7 +55,7 @@ const EXIT_USAGE: u8 = 64;
 /// Upper bound on how long the CLI waits for one coordinator future to settle.
 #[cfg(feature = "frontend")]
 const BLOCKING_WAIT_LIMIT: Duration = Duration::from_secs(300);
-const HELP: &str = "gantry: agent-control language for Mezzanine\n\nusage: gantry (check|analyze [--json]) [PACKAGE_ROOT]\n       gantry run [--workers POSITIVE_INTEGER] [PACKAGE_ROOT]\n\n`run` owns a multithread Tokio runtime and applies no semantic resource ceilings by default. An omitted worker count uses Tokio's CPU-derived default; `--workers` accepts only a positive integer. Generic declarations and static traits are checked by `analyze`; `--json` emits inferred substitutions, selected calls, effects, concrete schemas, and structured diagnostics. Embeddings may opt into finite frontend and runtime policies; see docs/frontend-resource-policy.md and docs/generics-and-traits.md.";
+const HELP: &str = "gantry: agent-control language for Mezzanine\n\nusage: gantry (check|analyze [--json]) [PACKAGE_ROOT]\n       gantry run [--workers POSITIVE_INTEGER] [PACKAGE_ROOT]\n       gantry test --max-transitions POSITIVE_INTEGER [--json] [PACKAGE_ROOT]\n\n`run` owns a multithread Tokio runtime and applies no semantic resource ceilings by default. An omitted worker count uses Tokio's CPU-derived default; `--workers` accepts only a positive integer. Generic declarations and static traits are checked by `analyze`; `--json` emits inferred substitutions, selected calls, effects, concrete schemas, and structured diagnostics. Embeddings may opt into finite frontend and runtime policies; see docs/frontend-resource-policy.md and docs/generics-and-traits.md. `test` is the experimental zero-authority unit workflow over one package; `--max-transitions` is mandatory and bounds runtime steps rather than wall-clock time. It declares jobs=1 local/offline/single-package unit execution with no substitutions and publishes a versioned report; see docs/test-workflow.md.";
 
 /// Starts the Gantry command-line application.
 fn main() -> ExitCode {
@@ -105,14 +107,28 @@ fn run(arguments: &[OsString], stdout: &mut dyn Write, stderr: &mut dyn Write) -
                 stderr,
             )
         }
+        [command, rest @ ..] if command == "test" => test_command(rest, stdout, stderr),
         _ => {
             let _ = writeln!(
                 stderr,
-                "usage: gantry (check|analyze [--json]) [PACKAGE_ROOT]; gantry run [--workers POSITIVE_INTEGER] [PACKAGE_ROOT]"
+                "usage: gantry (check|analyze [--json]) [PACKAGE_ROOT]; gantry run [--workers POSITIVE_INTEGER] [PACKAGE_ROOT]; gantry test --max-transitions POSITIVE_INTEGER [--json] [PACKAGE_ROOT]"
             );
             EXIT_USAGE
         }
     }
+}
+
+#[cfg(feature = "evaluator")]
+/// Runs one `gantry test` invocation through the bounded unit workflow.
+fn test_command(arguments: &[OsString], stdout: &mut dyn Write, stderr: &mut dyn Write) -> u8 {
+    test_command::run(arguments, stdout, stderr)
+}
+
+#[cfg(not(feature = "evaluator"))]
+/// Reports that `gantry test` needs the compiled evaluator layer.
+fn test_command(_arguments: &[OsString], _stdout: &mut dyn Write, stderr: &mut dyn Write) -> u8 {
+    let _ = writeln!(stderr, "operational-failure[evaluator-unavailable]");
+    EXIT_OPERATIONAL_FAILURE
 }
 
 fn write_line(stdout: &mut dyn Write, line: &str, stderr: &mut dyn Write) -> u8 {
