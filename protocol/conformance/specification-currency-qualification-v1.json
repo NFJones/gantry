@@ -1,533 +1,262 @@
 {
- "format": "gantry.specification-currency-qualification/v1",
- "issue": "be47045e-93fb-473b-af7a-2d459aae091c",
- "status": "verified",
- "specification_sha256": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60",
- "superseded_specification_sha256": "ee9282d1a6a80cbf73d1e7f398fff210a61fba61884348dd62a788b1c7e8f745",
- "candidate": {
-  "base_commit": "1eb17dc92065a6438347ff0391afcf03aaf0ba80",
-  "currency_repair_parent_commit": "4dc14fbc62f41402228b8dcda4b73e6b4537f989",
-  "reviewed_through_commit": "1eb17dc92065a6438347ff0391afcf03aaf0ba80",
-  "since_commit": "8d28bf1f0b12343ee9b5adacd7e20dbc43e29e29",
-  "identity_note": "Content identity is the candidate input digest set plus the candidate tree hash. This record is committed after the currency repair, so it names its parent and the reviewed-through commit rather than its own.",
-  "toolchain": "1.97.1 minimal with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
-  "inputs": [
-   {
-    "path": "SPEC.md",
-    "sha256": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60"
-   },
-   {
-    "path": "protocol/requirements/reviewed-v1.json",
-    "sha256": "e035d81ee143cea3487320dcbfb49385b51dc0ef2304d53bd3c366b831c9e08b"
-   },
-   {
-    "path": "protocol/requirements/section14-v1.json",
-    "sha256": "df119dc2cdb99fdbb3472fa56d92d05f5ced9a7f88736fac194d476872d56d90"
-   },
-   {
-    "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "8a9a9207cbd7fc161af4fd7dcb79d4946b491b1c59fe28fe37360387713e6494"
-   },
-   {
-    "path": "Cargo.lock",
-    "sha256": "e26d919c14529b890d0a6695c21a651e4c357045b8062a56e6c2b44d84f99436"
-   },
-   {
-    "path": "fuzz/Cargo.lock",
-    "sha256": "5922cc323286e0a166d53696a9c737f711492e76b5cf0ad473a8e4995bc500dc"
-   }
+  "format": "gantry.specification-currency-qualification/v1",
+  "issue": "be47045e-93fb-473b-af7a-2d459aae091c",
+  "status": "verified",
+  "specification_sha256": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60",
+  "superseded_specification_sha256": "7e2a8d5867b7102de2b3dbab9f432855fe2626d3beade56f485a0effad104b13",
+  "candidate": {
+    "base_commit": "9454e4966aca526dba89d0981e65cf51cd5cbd8c",
+    "currency_repair_parent_commit": "9454e4966aca526dba89d0981e65cf51cd5cbd8c",
+    "reviewed_through_commit": "cb5b0eaffe317221b48f180c5448bca0c7b3c91c",
+    "since_commit": "9454e4966aca526dba89d0981e65cf51cd5cbd8c",
+    "tree_sha": "19f6aa52d153cd786296671b4da1dbcee3574fba",
+    "identity_note": "Content identity is the candidate input digest set plus the candidate tree hash. The record is committed after the candidate, so it names the reviewed-through commit and its tree rather than its own.",
+    "toolchain": "1.97.1 minimal with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
+    "inputs": [
+      {
+        "path": "SPEC.md",
+        "sha256": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60"
+      },
+      {
+        "path": "protocol/requirements/reviewed-v1.json",
+        "sha256": "59889007b473904c4c0704f4d6ed5bea65db7db921b1ddc9272c3c6340fbac6f"
+      },
+      {
+        "path": "protocol/requirements/section14-v1.json",
+        "sha256": "f6996c8b4331ccd960c3d106abb57a044e313d30445dadaceb0e3e7107b0decc"
+      },
+      {
+        "path": "protocol/requirements/generated/requirements-v1.json",
+        "sha256": "fe2d7a8e2154154d519d067d77e1181caf4cdb34ac11f60a24399c20575f66ce"
+      },
+      {
+        "path": "Cargo.lock",
+        "sha256": "e26d919c14529b890d0a6695c21a651e4c357045b8062a56e6c2b44d84f99436"
+      },
+      {
+        "path": "fuzz/Cargo.lock",
+        "sha256": "5922cc323286e0a166d53696a9c737f711492e76b5cf0ad473a8e4995bc500dc"
+      }
+    ]
+  },
+  "drift_review": {
+    "specification_commits_reviewed": 2,
+    "requirements_before": {
+      "count": 635,
+      "clauses": 919
+    },
+    "requirements_after": {
+      "count": 635,
+      "clauses": 919
+    },
+    "added_requirements": [],
+    "changed_requirement_bodies": [
+      "GNT-13.3",
+      "GNT-6.2c",
+      "GNT-6.2j"
+    ],
+    "removed_requirements": [],
+    "profile_applicability": [
+      {
+        "profile": "analyzer",
+        "before_covered": 576,
+        "before_not_applicable": 190,
+        "after_covered": 576,
+        "after_not_applicable": 190,
+        "after_planned": 0,
+        "outcome": "all reviewed clauses are covered with evidence or not applicable with none"
+      },
+      {
+        "profile": "concurrent-evaluator",
+        "before_covered": 330,
+        "before_not_applicable": 9,
+        "after_covered": 330,
+        "after_not_applicable": 9,
+        "after_planned": 0,
+        "outcome": "all reviewed clauses are covered with evidence or not applicable with none"
+      },
+      {
+        "profile": "durable-runtime",
+        "before_covered": 363,
+        "before_not_applicable": 16,
+        "after_covered": 363,
+        "after_not_applicable": 16,
+        "after_planned": 0,
+        "outcome": "all reviewed clauses are covered with evidence or not applicable with none"
+      },
+      {
+        "profile": "embedding",
+        "before_covered": 307,
+        "before_not_applicable": 51,
+        "after_covered": 307,
+        "after_not_applicable": 51,
+        "after_planned": 0,
+        "outcome": "all reviewed clauses are covered with evidence or not applicable with none"
+      },
+      {
+        "profile": "evaluator",
+        "before_covered": 323,
+        "before_not_applicable": 16,
+        "after_covered": 323,
+        "after_not_applicable": 16,
+        "after_planned": 0,
+        "outcome": "all reviewed clauses are covered with evidence or not applicable with none"
+      },
+      {
+        "profile": "frontend",
+        "before_covered": 59,
+        "before_not_applicable": 16,
+        "after_covered": 59,
+        "after_not_applicable": 16,
+        "after_planned": 0,
+        "outcome": "all reviewed clauses are covered with evidence or not applicable with none"
+      }
+    ],
+    "reviewed_categories": [
+      "declaration semantics",
+      "requirement drift and body identity",
+      "profile applicability",
+      "section 14 excerpt coverage",
+      "publication identity"
+    ],
+    "outcome": "Reviewed the accumulated drift from the superseded revision: three requirement bodies changed (the carrier declaration, its affine exclusion, and the grammar production), no requirement was added or removed, and every profile row stays covered-with-evidence or not-applicable-with-none."
+  },
+  "section14_review": {
+    "excerpt_count_before": 51,
+    "excerpt_count_after": 51,
+    "states": [
+      "covered"
+    ],
+    "every_excerpt_has_evidence": true,
+    "outcome": "Every retained Section 14 excerpt is still covered with executable evidence; the revision adds no excerpt and removes none."
+  },
+  "qualification": {
+    "scope": "Bounded carrier-declaration candidate: the affine live_resource struct declaration, its three seeds, source-construction refusal, the machine carrier over the registry slot, and the derived requirement and publication recut.",
+    "lanes": [
+      {
+        "lane": "gantry-runtime",
+        "result": "pass"
+      },
+      {
+        "lane": "analyzer_types",
+        "result": "pass"
+      },
+      {
+        "lane": "parser_frontend",
+        "result": "pass"
+      },
+      {
+        "lane": "diagnostic_code_registry",
+        "result": "pass"
+      },
+      {
+        "lane": "requirements_ledger",
+        "result": "pass"
+      },
+      {
+        "lane": "async_execution_gate",
+        "result": "pass"
+      },
+      {
+        "lane": "async_execution_conformance",
+        "result": "pass"
+      },
+      {
+        "lane": "async_cancellation",
+        "result": "pass"
+      },
+      {
+        "lane": "native_source_concurrency_gate",
+        "result": "pass"
+      }
+    ],
+    "commands": [
+      {
+        "command": "cargo test -p gantry-runtime --all-features",
+        "result": "372 passed, 0 failed"
+      },
+      {
+        "command": "cargo test -p gantry-conformance --all-features --test analyzer_types",
+        "result": "175 passed, 0 failed"
+      },
+      {
+        "command": "cargo test -p gantry-conformance --all-features --test parser_frontend",
+        "result": "21 passed, 0 failed"
+      },
+      {
+        "command": "cargo test -p gantry-conformance --all-features --test diagnostic_code_registry",
+        "result": "1 passed, 0 failed"
+      },
+      {
+        "command": "cargo test -p gantry-conformance --all-features --test requirements_ledger",
+        "result": "2 passed, 0 failed"
+      },
+      {
+        "command": "cargo test -p gantry-conformance --all-features --test async_execution_gate",
+        "result": "3 passed, 0 failed"
+      },
+      {
+        "command": "cargo test -p gantry-conformance --all-features --test async_execution_conformance",
+        "result": "2 passed, 0 failed"
+      },
+      {
+        "command": "cargo test -p gantry-conformance --all-features --test async_cancellation",
+        "result": "1 passed, 0 failed"
+      },
+      {
+        "command": "cargo test -p gantry-conformance --all-features --test native_source_concurrency_gate",
+        "result": "3 passed, 0 failed"
+      },
+      {
+        "command": "cargo run -p xtask -- check generated",
+        "result": "rc 0"
+      },
+      {
+        "command": "python3 governance/audit_spec_revision.py",
+        "result": "rc 0, mismatch_count 0"
+      },
+      {
+        "command": "cargo fmt --all --check",
+        "result": "rc 0"
+      },
+      {
+        "command": "just clippy",
+        "result": "rc 0"
+      }
+    ],
+    "publication": {
+      "member_count": 7,
+      "identity_at_currency_repair_parent": "a6ee59559dbec81ed4e14c33eeec58dd6890ca2469d708ce9140a8ad87e66a6a",
+      "identity_note": "The seven-artifact publication set and the verification report were regenerated from the reviewed requirement inventory; the identity is the regenerated set identity, not a substituted digest.",
+      "verification": "protocol/publication/verification-v1.json regenerated by the governed protocol generator on the candidate"
+    }
+  },
+  "gaps": [
+    "The machine carrier is not yet consumed by a family adapter, the settlement service, or an off-worker cleanup cut.",
+    "Registry-owned retention across loss of the caller binding, and physical cleanup of a discarded binding, remain with the consumer slice.",
+    "Adoption identities are re-identified for the new revision with the behavioural gates re-run; they are not a fresh adoption verdict for unrelated async or generics work.",
+    "Full workspace, release packaging, and preregistered application runs were not executed in this slice."
   ],
-  "tree_sha": "36f66d4449942271cdc0ec165890bc414f4c3278"
- },
- "drift_review": {
-  "specification_commits_reviewed": 213,
-  "requirements_before": {
-   "count": 625,
-   "clauses": 909
-  },
-  "requirements_after": {
-   "count": 635,
-   "clauses": 919
-  },
-  "added_requirements": [
-   {
-    "id": "GNT-28.11-runtime-admission-mapping",
-    "clauses": 1,
-    "profile_reviews": [
-     "analyzer:not-applicable",
-     "concurrent-evaluator:not-applicable",
-     "durable-runtime:not-applicable",
-     "embedding:not-applicable",
-     "evaluator:not-applicable"
-    ]
-   },
-   {
-    "id": "GNT-28.12-operation-state-projection",
-    "clauses": 1,
-    "profile_reviews": [
-     "analyzer:not-applicable",
-     "concurrent-evaluator:not-applicable",
-     "durable-runtime:not-applicable",
-     "embedding:not-applicable",
-     "evaluator:not-applicable"
-    ]
-   },
-   {
-    "id": "GNT-40.8-numeric-module-names",
-    "clauses": 1,
-    "profile_reviews": [
-     "analyzer:covered"
-    ]
-   },
-   {
-    "id": "GNT-41.12-text-module-names",
-    "clauses": 1,
-    "profile_reviews": [
-     "analyzer:covered"
-    ]
-   },
-   {
-    "id": "GNT-48.0-observe-foundation-scope",
-    "clauses": 1,
-    "profile_reviews": [
-     "analyzer:covered"
-    ]
-   },
-   {
-    "id": "GNT-48.1-observe-modules-and-item-rows",
-    "clauses": 1,
-    "profile_reviews": [
-     "analyzer:covered"
-    ]
-   },
-   {
-    "id": "GNT-49.0-environment-foundation-scope",
-    "clauses": 1,
-    "profile_reviews": [
-     "analyzer:covered"
-    ]
-   },
-   {
-    "id": "GNT-49.1-environment-modules-and-item-rows",
-    "clauses": 1,
-    "profile_reviews": [
-     "analyzer:covered"
-    ]
-   },
-   {
-    "id": "GNT-50.0-random-foundation-scope",
-    "clauses": 1,
-    "profile_reviews": [
-     "analyzer:covered"
-    ]
-   },
-   {
-    "id": "GNT-50.1-random-modules-and-item-rows",
-    "clauses": 1,
-    "profile_reviews": [
-     "analyzer:covered"
-    ]
-   }
-  ],
-  "changed_requirement_bodies": [
-   "GNT-2.1",
-   "GNT-20.1-operation-kinds",
-   "GNT-20.3-receiver-loan-and-ownership-transfer",
-   "GNT-20.5-interruption-cancellation-and-late-completion",
-   "GNT-20.7-resource-state-after-failure-and-poisoning",
-   "GNT-20.8-half-close-and-post-failure-ownership",
-   "GNT-20.9-deduplication-retention-and-compaction",
-   "GNT-20.10-retirement-and-stale-owner-fencing",
-   "GNT-28.0-resource-accounting-and-lifetime-contract",
-   "GNT-28.10-resource-accounting-non-claims",
-   "GNT-3-M-CONTEXT-SCOPE",
-   "GNT-3.6",
-   "GNT-47.14-filesystem-durable-carriers",
-   "GNT-5.16",
-   "GNT-5.17"
-  ],
-  "removed_requirements": [],
-  "profile_applicability": [
-   {
-    "profile": "analyzer",
-    "before_covered": 568,
-    "before_not_applicable": 188,
-    "after_covered": 576,
-    "after_not_applicable": 190,
-    "after_planned": 0,
-    "outcome": "closed"
-   },
-   {
-    "profile": "concurrent-evaluator",
-    "before_covered": 330,
-    "before_not_applicable": 7,
-    "after_covered": 330,
-    "after_not_applicable": 9,
-    "after_planned": 0,
-    "outcome": "closed"
-   },
-   {
-    "profile": "durable-runtime",
-    "before_covered": 363,
-    "before_not_applicable": 14,
-    "after_covered": 363,
-    "after_not_applicable": 16,
-    "after_planned": 0,
-    "outcome": "closed"
-   },
-   {
-    "profile": "embedding",
-    "before_covered": 307,
-    "before_not_applicable": 49,
-    "after_covered": 307,
-    "after_not_applicable": 51,
-    "after_planned": 0,
-    "outcome": "closed"
-   },
-   {
-    "profile": "evaluator",
-    "before_covered": 323,
-    "before_not_applicable": 14,
-    "after_covered": 323,
-    "after_not_applicable": 16,
-    "after_planned": 0,
-    "outcome": "closed"
-   },
-   {
-    "profile": "frontend",
-    "before_covered": 59,
-    "before_not_applicable": 16,
-    "after_covered": 59,
-    "after_not_applicable": 16,
-    "after_planned": 0,
-    "outcome": "closed"
-   }
-  ],
-  "reviewed_categories": [
-   "execution counter, yield, and ownership publication hardening",
-   "operation identity, settlement, deduplication, and stale-owner fencing",
-   "resource accounting, recovery projection, retirement, and atomic charge admission",
-   "filesystem durable carriers, partial progress, and replacement outcome vocabulary",
-   "protected operations, live-resource modifier, and runtime admission mapping",
-   "observe, environment, and random foundation scope and module rows",
-   "standard-library numeric and text module naming clauses",
-   "Section 28 runtime-only applicability correction under defect 9817a2c3"
-  ],
-  "outcome": "Eight added blocks are analyzer-covered naming, admission-mapping, observe, environment, or random scope text. The two Section 28 runtime clauses added by the drift, GNT-28.11 and GNT-28.12, are declared applicable to analyzer plus the four runtime and embedding profiles and reviewed not-applicable for every one of them, because Section 28 Applicability restricts them to a runtime profile that separately declares a resource registry and no profile in this repository declares one; defect 9817a2c3 corrects their inherited analyzer-covered mapping. No profile gained a planned, in-progress, or unresolved review, no previously covered profile lost applicable coverage, and the fifteen changed bodies reclassify no profile clause. The accumulated drift therefore leaves six-profile applicability closed."
- },
- "section14_review": {
-  "excerpt_count_before": 51,
-  "excerpt_count_after": 51,
-  "states": [
-   "covered"
-  ],
-  "every_excerpt_has_evidence": true,
-  "outcome": "No Section 14 excerpt was removed, unclassified, or left without evidence across the drift window; all fifty-one remain covered with evidence."
- },
- "qualification": {
-  "scope": "Currency of the existing verified async and generics six-profile adoption at this candidate. No new behaviour, normative text, or profile scope is qualified; the evidence is re-executed at the candidate and the applicability review above confirms the classifications still close.",
-  "lanes": [
-   {
-    "lane": "analyzer_gate",
-    "result": "pass"
-   },
-   {
-    "lane": "async_cancellation",
-    "result": "pass"
-   },
-   {
-    "lane": "async_contract_gate",
-    "result": "pass"
-   },
-   {
-    "lane": "async_execution_conformance",
-    "result": "pass"
-   },
-   {
-    "lane": "async_execution_gate",
-    "result": "pass"
-   },
-   {
-    "lane": "async_publication",
-    "result": "pass"
-   },
-   {
-    "lane": "async_source_lowering",
-    "result": "pass"
-   },
-   {
-    "lane": "combined_gate",
-    "result": "pass"
-   },
-   {
-    "lane": "concurrent_gate",
-    "result": "pass"
-   },
-   {
-    "lane": "durable_gate",
-    "result": "pass"
-   },
-   {
-    "lane": "foundation_gate",
-    "result": "pass"
-   },
-   {
-    "lane": "frontend_gate",
-    "result": "pass"
-   },
-   {
-    "lane": "general_purpose_foundation_gate",
-    "result": "pass"
-   },
-   {
-    "lane": "general_purpose_milestone_gate",
-    "result": "pass"
-   },
-   {
-    "lane": "general_purpose_preregistration_gate",
-    "result": "pass"
-   },
-   {
-    "lane": "generics_conformance_gate",
-    "result": "pass"
-   },
-   {
-    "lane": "native_source_concurrency_gate",
-    "result": "pass"
-   },
-   {
-    "lane": "publication_set",
-    "result": "pass"
-   },
-   {
-    "lane": "sequential_gate",
-    "result": "pass"
-   },
-   {
-    "lane": "source_substrate_gate",
-    "result": "pass"
-   }
-  ],
-  "commands": [
-   {
-    "command": "cargo fmt --all --check",
-    "result": "clean"
-   },
-   {
-    "command": "timeout 1500 just check",
-    "result": "exit 0"
-   },
-   {
-    "command": "timeout 1800 just clippy",
-    "result": "exit 0"
-   },
-   {
-    "command": "timeout 1200 cargo run --locked -q -p xtask -- check generated",
-    "result": "exit 0; conformance manifest and corpus, protocol catalog, seven-artifact publication set, protocol bindings, requirement inventory and Unicode tables current"
-   },
-   {
-    "command": "timeout 1200 cargo run --locked -q -p xtask -- check workspace",
-    "result": "exit 0"
-   },
-   {
-    "command": "python3 governance/audit_spec_revision.py",
-    "result": "0 of 14 revision bindings mismatched, down from 5 at the base commit"
-   },
-   {
-    "command": "two consecutive generate requirements plus generate protocol passes",
-    "result": "identical git diff fingerprints; requirements already current and protocol bindings already current on the second pass"
-   },
-   {
-    "command": "timeout 2400 just test",
-    "result": "2 failing targets from 22 at base; both byte-identical to base and recorded in gaps"
-   },
-   {
-    "command": "the twenty conformance lanes above, run at this candidate",
-    "result": "all pass"
-   }
-  ],
-  "publication": {
-   "member_count": 7,
-   "identity_at_currency_repair_parent": "3605bcda248dadb42fd545a7c1ab52becdae90932b1c8876874caf2a9ae12bf8",
-   "identity_note": "Adding this retained record necessarily changes the publication identity. The identity above is the parent publication set; current index, report, and snapshot coherence is enforced by the publication_set and async_publication lanes.",
-   "verification": "publication_set and async_publication lanes pass; index, report, and published SPEC identities agree with current bytes"
-  }
- },
- "gaps": [
-  "general_purpose_preregistration reads untracked docs/reference/general-purpose-refactor-issue-plan.md, absent from the worktree and the main checkout and excluded from commits by policy; it fails with No such file or directory before and after this change and is not a pass.",
-  "cargo run --locked -q -p xtask -- check governance and the xtask governance unit test cannot resolve cargo metadata because windows-link 0.2.1 is uncached and the registry cache is read-only; this is an environment limit, not a pass.",
-  "Release readiness, release-matrix, and async-adoption verifiers still fail on stale release records; those records are owned by REL-REFRESH 086a419b and were not rebound by this repair.",
-  "Hosted macOS and alternate-architecture lanes were not executed; no platform qualification is claimed.",
-  "The adoption verdict is currency of the previously verified six-profile scope with re-executed evidence, not a claim of new async or generics behaviour evidence."
- ],
- "successors": [
-  {
-   "path": "crates/gantry-conformance/tests/async_cancellation.rs",
-   "sha256": "eafe4785a91eb8d43d653b9a16884344fa8c8ee1e942828efdf9960f74fbc964"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/async_execution_conformance.rs",
-   "sha256": "64640f8d67dba8225522f1fa290b91c8f50255e9e16524358de231a1c0e741d3"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/async_execution_gate.rs",
-   "sha256": "455d1fbf097e13abda0019f496b0def2a3bc70b98888434fe7b36f93ea8f07bd"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/native_source_concurrency_gate.rs",
-   "sha256": "582d5d598106a8417da5265194c226f89ea1eacbb486f02e8bb550d68176aaed"
-  },
-  {
-   "path": "crates/gantry-conformance/tests/specification_currency_qualification.rs",
-   "sha256": "5079dd44b2a1ef4b1fe4e73c90573a63c3df2e135cb026e12abd7e3fdd001429"
-  },
-  {
-   "path": "protocol/conformance/analyzer-gate-v1.json",
-   "sha256": "60d2a2b736289cac05c5d5ae657a886fb2e37d6aa2caf68186d0ea896c2d8840"
-  },
-  {
-   "path": "protocol/conformance/async-cancellation-v1.json",
-   "sha256": "d73d309c8dcf370a6aac1c82b4033b8ff36b403ca9ec993c56d1dc2841a499c3"
-  },
-  {
-   "path": "protocol/conformance/async-execution-adoption-v1.json",
-   "sha256": "79247224ab791e3e2696a744b4630d66786d825e10caa24f56ff57e93723207f"
-  },
-  {
-   "path": "protocol/conformance/async-execution-conformance-v1.json",
-   "sha256": "f27989f543ff3a3186a9371348606c2a475f4185770b65c1742260e3652fd4fe"
-  },
-  {
-   "path": "protocol/conformance/async-execution-contract-v1.json",
-   "sha256": "626658ff27952c7569cd0e34f7764cbc0ef5bb851f98371d4ee5bf4adc58003c"
-  },
-  {
-   "path": "protocol/conformance/async-execution-gate-v1.json",
-   "sha256": "1ece7d6994d96d399582618fc9bd75b3764ec5caa13e869d4278c48268c778ab"
-  },
-  {
-   "path": "protocol/conformance/async-source-lowering-v1.json",
-   "sha256": "2ab53bda3be6cfbd4e6648d48c1490d0a82651cc02eb482e8fbc593b39229f0f"
-  },
-  {
-   "path": "protocol/conformance/combined-gate-v1.json",
-   "sha256": "20a165b9deae0917f4d8541eb5be95a41e17ccde9d46672545a28411f51cb113"
-  },
-  {
-   "path": "protocol/conformance/concurrent-gate-v1.json",
-   "sha256": "a93771893d0d1c5d0d9016557aeb4bed7daceabe8975b78d95d9fd81f38e550c"
-  },
-  {
-   "path": "protocol/conformance/corpus-index-v1.json",
-   "sha256": "f59cb9a2524a9874e7847af603927deb859214e60869556fddbb07b92c8799b4"
-  },
-  {
-   "path": "protocol/conformance/durable-gate-v1.json",
-   "sha256": "94687e41a18f0bf40edb78b046faa856d522264f4ef8b0c638fdd392ce17f4c8"
-  },
-  {
-   "path": "protocol/conformance/foundation-v1.json",
-   "sha256": "6540364b9adcc3b756ae305941cdfafd7fd0e69cf01fe6f3f083c9522c40d32d"
-  },
-  {
-   "path": "protocol/conformance/frontend-gate-v1.json",
-   "sha256": "6ce32c8446ec65d985dd14b2ab2299bfa7c37ab24105a43675e59e33e629a4de"
-  },
-  {
-   "path": "protocol/conformance/general-purpose-foundation-gate-v1.json",
-   "sha256": "c61f96782e47b56f322aa2676f77adc6fa908bcfc271884db7e7dc90ca83f2ae"
-  },
-  {
-   "path": "protocol/conformance/general-purpose-milestone-gate-v1.json",
-   "sha256": "70ac14a3bf4d813ea7197222a5c400a95701d92bf99ca040d1adc7d6ddc71204"
-  },
-  {
-   "path": "protocol/conformance/general-purpose-preregistration-gate-v1.json",
-   "sha256": "c5d84a5f83438d5af0a747a3624db8611af21beca3d5ebda5e47a9718c1ae35c"
-  },
-  {
-   "path": "protocol/conformance/generics-traits-adoption-v1.json",
-   "sha256": "93b5e9dbeba1fe7e6297f810a5b511159521dd74d1def6e04a0d2aa5e448dc8d"
-  },
-  {
-   "path": "protocol/conformance/generics-traits-analyzer-gate-v1.json",
-   "sha256": "ce290f49e0c52cf5441b9a5dae0ede0e10bffeff6c1b2724d509ae002e7da72f"
-  },
-  {
-   "path": "protocol/conformance/generics-traits-conformance-v1.json",
-   "sha256": "1eef1a00f1734dfa57c2abb52c5832f0b507c941f918a4ffee5b11f98148839f"
-  },
-  {
-   "path": "protocol/conformance/manifest-v1.json",
-   "sha256": ""
-  },
-  {
-   "path": "protocol/conformance/native-source-concurrency-gate-v1.json",
-   "sha256": "33eef1ea497d0bcc4c0f2e4bafbd0902258b0d189da6ffb98dc0c0b6180b3f8f"
-  },
-  {
-   "path": "protocol/conformance/sequential-gate-v1.json",
-   "sha256": "b384892a0dc7176cd3d7c239d067cd0abe196831b55eb6c43baba648f8597c32"
-  },
-  {
-   "path": "protocol/conformance/source-join-v1.json",
-   "sha256": "1b4ddff192263dc28a984b9b006d1e907ca3cc0c6e590f408330e06eb1d5e05e"
-  },
-  {
-   "path": "protocol/conformance/source-spawn-v1.json",
-   "sha256": "dc6833ba10628522b78daf05e35e59699e8a6065bbd776633813087895166db2"
-  },
-  {
-   "path": "protocol/conformance/source-substrate-gate-v1.json",
-   "sha256": "cb49f43126aeae943f34dae36433eb2a51228ef3aa5dc2d6b973e4fca875461e"
-  },
-  {
-   "path": "protocol/conformance/specification-currency-qualification-v1.json",
-   "sha256": ""
-  },
-  {
-   "path": "protocol/publication/index-v1.json",
-   "sha256": ""
-  },
-  {
-   "path": "protocol/publication/v1/SPEC.md",
-   "sha256": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60"
-  },
-  {
-   "path": "protocol/publication/v1/gantry.authoring.json",
-   "sha256": "2375208ed8d49916acfbf56f1af561f83388ea987f1b5ea39076c14104ff3b19"
-  },
-  {
-   "path": "protocol/publication/v1/gantry.conformance.json",
-   "sha256": ""
-  },
-  {
-   "path": "protocol/publication/v1/gantry.embedding.json",
-   "sha256": "f382870be3d3bdf2ef20870bffd2f19d1b8c8e86aebeb73b3ec9938ecb51df6d"
-  },
-  {
-   "path": "protocol/publication/v1/gantry.ir.json",
-   "sha256": "d7bf3925fc31365a75833170309b8330d5528dc5ac38b53d8ee7c346aa95674f"
-  },
-  {
-   "path": "protocol/publication/v1/gantry.journal.json",
-   "sha256": "1dbe621329647a6fdca6d2b725b32d9fbb51c398a91449646635722d2c45cc7e"
-  },
-  {
-   "path": "protocol/publication/v1/gantry.values.json",
-   "sha256": "8e7b766a0ffd1e43ee05958c8a24265f2acd626f62f307ebdf4dbf1c754b8993"
-  },
-  {
-   "path": "protocol/publication/verification-v1.json",
-   "sha256": ""
-  },
-  {
-   "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "8a9a9207cbd7fc161af4fd7dcb79d4946b491b1c59fe28fe37360387713e6494"
-  },
-  {
-   "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "e035d81ee143cea3487320dcbfb49385b51dc0ef2304d53bd3c366b831c9e08b"
-  }
- ]
+  "successors": [
+    {
+      "path": "protocol/conformance/manifest-v1.json",
+      "sha256": "859e3badf64d5f53153efb392370a5dbd5fb379bca4b754d4035598632c7dc95"
+    },
+    {
+      "path": "protocol/publication/index-v1.json",
+      "sha256": "eca4429311f6f8233be7211fb1df8e765f55b98dc27b48d7605693fb11e86d68"
+    },
+    {
+      "path": "protocol/publication/v1/gantry.conformance.json",
+      "sha256": "3976360d8557e6a346ec9d1269c8db92a17dc58b1929036593ac28af835d2a5d"
+    },
+    {
+      "path": "protocol/publication/verification-v1.json",
+      "sha256": "956d8e80956c27b8aa2f257c88132f6ba310adc89555b4fb5dc81ac82a2c8f8a"
+    },
+    {
+      "path": "protocol/conformance/specification-currency-qualification-v1.json",
+      "sha256": ""
+    }
+  ]
 }
