@@ -22,6 +22,9 @@ into the product dependency graph.
 `upstream-contract-decisions.md` records successor ownership, common-I/O
 sequencing, benchmark measurement policy, and the unmodified qualification
 boundary. It is a planning addendum, not normative semantics or release evidence.
+`issue-resolution-decisions-v1.md` records the delegated design choices and
+dependency-ready slices that follow that ownership assignment. It is not a
+replacement for normative clauses, implementation or candidate qualification.
 Run `python3 governance/audit_spec_revision.py` to report SPEC revision mismatches
 without changing any input. Its regression tests run with
 `timeout 120s python3 -B -m unittest discover -s governance -p 'test_*.py'`.

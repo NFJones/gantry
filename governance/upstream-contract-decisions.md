@@ -89,3 +89,13 @@ changes a release record or enables a release claim.
 This addendum resolves ownership and ordering choices only. Normative family
 sections, runtime adapters, representative applications, and independent
 qualification remain concrete work, not implicit completed Phase 2–4 features.
+
+## Subsequent delegated design decisions
+
+`issue-resolution-decisions-v1.md` records the subsequent vocabulary, bounded
+candidate, resource/I/O, family, tooling, identity and evaluation decisions.
+Its accepted design choices supersede earlier unspecified owner-choice deferrals;
+they do not make proposed clauses normative or supply implementation evidence,
+qualification, publication or release adoption. In particular, the original
+ownership table did not approve names; the later record selects names for the
+owning issues to author and review.
