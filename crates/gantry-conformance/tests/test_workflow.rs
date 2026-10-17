@@ -10,6 +10,7 @@ use std::fs;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::pin;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::task::{Context, Poll, Waker};
 
@@ -17,6 +18,7 @@ use gantry::host::contracts::{
     FreshIdentityAllocator, HostError, HostFuture, IdentitySource, UtcClock,
 };
 use gantry::ir::toolchain::BudgetUnit;
+use gantry::ir::{TestKind, TestSubstitution};
 use gantry::portable::{
     IdentityKind, PORTABLE_SPECIFICATION_REVISION, PROTOCOL_FAMILY_DEFINITIONS,
 };
@@ -56,21 +58,36 @@ impl Drop for TempDirectory {
     }
 }
 
-/// One deterministic fresh identity source.
+/// One deterministic fresh identity source that records every requested kind.
 struct SequentialIdentities {
     next: AtomicU64,
+    calls: Mutex<Vec<IdentityKind>>,
 }
 
 impl Default for SequentialIdentities {
     fn default() -> Self {
         Self {
             next: AtomicU64::new(1),
+            calls: Mutex::new(Vec::new()),
         }
     }
 }
 
+impl SequentialIdentities {
+    /// Returns the identity kinds requested so far, in request order.
+    fn calls(&self) -> Vec<IdentityKind> {
+        self.calls
+            .lock()
+            .map(|calls| calls.clone())
+            .unwrap_or_default()
+    }
+}
+
 impl IdentitySource for SequentialIdentities {
-    fn fresh_material(&self, _kind: IdentityKind) -> Result<[u8; 32], HostError> {
+    fn fresh_material(&self, kind: IdentityKind) -> Result<[u8; 32], HostError> {
+        if let Ok(mut calls) = self.calls.lock() {
+            calls.push(kind);
+        }
         let value = self.next.fetch_add(1, Ordering::Relaxed);
         let mut material = [0_u8; 32];
         material[..8].copy_from_slice(&value.to_be_bytes());
@@ -131,13 +148,13 @@ fn policy(maximum_transitions: u64) -> TestWorkflowPolicy {
     .unwrap_or_else(|_| unreachable!("valid policy"))
 }
 
-/// Runs one workflow request against one package root.
-fn run_workflow(
+/// Runs one workflow request against one package root and returns its identity requests.
+fn run_workflow_with_identities(
     package_root: &Path,
     policy: &TestWorkflowPolicy,
     identity: &TestWorkflowIdentity,
     declarations: TestWorkflowDeclarations<'_>,
-) -> TestWorkflowReport {
+) -> (TestWorkflowReport, Vec<IdentityKind>) {
     let selection = selection();
     let allocator = FreshIdentityAllocator::default();
     let identities = SequentialIdentities::default();
@@ -155,7 +172,18 @@ fn run_workflow(
         policy,
         declarations,
     };
-    block_on(run_test_workflow(services, request))
+    let report = block_on(run_test_workflow(services, request));
+    (report, identities.calls())
+}
+
+/// Runs one workflow request against one package root.
+fn run_workflow(
+    package_root: &Path,
+    policy: &TestWorkflowPolicy,
+    identity: &TestWorkflowIdentity,
+    declarations: TestWorkflowDeclarations<'_>,
+) -> TestWorkflowReport {
+    run_workflow_with_identities(package_root, policy, identity, declarations).0
 }
 
 /// Returns one package root that does not exist, proving a refusal dispatched no frontend stage.
@@ -194,7 +222,11 @@ fn clean_unit_completion_publishes_one_ordered_zero_authority_report() {
     assert_eq!(report.format(), "gantry.test-workflow/v1");
     assert_eq!(report.report_version(), TEST_WORKFLOW_REPORT_VERSION);
     assert_eq!(report.report_version(), 1);
-    assert_eq!(report.selection().kind().wire_name(), "unit");
+    assert_eq!(report.selection().kind(), Some(TestKind::Unit));
+    assert_eq!(
+        report.selection().kind().map(|kind| kind.wire_name()),
+        Some("unit")
+    );
     assert!(report.selection().substitutions().is_empty());
     assert_eq!(report.selection().jobs(), TEST_WORKFLOW_JOBS);
     assert_eq!(report.selection().entry(), Some("crate::main"));
@@ -222,7 +254,11 @@ fn clean_unit_completion_publishes_one_ordered_zero_authority_report() {
     assert_eq!(report.package().map(|package| package.files()), Some(1));
     assert_eq!(report.package().map(|package| package.bytes()), Some(12));
     assert_eq!(
-        report.identity().toolchain(),
+        report.identity().map(TestWorkflowIdentity::toolchain),
+        Some(TEST_WORKFLOW_TOOLCHAIN_IDENTITY)
+    );
+    assert_eq!(
+        report.expected_identity().toolchain(),
         TEST_WORKFLOW_TOOLCHAIN_IDENTITY
     );
     assert_eq!(report.policy().maximum_transitions(), 100);
@@ -412,6 +448,14 @@ fn stale_identity_expectations_refuse_at_preflight() {
     assert_eq!(refusal.stage(), TestWorkflowStage::Preflight);
     assert_eq!(refusal.code(), "identity-mismatch");
     assert_eq!(refusal.detail(), Some("toolchain"));
+    assert_eq!(
+        report.identity().map(TestWorkflowIdentity::toolchain),
+        Some(TEST_WORKFLOW_TOOLCHAIN_IDENTITY)
+    );
+    assert_eq!(
+        report.expected_identity().toolchain(),
+        "gantry/stale-toolchain"
+    );
     assert!(report.package().is_none());
 }
 
@@ -585,4 +629,103 @@ fn published_constants_pin_the_contract() {
         policy.output_ceiling_bytes(),
         TEST_WORKFLOW_OUTPUT_CEILING_BYTES
     );
+}
+
+#[test]
+fn one_clean_run_requests_one_frontend_activity_and_one_execution_identity() {
+    let package = TempDirectory::new(b"fn main() {}");
+    let (report, calls) = run_workflow_with_identities(
+        &package.0,
+        &policy(100),
+        &published_identity(),
+        TestWorkflowDeclarations::unit(),
+    );
+    assert_eq!(report.status(), TestWorkflowStatus::Clean);
+    let activities = calls
+        .iter()
+        .filter(|kind| **kind == IdentityKind::Activity)
+        .count();
+    let executions = calls
+        .iter()
+        .filter(|kind| **kind == IdentityKind::Execution)
+        .count();
+    assert_eq!(
+        activities, 1,
+        "one activity dispatch covers the two declared frontend stages"
+    );
+    assert_eq!(executions, 1, "one execution identity is admitted");
+    assert_eq!(
+        calls.first(),
+        Some(&IdentityKind::Activity),
+        "the frontend activity is the first identity the run requests"
+    );
+}
+
+#[test]
+fn unreachable_declarations_do_not_enter_the_admitted_inventory() {
+    let package =
+        TempDirectory::new(b"fn helper() { discard prompt \"x\" -> String; } fn main() {}");
+    let report = run_workflow(
+        &package.0,
+        &policy(100),
+        &published_identity(),
+        TestWorkflowDeclarations::unit(),
+    );
+    assert_eq!(report.status(), TestWorkflowStatus::Clean);
+    assert_eq!(
+        report.inventory().map(|inventory| inventory.effects()),
+        Some(0),
+        "the inventory is measured over the entry-reachable program"
+    );
+}
+
+#[test]
+fn refusal_reports_retain_observed_and_declared_facts() {
+    let missing = missing_package_root();
+    let observed = published_identity();
+
+    let non_unit = run_workflow(
+        &missing,
+        &policy(100),
+        &observed,
+        TestWorkflowDeclarations {
+            kind: "integration",
+            ..TestWorkflowDeclarations::unit()
+        },
+    );
+    assert_eq!(
+        non_unit.selection().kind(),
+        Some(TestKind::Integration),
+        "the refused declaration is retained rather than reported as unit"
+    );
+    assert_eq!(non_unit.declared().registry_inputs(), 0);
+    assert_eq!(non_unit.declared().authority_inputs(), 0);
+    assert_eq!(non_unit.declared().external_artifacts(), 0);
+
+    let substituted = run_workflow(
+        &missing,
+        &policy(100),
+        &observed,
+        TestWorkflowDeclarations {
+            substitutions: &["clock"],
+            ..TestWorkflowDeclarations::unit()
+        },
+    );
+    assert_eq!(
+        substituted.selection().substitutions().to_vec(),
+        vec![TestSubstitution::Clock]
+    );
+
+    let registry = run_workflow(
+        &missing,
+        &policy(100),
+        &observed,
+        TestWorkflowDeclarations {
+            registry_inputs: &["std.test", ""],
+            ..TestWorkflowDeclarations::unit()
+        },
+    );
+    assert_eq!(registry.declared().registry_inputs(), 2);
+    assert_eq!(registry.declared().authority_inputs(), 0);
+    assert_eq!(registry.declared().external_artifacts(), 0);
 }

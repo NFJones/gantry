@@ -101,12 +101,12 @@ pub use test_workflow::{
     TEST_WORKFLOW_FRONTEND_STAGES, TEST_WORKFLOW_JOBS, TEST_WORKFLOW_LANGUAGE_EDITION,
     TEST_WORKFLOW_OUTPUT_CEILING_BYTES, TEST_WORKFLOW_POLICY_REVISION, TEST_WORKFLOW_REPORT_FORMAT,
     TEST_WORKFLOW_REPORT_VERSION, TEST_WORKFLOW_STDLIB_CONTRACT, TEST_WORKFLOW_TOOLCHAIN_IDENTITY,
-    TestPolicyBound, TestWorkflowDeclarations, TestWorkflowDiagnostic, TestWorkflowFailure,
-    TestWorkflowFeatures, TestWorkflowIdentity, TestWorkflowIdentityError, TestWorkflowInventory,
-    TestWorkflowPackage, TestWorkflowPolicy, TestWorkflowPolicyError, TestWorkflowRefusal,
-    TestWorkflowReport, TestWorkflowRequest, TestWorkflowSelection, TestWorkflowServices,
-    TestWorkflowSpan, TestWorkflowStage, TestWorkflowStatus, TestWorkflowTargetClassification,
-    TestWorkflowTargetResult, run_test_workflow,
+    TestPolicyBound, TestWorkflowDeclarations, TestWorkflowDeclaredInputs, TestWorkflowDiagnostic,
+    TestWorkflowFailure, TestWorkflowFeatures, TestWorkflowIdentity, TestWorkflowIdentityError,
+    TestWorkflowInventory, TestWorkflowPackage, TestWorkflowPolicy, TestWorkflowPolicyError,
+    TestWorkflowRefusal, TestWorkflowReport, TestWorkflowRequest, TestWorkflowSelection,
+    TestWorkflowServices, TestWorkflowSpan, TestWorkflowStage, TestWorkflowStatus,
+    TestWorkflowTargetClassification, TestWorkflowTargetResult, run_test_workflow,
 };
 #[cfg(feature = "analyzer")]
 pub use validate::{

@@ -48,7 +48,9 @@ as `identity-mismatch` and the report names the disagreeing field.
 Admission then requires the analyzed entry-reachable program to have an empty effect inventory, an
 empty operation inventory, an empty live-resource inventory, and an empty authority ceiling. A
 non-empty inventory refuses; it is never downgraded to a warning. The report publishes the
-observed inventories so an empty set is evidence rather than an assumption.
+observed inventories so an empty set is evidence rather than an assumption. The inventory is
+measured over the admitted executable program: a package-wide declaration that no executed
+workflow reaches is not an effect of the run, is neither refused nor counted, and grants nothing.
 
 ## Bounds
 
@@ -63,8 +65,10 @@ toolchain budget-unit vocabulary, separate from the runtime step bound:
 | Runtime steps | labelled transitions | `--max-transitions` |
 
 A policy that declares fewer than two frontend stages cannot admit a test run, because the workflow
-refuses instead of dropping the analysis stage. The derived `FrontendLimits` are finite in every
-dimension; there is no unlimited frontend path in this workflow.
+refuses instead of dropping the analysis stage. One coordinator dispatch performs those two stages
+over one package snapshot, so a run neither parses the package twice nor executes a third stage.
+The derived `FrontendLimits` are finite in every dimension; there is no unlimited frontend path in
+this workflow.
 
 The report encoding ceiling is fixed by the contract at 1 MiB and cannot be raised by a caller. The
 reference CLI builds the whole document and checks its exact encoded length before writing the
@@ -88,12 +92,16 @@ by this slice.
 
 The `--json` document has format `gantry.test-workflow/v1` and report version 1. It carries:
 
-- `identity`: source-language version, specification and profile revisions, semantic mode, compiled
-  features, the published target descriptor, the standard-library contract, and the toolchain
-  identity;
+- `identity`: the observed source-language version, specification and profile revisions, semantic
+  mode, compiled features, the published target descriptor, the standard-library contract, and the
+  toolchain identity, or `null` when observation itself was refused;
+- `expected_identity`: the identity record the caller expected, so a refusal names both the
+  observed fact and the stale expectation;
 - `policy`: the declared revision, jobs, the three declared frontend bounds, the runtime step bound,
   and the output ceiling;
-- `selection`: declared kind, substitutions, jobs, and the admitted entry;
+- `selection`: the declared kind (or `null` for an unknown spelling), declared substitutions,
+  jobs, and the admitted entry;
+- `declared`: the bounded counts of declared registry, authority, and external-artifact inputs;
 - `package` and `inventory`: the observed bounded source package and the observed empty inventories;
 - `results`: one ordered result per admitted target, in canonical target-name order, with the
   outcome class, labelled steps, and any structured machine failure;
@@ -120,4 +128,5 @@ I/O, resolves no dependency, reads no registry, and grants no authority.
   `crates/gantry-cli/tests/goldens/test-unit-v1.json`.
 - Conformance lane `crates/gantry-conformance/tests/test_workflow.rs`: report shape and ordering,
   determinism, structured failure, payload-free diagnostics, preflight non-dispatch, stale identity,
-  policy revisions, entry selection, non-empty inventories, and step exhaustion.
+  refused-declaration retention, policy revisions, entry selection, non-empty inventories, one
+  frontend activity per run, entry-reachable inventory scope, and step exhaustion.

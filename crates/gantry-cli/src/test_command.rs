@@ -330,7 +330,13 @@ fn report_json(report: &TestWorkflowReport) -> Value {
         "format": report.format(),
         "report_version": report.report_version(),
         "status": report.status().wire_name(),
-        "identity": identity_json(report),
+        "identity": report.identity().map(identity_json),
+        "expected_identity": identity_json(report.expected_identity()),
+        "declared": {
+            "registry_inputs": report.declared().registry_inputs(),
+            "authority_inputs": report.declared().authority_inputs(),
+            "external_artifacts": report.declared().external_artifacts(),
+        },
         "policy": policy_json(report.policy()),
         "selection": selection_json(report),
         "package": report.package().map(|package| json!({
@@ -351,8 +357,7 @@ fn report_json(report: &TestWorkflowReport) -> Value {
 }
 
 /// Encodes the observed identity record.
-fn identity_json(report: &TestWorkflowReport) -> Value {
-    let identity = report.identity();
+fn identity_json(identity: &gantry::TestWorkflowIdentity) -> Value {
     let target = identity.target();
     let features = identity.features();
     json!({
@@ -406,7 +411,7 @@ fn bound_json(bound: TestPolicyBound) -> Value {
 fn selection_json(report: &TestWorkflowReport) -> Value {
     let selection = report.selection();
     json!({
-        "kind": selection.kind().wire_name(),
+        "kind": selection.kind().map(|kind| kind.wire_name()),
         "substitutions": selection
             .substitutions()
             .iter()
@@ -747,10 +752,12 @@ mod tests {
 
     /// Replaces the build- and host-bound identity facts with one stable marker.
     fn normalized_report(mut document: serde_json::Value) -> serde_json::Value {
-        document["identity"]["features"] = serde_json::json!("normalized");
-        document["identity"]["target"] = serde_json::json!("normalized");
-        document["identity"]["specification_revision"] = serde_json::json!("normalized");
-        document["identity"]["profile_revision"] = serde_json::json!("normalized");
+        for record in ["identity", "expected_identity"] {
+            document[record]["features"] = serde_json::json!("normalized");
+            document[record]["target"] = serde_json::json!("normalized");
+            document[record]["specification_revision"] = serde_json::json!("normalized");
+            document[record]["profile_revision"] = serde_json::json!("normalized");
+        }
         document
     }
 
@@ -801,6 +808,14 @@ mod tests {
         assert_eq!(
             document["identity"]["profile_revision"],
             gantry::PROFILE_SPECIFICATION_REVISION
+        );
+        assert_eq!(
+            document["expected_identity"]["toolchain"],
+            gantry::TEST_WORKFLOW_TOOLCHAIN_IDENTITY
+        );
+        assert_eq!(
+            document["expected_identity"]["toolchain"],
+            document["identity"]["toolchain"]
         );
         let target = expected_identity.target();
         assert_eq!(

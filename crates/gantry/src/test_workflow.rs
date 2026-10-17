@@ -977,19 +977,24 @@ impl TestWorkflowTargetResult {
     }
 }
 
-/// The declared and admitted run-plan selection of one report.
+/// The declared run-plan selection and, after admission, its selected entry.
+///
+/// The record retains what the caller declared even when preflight refuses it: a known kind is
+/// reported as its closed vocabulary member and an unknown spelling is reported as `None`, so a
+/// refusal never fabricates a unit selection. Substitutions are retained only as declared closed
+/// vocabulary members in canonical declaration order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TestWorkflowSelection {
-    kind: TestKind,
+    kind: Option<TestKind>,
     substitutions: Vec<TestSubstitution>,
     jobs: u64,
     entry: Option<Arc<str>>,
 }
 
 impl TestWorkflowSelection {
-    /// Returns the declared test kind.
+    /// Returns the declared test kind, or `None` when the declared spelling is not a known kind.
     #[must_use]
-    pub const fn kind(&self) -> TestKind {
+    pub const fn kind(&self) -> Option<TestKind> {
         self.kind
     }
 
@@ -1009,6 +1014,38 @@ impl TestWorkflowSelection {
     #[must_use]
     pub fn entry(&self) -> Option<&str> {
         self.entry.as_deref()
+    }
+}
+
+/// The bounded declared input counts of one report.
+///
+/// The workflow refuses every nonempty registry, authority, and external-artifact declaration, so
+/// a report retains only how many of each the caller declared rather than echoing arbitrary caller
+/// spellings.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TestWorkflowDeclaredInputs {
+    registry_inputs: u64,
+    authority_inputs: u64,
+    external_artifacts: u64,
+}
+
+impl TestWorkflowDeclaredInputs {
+    /// Returns the declared registry input count.
+    #[must_use]
+    pub const fn registry_inputs(&self) -> u64 {
+        self.registry_inputs
+    }
+
+    /// Returns the declared authority input count.
+    #[must_use]
+    pub const fn authority_inputs(&self) -> u64 {
+        self.authority_inputs
+    }
+
+    /// Returns the declared external-artifact count.
+    #[must_use]
+    pub const fn external_artifacts(&self) -> u64 {
+        self.external_artifacts
     }
 }
 
@@ -1116,9 +1153,11 @@ impl TestWorkflowStatus {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TestWorkflowReport {
     status: TestWorkflowStatus,
-    identity: TestWorkflowIdentity,
+    identity: Option<TestWorkflowIdentity>,
+    expected_identity: TestWorkflowIdentity,
     policy: TestWorkflowPolicy,
     selection: TestWorkflowSelection,
+    declared: TestWorkflowDeclaredInputs,
     inventory: Option<TestWorkflowInventory>,
     package: Option<TestWorkflowPackage>,
     results: Vec<TestWorkflowTargetResult>,
@@ -1152,10 +1191,16 @@ impl TestWorkflowReport {
         self.status.is_clean()
     }
 
-    /// Returns the preflighted identity record.
+    /// Returns the observed identity record, or `None` when observation itself was refused.
     #[must_use]
-    pub const fn identity(&self) -> &TestWorkflowIdentity {
-        &self.identity
+    pub const fn identity(&self) -> Option<&TestWorkflowIdentity> {
+        self.identity.as_ref()
+    }
+
+    /// Returns the identity record the caller expected the workflow to observe.
+    #[must_use]
+    pub const fn expected_identity(&self) -> &TestWorkflowIdentity {
+        &self.expected_identity
     }
 
     /// Returns the declared policy.
@@ -1168,6 +1213,12 @@ impl TestWorkflowReport {
     #[must_use]
     pub const fn selection(&self) -> &TestWorkflowSelection {
         &self.selection
+    }
+
+    /// Returns the bounded declared input counts.
+    #[must_use]
+    pub const fn declared(&self) -> TestWorkflowDeclaredInputs {
+        self.declared
     }
 
     /// Returns the observed inventory after admission.
@@ -1211,8 +1262,10 @@ impl TestWorkflowReport {
         Self {
             status: parts.status,
             identity: parts.identity,
+            expected_identity: parts.expected_identity,
             policy: parts.policy,
             selection: parts.selection,
+            declared: parts.declared,
             inventory: parts.inventory,
             package: parts.package,
             results: parts.results,
@@ -1227,12 +1280,16 @@ impl TestWorkflowReport {
 struct ReportParts {
     /// Complete judgment.
     status: TestWorkflowStatus,
-    /// Preflighted identity record.
-    identity: TestWorkflowIdentity,
+    /// Observed identity record, when observation succeeded.
+    identity: Option<TestWorkflowIdentity>,
+    /// Identity record the caller expected.
+    expected_identity: TestWorkflowIdentity,
     /// Declared policy.
     policy: TestWorkflowPolicy,
     /// Declared and admitted selection.
     selection: TestWorkflowSelection,
+    /// Bounded declared input counts.
+    declared: TestWorkflowDeclaredInputs,
     /// Observed inventory after admission.
     inventory: Option<TestWorkflowInventory>,
     /// Observed bounded source package.
@@ -1368,20 +1425,18 @@ pub async fn run_test_workflow(
     request: TestWorkflowRequest<'_>,
 ) -> TestWorkflowReport {
     let policy = request.policy.clone();
+    let declarations = request.declarations;
+    let expected_identity = request.expected_identity.clone();
     let preflighted = match preflight(&request) {
         Ok(preflighted) => preflighted,
         Err(refusal) => {
-            let jobs = policy.jobs();
             return TestWorkflowReport::assemble(ReportParts {
                 status: TestWorkflowStatus::Refused,
-                identity: request.expected_identity.clone(),
-                policy,
-                selection: TestWorkflowSelection {
-                    kind: TestKind::Unit,
-                    substitutions: Vec::new(),
-                    jobs,
-                    entry: None,
-                },
+                identity: observed_identity(&request),
+                expected_identity,
+                declared: declared_inputs(declarations),
+                policy: policy.clone(),
+                selection: declared_selection(policy.jobs(), declarations),
                 inventory: None,
                 package: None,
                 results: Vec::new(),
@@ -1399,54 +1454,15 @@ pub async fn run_test_workflow(
         services.clock,
         services.blocking,
     );
-    let limits = policy.frontend_limits();
-    let syntax = match coordinator
-        .validate(crate::ValidatePackageRequest {
-            package_root: request.package_root,
-            protocol_selection: request.protocol_selection,
-            frontend_limits: limits,
-            event_delivery: None,
-        })
-        .await
-    {
-        Ok(syntax) => syntax,
-        Err(error) => {
-            return test_report_refused(
-                identity,
-                policy,
-                plan,
-                TestWorkflowRefusal::new(
-                    TestWorkflowStage::Analysis,
-                    error.code(),
-                    REQUIREMENT_WORKFLOW,
-                    None,
-                ),
-            );
-        }
-    };
-    if syntax.phase.status() != crate::frontend::PackageSyntaxStatus::Valid {
-        return TestWorkflowReport::assemble(ReportParts {
-            status: TestWorkflowStatus::SourceInvalid,
-            identity,
-            policy: policy.clone(),
-            selection: selection(policy.jobs(), None, &plan),
-            inventory: None,
-            package: None,
-            results: Vec::new(),
-            refusal: None,
-            diagnostics: bounded_diagnostics(
-                syntax.phase.diagnostics(),
-                policy.diagnostics().limit(),
-            ),
-            arranged_width: 0,
-        });
-    }
+    // One coordinator call performs the two declared frontend stages in order: it validates
+    // package syntax and then, only for syntax-valid input, runs semantic analysis. The workflow
+    // therefore dispatches one activity and never parses the package twice for one run.
     let analysis = match coordinator
         .analyze(AnalyzePackageRequest {
             package_root: request.package_root,
             protocol_selection: request.protocol_selection,
             semantic_mode: SemanticMode::Portable,
-            frontend_limits: limits,
+            frontend_limits: policy.frontend_limits(),
             event_delivery: None,
         })
         .await
@@ -1455,8 +1471,9 @@ pub async fn run_test_workflow(
         Err(error) => {
             return test_report_refused(
                 identity,
+                expected_identity,
                 policy,
-                plan,
+                declarations,
                 TestWorkflowRefusal::new(
                     TestWorkflowStage::Analysis,
                     error.code(),
@@ -1469,9 +1486,11 @@ pub async fn run_test_workflow(
     if analysis.status != AnalyzePackageStatus::SourceValid {
         return TestWorkflowReport::assemble(ReportParts {
             status: TestWorkflowStatus::SourceInvalid,
-            identity,
+            identity: Some(identity),
+            expected_identity,
+            declared: declared_inputs(declarations),
             policy: policy.clone(),
-            selection: selection(policy.jobs(), None, &plan),
+            selection: declared_selection(policy.jobs(), declarations),
             inventory: None,
             package: None,
             results: Vec::new(),
@@ -1483,8 +1502,9 @@ pub async fn run_test_workflow(
     let Some(analyzed) = analysis.analysis.as_ref() else {
         return test_report_refused(
             identity,
+            expected_identity,
             policy,
-            plan,
+            declarations,
             TestWorkflowRefusal::new(
                 TestWorkflowStage::Analysis,
                 "missing-analysis-inventory",
@@ -1502,8 +1522,9 @@ pub async fn run_test_workflow(
     {
         return test_report_refused(
             identity,
+            expected_identity,
             policy,
-            plan,
+            declarations,
             TestWorkflowRefusal::new(
                 TestWorkflowStage::Analysis,
                 "source-identity-mismatch",
@@ -1515,12 +1536,13 @@ pub async fn run_test_workflow(
     let admitted = match admit_target(analyzed, &plan, &policy, services) {
         Ok(admitted) => admitted,
         Err((status, refusal)) => {
-            let jobs = policy.jobs();
             return TestWorkflowReport::assemble(ReportParts {
                 status,
-                identity,
-                policy,
-                selection: selection(jobs, None, &plan),
+                identity: Some(identity),
+                expected_identity,
+                declared: declared_inputs(declarations),
+                policy: policy.clone(),
+                selection: declared_selection(policy.jobs(), declarations),
                 inventory: None,
                 package,
                 results: Vec::new(),
@@ -1584,9 +1606,11 @@ pub async fn run_test_workflow(
             };
             return TestWorkflowReport::assemble(ReportParts {
                 status,
-                identity: identity.clone(),
+                identity: Some(identity.clone()),
+                expected_identity,
+                declared: declared_inputs(declarations),
                 policy: policy.clone(),
-                selection: selection(policy.jobs(), Some(admitted.name), &plan),
+                selection: admitted_selection(policy.jobs(), admitted.name),
                 inventory: Some(admitted.inventory),
                 package,
                 results,
@@ -1607,9 +1631,11 @@ pub async fn run_test_workflow(
     };
     TestWorkflowReport::assemble(ReportParts {
         status,
-        identity,
+        identity: Some(identity),
+        expected_identity,
+        declared: declared_inputs(declarations),
         policy: policy.clone(),
-        selection: selection(policy.jobs(), None, &plan),
+        selection: declared_selection(policy.jobs(), declarations),
         inventory: None,
         package,
         results: Vec::new(),
@@ -1691,45 +1717,7 @@ fn admit_target(
             ),
         ));
     };
-    let Some(entry_facts) = analyzed
-        .workflows()
-        .iter()
-        .find(|workflow| workflow.path == entry.path)
-    else {
-        return Err((
-            TestWorkflowStatus::Operational,
-            TestWorkflowRefusal::new(
-                TestWorkflowStage::Admission,
-                "missing-entry-workflow",
-                REQUIREMENT_STD_TEST,
-                None,
-            ),
-        ));
-    };
-    let effects = u64::try_from(
-        analyzed
-            .workflows()
-            .iter()
-            .filter(|workflow| !workflow.effects.is_empty())
-            .count(),
-    )
-    .unwrap_or(u64::MAX);
-    if !entry_facts.effects.is_empty() || !entry_facts.operations.is_empty() {
-        return Err((
-            TestWorkflowStatus::Refused,
-            TestWorkflowRefusal::new(
-                TestWorkflowStage::Admission,
-                if entry_facts.effects.is_empty() {
-                    "non-empty-operation-inventory"
-                } else {
-                    "non-empty-effect-inventory"
-                },
-                REQUIREMENT_STD_TEST,
-                None,
-            ),
-        ));
-    }
-    let inventory = program_inventory(analyzed, program, policy.frontend_limits(), effects)?;
+    let inventory = program_inventory(analyzed, program, policy.frontend_limits())?;
     let execution = match services
         .allocator
         .allocate(services.identity_source, IdentityKind::Execution)
@@ -1808,13 +1796,35 @@ fn admit_target(
     })
 }
 
-/// Collects the observed operation, live-resource, and authority inventories of one program.
+/// Collects the observed effect, operation, live-resource, and authority inventories.
+///
+/// The inventory is measured over the admitted executable program, which contains only the
+/// entry-reachable callables. A package-wide declaration that no executed workflow reaches is not
+/// an effect of the run, so it neither refuses admission nor appears in the reported count.
 fn program_inventory(
     analyzed: &crate::analysis::TypedPackage,
     program: &MachineProgram,
     limits: FrontendLimits,
-    effects: u64,
 ) -> Result<TestWorkflowInventory, (TestWorkflowStatus, TestWorkflowRefusal)> {
+    let effects = u64::try_from(
+        program
+            .workflows()
+            .iter()
+            .filter(|workflow| !workflow.effects.is_empty())
+            .count(),
+    )
+    .unwrap_or(u64::MAX);
+    if effects > 0 {
+        return Err((
+            TestWorkflowStatus::Refused,
+            TestWorkflowRefusal::new(
+                TestWorkflowStage::Admission,
+                "non-empty-effect-inventory",
+                REQUIREMENT_STD_TEST,
+                None,
+            ),
+        ));
+    }
     let mut operations: u64 = 0;
     let mut live_resources: u64 = 0;
     let mut actions: u64 = 0;
@@ -1972,27 +1982,69 @@ fn machine_build_error_name(error: &MachineBuildError) -> &'static str {
     }
 }
 
-/// Builds one selection record.
-fn selection(jobs: u64, entry: Option<String>, plan: &TestRunPlan) -> TestWorkflowSelection {
-    TestWorkflowSelection {
-        kind: plan.kinds().first().copied().unwrap_or(TestKind::Unit),
-        substitutions: plan.substitutions().to_vec(),
-        jobs,
-        entry: entry.map(Arc::from),
+/// Builds the declared selection record from the caller declaration.
+fn declared_selection(
+    jobs: u64,
+    declarations: TestWorkflowDeclarations<'_>,
+) -> TestWorkflowSelection {
+    let mut substitutions: Vec<TestSubstitution> = Vec::new();
+    for name in declarations.substitutions {
+        if let Some(substitution) = TestSubstitution::from_wire_name(name)
+            && !substitutions.contains(&substitution)
+        {
+            substitutions.push(substitution);
+        }
     }
+    substitutions.sort_by_key(|substitution| substitution.canonical_index());
+    TestWorkflowSelection {
+        kind: TestKind::from_wire_name(declarations.kind),
+        substitutions,
+        jobs,
+        entry: None,
+    }
+}
+
+/// Builds the admitted selection record of one completed admission.
+fn admitted_selection(jobs: u64, entry: String) -> TestWorkflowSelection {
+    TestWorkflowSelection {
+        kind: Some(TestKind::Unit),
+        substitutions: Vec::new(),
+        jobs,
+        entry: Some(Arc::from(entry)),
+    }
+}
+
+/// Returns the bounded declared input counts.
+fn declared_inputs(declarations: TestWorkflowDeclarations<'_>) -> TestWorkflowDeclaredInputs {
+    TestWorkflowDeclaredInputs {
+        registry_inputs: u64::try_from(declarations.registry_inputs.len()).unwrap_or(u64::MAX),
+        authority_inputs: u64::try_from(declarations.authority_inputs.len()).unwrap_or(u64::MAX),
+        external_artifacts: u64::try_from(declarations.external_artifacts.len())
+            .unwrap_or(u64::MAX),
+    }
+}
+
+/// Observes the current identity record without dispatching any frontend stage.
+fn observed_identity(request: &TestWorkflowRequest<'_>) -> Option<TestWorkflowIdentity> {
+    TestWorkflowIdentity::observed(request.protocol_selection, TEST_WORKFLOW_TOOLCHAIN_IDENTITY)
+        .ok()
 }
 
 /// Builds one refusal report after a stage dispatched.
 fn test_report_refused(
     identity: TestWorkflowIdentity,
+    expected_identity: TestWorkflowIdentity,
     policy: TestWorkflowPolicy,
-    plan: TestRunPlan,
+    declarations: TestWorkflowDeclarations<'_>,
     refusal: TestWorkflowRefusal,
 ) -> TestWorkflowReport {
+    let jobs = policy.jobs();
     TestWorkflowReport::assemble(ReportParts {
         status: TestWorkflowStatus::Refused,
-        identity,
-        selection: selection(policy.jobs(), None, &plan),
+        identity: Some(identity),
+        expected_identity,
+        declared: declared_inputs(declarations),
+        selection: declared_selection(jobs, declarations),
         policy,
         inventory: None,
         package: None,
