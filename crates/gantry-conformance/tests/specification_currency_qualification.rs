@@ -49,6 +49,7 @@ struct Candidate {
     currency_repair_parent_commit: String,
     reviewed_through_commit: String,
     since_commit: String,
+    tree_sha: String,
     identity_note: String,
     toolchain: String,
     inputs: Vec<FileDigest>,
@@ -177,7 +178,18 @@ struct Inventory {
 struct InventoryRequirement {
     id: String,
     body_sha256: String,
-    clauses: Vec<serde_json::Value>,
+    clauses: Vec<InventoryClause>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InventoryClause {
+    profile_reviews: Vec<InventoryReview>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InventoryReview {
+    profile: String,
+    state: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -217,6 +229,18 @@ fn qualification_validator_rejects_stale_or_unqualified_records() {
     let mut open = record.clone();
     open.qualification.lanes[0].result = "planned".to_owned();
     assert!(validate(&root, &open).is_err());
+
+    let mut tree = record.clone();
+    tree.candidate.tree_sha = "0".repeat(40);
+    assert!(validate(&root, &tree).is_err());
+
+    let mut history = record.clone();
+    history.drift_review.changed_requirement_bodies.clear();
+    assert!(validate(&root, &history).is_err());
+
+    let mut commits = record.clone();
+    commits.drift_review.specification_commits_reviewed = 1;
+    assert!(validate(&root, &commits).is_err());
 
     let mut missing_gap = record;
     missing_gap.gaps.clear();
@@ -271,7 +295,33 @@ fn validate(root: &Path, record: &Record) -> Result<(), String> {
             return Err(format!("candidate input is missing: {required}"));
         }
     }
-    validate_drift(root, &record.drift_review, &specification_sha256)?;
+    validate_drift(
+        root,
+        &record.drift_review,
+        &specification_sha256,
+        &record.candidate.since_commit,
+        &record.candidate.reviewed_through_commit,
+        &record.superseded_specification_sha256,
+    )?;
+    let tree = git_rev_parse(
+        root,
+        &format!("{}^{{tree}}", record.candidate.reviewed_through_commit),
+    )?;
+    if record.candidate.tree_sha != tree {
+        return Err("candidate tree digest differs from the reviewed commit".to_owned());
+    }
+    let allowed = [
+        "protocol/",
+        "crates/gantry-conformance/tests/",
+        "docs/",
+        "release/",
+    ];
+    if git_changed_paths(root, &record.candidate.reviewed_through_commit)?
+        .iter()
+        .any(|path| !allowed.iter().any(|prefix| path.starts_with(prefix)))
+    {
+        return Err("candidate source changed outside the allowed evidence scope".to_owned());
+    }
     validate_section14(root, &record.section14_review, &specification_sha256)?;
     validate_adoptions(root, &specification_sha256)?;
     validate_qualification(root, &record.qualification)?;
@@ -302,82 +352,123 @@ fn validate_drift(
     root: &Path,
     drift: &DriftReview,
     specification_sha256: &str,
+    since_commit: &str,
+    reviewed_through_commit: &str,
+    superseded_specification_sha256: &str,
 ) -> Result<(), String> {
     let inventory: Inventory = read_json(&root.join(INVENTORY_PATH));
     if inventory.specification_sha256 != specification_sha256 {
         return Err("requirement inventory uses another specification".to_owned());
     }
-    let requirement_count = inventory.requirements.len();
-    let clause_count = inventory
+    let review: RequirementReview = read_json(&root.join(REVIEW_PATH));
+    if review.specification_sha256 != specification_sha256 {
+        return Err("reviewed requirements use another specification".to_owned());
+    }
+    let old_specification = git_show(root, since_commit, "SPEC.md")?;
+    if sha256(&old_specification) != superseded_specification_sha256 {
+        return Err("superseded specification digest differs from the since commit".to_owned());
+    }
+    let old_inventory: Inventory = decode(
+        &git_show(root, since_commit, INVENTORY_PATH)?,
+        "historical inventory",
+    )?;
+    let old_review: RequirementReview = decode(
+        &git_show(root, since_commit, REVIEW_PATH)?,
+        "historical reviewed ledger",
+    )?;
+    if drift.specification_commits_reviewed
+        != git_count(root, since_commit, reviewed_through_commit)?
+    {
+        return Err("reviewed specification commit count differs from git history".to_owned());
+    }
+    let before_clauses = old_inventory
         .requirements
         .iter()
         .map(|requirement| requirement.clauses.len())
         .sum::<usize>();
-    if drift.specification_commits_reviewed == 0
-        || drift.requirements_after.count != requirement_count
-        || drift.requirements_after.clauses != clause_count
-        || drift.requirements_before.count >= drift.requirements_after.count
-        || drift.requirements_before.clauses >= drift.requirements_after.clauses
-        || drift.added_requirements.len()
-            != drift.requirements_after.count - drift.requirements_before.count
-    {
-        return Err("drift inventory totals differ".to_owned());
-    }
-    let bodies = inventory
+    let after_clauses = inventory
         .requirements
         .iter()
-        .map(|requirement| (requirement.id.as_str(), requirement.body_sha256.as_str()))
+        .map(|requirement| requirement.clauses.len())
+        .sum::<usize>();
+    if drift.requirements_before.count != old_inventory.requirements.len()
+        || drift.requirements_before.clauses != before_clauses
+        || drift.requirements_after.count != inventory.requirements.len()
+        || drift.requirements_after.clauses != after_clauses
+    {
+        return Err("recorded inventory totals differ from history".to_owned());
+    }
+    let old_bodies = old_inventory
+        .requirements
+        .iter()
+        .map(|requirement| (requirement.id.clone(), requirement.body_sha256.clone()))
         .collect::<BTreeMap<_, _>>();
+    let new_bodies = inventory
+        .requirements
+        .iter()
+        .map(|requirement| (requirement.id.clone(), requirement.body_sha256.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let expected_added = new_bodies
+        .keys()
+        .filter(|id| !old_bodies.contains_key(*id))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let expected_removed = old_bodies
+        .keys()
+        .filter(|id| !new_bodies.contains_key(*id))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let expected_changed = new_bodies
+        .iter()
+        .filter(|(id, body)| old_bodies.get(*id).is_some_and(|old| old != *body))
+        .map(|(id, _)| id.clone())
+        .collect::<BTreeSet<_>>();
+    let recorded_added = drift
+        .added_requirements
+        .iter()
+        .map(|added| added.id.clone())
+        .collect::<BTreeSet<_>>();
+    if recorded_added != expected_added
+        || drift
+            .changed_requirement_bodies
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            != expected_changed
+        || drift
+            .removed_requirements
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            != expected_removed
+    {
+        return Err("recorded drift identities differ from history".to_owned());
+    }
     for added in &drift.added_requirements {
         let requirement = inventory
             .requirements
             .iter()
             .find(|requirement| requirement.id == added.id)
             .ok_or_else(|| format!("added requirement is absent: {}", added.id))?;
+        let expected_states = requirement
+            .clauses
+            .iter()
+            .flat_map(|clause| clause.profile_reviews.iter())
+            .map(|review| format!("{}:{}", review.profile, review.state))
+            .collect::<BTreeSet<_>>();
         if requirement.clauses.len() != added.clauses
             || added
                 .profile_reviews
                 .iter()
-                .any(|review| review.trim().is_empty())
+                .cloned()
+                .collect::<BTreeSet<_>>()
+                != expected_states
         {
             return Err(format!("added requirement shape differs: {}", added.id));
         }
     }
-    for changed in &drift.changed_requirement_bodies {
-        if !bodies.contains_key(changed.as_str()) {
-            return Err(format!("changed requirement is absent: {changed}"));
-        }
-    }
-    for removed in &drift.removed_requirements {
-        if bodies.contains_key(removed.as_str()) {
-            return Err(format!("removed requirement is still present: {removed}"));
-        }
-    }
-    let review: RequirementReview = read_json(&root.join(REVIEW_PATH));
-    if review.specification_sha256 != specification_sha256 {
-        return Err("reviewed requirements use another specification".to_owned());
-    }
-    let mut derived = PROFILES
-        .into_iter()
-        .map(|profile| (profile.to_owned(), (0_usize, 0_usize, 0_usize)))
-        .collect::<BTreeMap<_, _>>();
-    for requirement in &review.requirements {
-        for clause in &requirement.clauses {
-            for profile_review in &clause.profile_reviews {
-                let counts = derived
-                    .get_mut(&profile_review.profile)
-                    .ok_or_else(|| format!("unknown profile {}", profile_review.profile))?;
-                match profile_review.state.as_str() {
-                    "covered" if !profile_review.evidence.is_empty() => counts.0 += 1,
-                    "not-applicable" if profile_review.evidence.is_empty() => counts.1 += 1,
-                    "covered" | "not-applicable" => {
-                        return Err("profile review evidence shape is invalid".to_owned());
-                    }
-                    _ => counts.2 += 1,
-                }
-            }
-        }
-    }
+    let derived_before = profile_counts(&old_review)?;
+    let derived_after = profile_counts(&review)?;
     if drift.profile_applicability.len() != PROFILES.len() {
         return Err("profile applicability rows are incomplete".to_owned());
     }
@@ -385,15 +476,18 @@ fn validate_drift(
         if row.profile != PROFILES[index] {
             return Err("profile applicability order differs".to_owned());
         }
-        let (covered, not_applicable, planned) = derived
+        let before = derived_before
             .get(&row.profile)
             .ok_or_else(|| format!("unknown profile {}", row.profile))?;
-        if row.after_covered != *covered
-            || row.after_not_applicable != *not_applicable
-            || row.after_planned != *planned
+        let after = derived_after
+            .get(&row.profile)
+            .ok_or_else(|| format!("unknown profile {}", row.profile))?;
+        if row.before_covered != before.0
+            || row.before_not_applicable != before.1
+            || row.after_covered != after.0
+            || row.after_not_applicable != after.1
+            || row.after_planned != after.2
             || row.after_planned != 0
-            || row.before_covered > row.after_covered
-            || row.before_not_applicable > row.after_not_applicable
             || row.outcome.trim().is_empty()
         {
             return Err(format!("profile applicability differs: {}", row.profile));
@@ -409,6 +503,100 @@ fn validate_drift(
         return Err("drift review qualifications are incomplete".to_owned());
     }
     Ok(())
+}
+
+fn profile_counts(
+    review: &RequirementReview,
+) -> Result<BTreeMap<String, (usize, usize, usize)>, String> {
+    let mut counts = PROFILES
+        .into_iter()
+        .map(|profile| (profile.to_owned(), (0_usize, 0_usize, 0_usize)))
+        .collect::<BTreeMap<_, _>>();
+    for requirement in &review.requirements {
+        for clause in &requirement.clauses {
+            for profile_review in &clause.profile_reviews {
+                let entry = counts
+                    .get_mut(&profile_review.profile)
+                    .ok_or_else(|| format!("unknown profile {}", profile_review.profile))?;
+                match profile_review.state.as_str() {
+                    "covered" if !profile_review.evidence.is_empty() => entry.0 += 1,
+                    "not-applicable" if profile_review.evidence.is_empty() => entry.1 += 1,
+                    "covered" | "not-applicable" => {
+                        return Err("profile review evidence shape is invalid".to_owned());
+                    }
+                    _ => entry.2 += 1,
+                }
+            }
+        }
+    }
+    Ok(counts)
+}
+
+fn git_show(root: &Path, commit: &str, path: &str) -> Result<Vec<u8>, String> {
+    let output = Command::new("git")
+        .current_dir(root)
+        .args(["show", &format!("{commit}:{path}")])
+        .output()
+        .map_err(io_error)?;
+    if !output.status.success() {
+        return Err(format!(
+            "could not read historical input {path} at {commit}"
+        ));
+    }
+    Ok(output.stdout)
+}
+
+fn git_count(root: &Path, since: &str, through: &str) -> Result<usize, String> {
+    let output = Command::new("git")
+        .current_dir(root)
+        .args([
+            "rev-list",
+            "--count",
+            &format!("{since}..{through}"),
+            "--",
+            "SPEC.md",
+        ])
+        .output()
+        .map_err(io_error)?;
+    if !output.status.success() {
+        return Err("could not count reviewed specification commits".to_owned());
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<usize>()
+        .map_err(|error| format!("invalid specification commit count: {error}"))
+}
+
+fn git_rev_parse(root: &Path, argument: &str) -> Result<String, String> {
+    let output = Command::new("git")
+        .current_dir(root)
+        .args(["rev-parse", "--verify", argument])
+        .output()
+        .map_err(io_error)?;
+    if !output.status.success() {
+        return Err(format!("could not resolve {argument}"));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+fn git_changed_paths(root: &Path, commit: &str) -> Result<Vec<String>, String> {
+    let output = Command::new("git")
+        .current_dir(root)
+        .args(["diff", "--name-only", commit, "HEAD"])
+        .output()
+        .map_err(io_error)?;
+    if !output.status.success() {
+        return Err("could not inspect the candidate descendant changes".to_owned());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(str::to_owned)
+        .collect())
+}
+
+fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8], label: &str) -> Result<T, String> {
+    serde_json::from_slice(bytes).map_err(|error| format!("could not decode {label}: {error}"))
 }
 
 fn validate_section14(
