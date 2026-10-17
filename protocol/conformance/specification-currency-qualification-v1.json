@@ -276,11 +276,15 @@
     },
     {
       "path": "crates/gantry-runtime/src/resource.rs",
-      "sha256": "c98d100ad6b8e7cdd128442ce361fc37e0fcb4b7fe7d8a90451621406a6d3388"
+      "sha256": "a7f2f2b980c9d5a560e4c998aa6d1c987252bf97f70e3e4a47692a328201fd45"
     },
     {
       "path": "crates/gantry-runtime/src/resource/tests.rs",
-      "sha256": "3a68e258d0f8c97102cb14b7bdb961069bcf8bc9ebcf557fa70ce1f32c552430"
+      "sha256": "69210278ee3e15011475cf635aac08da218e71b339a6c9d19623135b9087c0e5"
+    },
+    {
+      "path": "crates/gantry-runtime/src/resource_transport.rs",
+      "sha256": "da118f50e2fb0cecb25ddf0e2f887f3c30f9fe846843f2ddd7f9b81afbfaeb96"
     },
     {
       "path": "protocol/catalogs/embedding-contracts-v1.json",
