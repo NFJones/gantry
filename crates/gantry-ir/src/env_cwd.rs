@@ -403,40 +403,7 @@ impl LogicalCwdSegment {
     /// Returns [`CwdDiagnosticCode::InvalidSegment`] for an empty, dot-named, or malformed
     /// segment, and [`CwdDiagnosticCode::LimitExceeded`] beyond the declared byte bound.
     pub fn new(value: &str, limits: &CwdLimits) -> Result<Self, CwdError> {
-        if value.is_empty() {
-            return Err(CwdError::new(
-                CwdDiagnosticCode::InvalidSegment,
-                "a logical path segment must be nonempty",
-            ));
-        }
-        if value.len() > limits.max_segment_bytes() {
-            return Err(CwdError::new(
-                CwdDiagnosticCode::LimitExceeded,
-                format!(
-                    "a logical path segment declares {} bytes, beyond the {} byte bound",
-                    value.len(),
-                    limits.max_segment_bytes()
-                ),
-            ));
-        }
-        if value == "." || value == ".." {
-            return Err(CwdError::new(
-                CwdDiagnosticCode::InvalidSegment,
-                "a logical path segment is never `.` or `..`",
-            ));
-        }
-        if value.chars().any(|scalar| {
-            scalar == '/'
-                || scalar == '\\'
-                || scalar == ':'
-                || scalar == '\0'
-                || scalar.is_control()
-        }) {
-            return Err(CwdError::new(
-                CwdDiagnosticCode::InvalidSegment,
-                "a logical path segment carries a separator, marker, NUL, or control scalar",
-            ));
-        }
+        validate_segment_text(value, limits)?;
         Ok(Self(value.to_owned()))
     }
 
@@ -445,6 +412,41 @@ impl LogicalCwdSegment {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+/// Validates one segment's exact domain and byte bound without constructing an owned segment.
+fn validate_segment_text(value: &str, limits: &CwdLimits) -> Result<(), CwdError> {
+    if value.is_empty() {
+        return Err(CwdError::new(
+            CwdDiagnosticCode::InvalidSegment,
+            "a logical path segment must be nonempty",
+        ));
+    }
+    if value.len() > limits.max_segment_bytes() {
+        return Err(CwdError::new(
+            CwdDiagnosticCode::LimitExceeded,
+            format!(
+                "a logical path segment declares {} bytes, beyond the {} byte bound",
+                value.len(),
+                limits.max_segment_bytes()
+            ),
+        ));
+    }
+    if value == "." || value == ".." {
+        return Err(CwdError::new(
+            CwdDiagnosticCode::InvalidSegment,
+            "a logical path segment is never `.` or `..`",
+        ));
+    }
+    if value.chars().any(|scalar| {
+        scalar == '/' || scalar == '\\' || scalar == ':' || scalar == '\0' || scalar.is_control()
+    }) {
+        return Err(CwdError::new(
+            CwdDiagnosticCode::InvalidSegment,
+            "a logical path segment carries a separator, marker, NUL, or control scalar",
+        ));
+    }
+    Ok(())
 }
 
 /// One immutable rooted portable logical working-directory value.
@@ -500,11 +502,25 @@ impl LogicalWorkingDirectory {
 
     /// Admits one logical working directory from presented bytes, refusing invalid UTF-8.
     ///
+    /// The presented byte bound is checked before UTF-8 validation, so an oversized buffer is
+    /// refused without scanning it and a size refusal takes precedence over an encoding refusal.
+    ///
     /// # Errors
     ///
-    /// Returns [`CwdDiagnosticCode::InvalidEncoding`] when the bytes are not UTF-8, and otherwise
-    /// the refusals of [`LogicalWorkingDirectory::from_text`].
+    /// Returns [`CwdDiagnosticCode::LimitExceeded`] beyond the presented byte bound,
+    /// [`CwdDiagnosticCode::InvalidEncoding`] when the bytes are not UTF-8, and otherwise the
+    /// refusals of [`LogicalWorkingDirectory::from_text`].
     pub fn from_bytes(root: &str, bytes: &[u8], limits: &CwdLimits) -> Result<Self, CwdError> {
+        if bytes.len() > limits.max_path_bytes() {
+            return Err(CwdError::new(
+                CwdDiagnosticCode::LimitExceeded,
+                format!(
+                    "a presented logical path declares {} bytes, beyond the {} byte bound",
+                    bytes.len(),
+                    limits.max_path_bytes()
+                ),
+            ));
+        }
         let text = std::str::from_utf8(bytes).map_err(|_| {
             CwdError::new(
                 CwdDiagnosticCode::InvalidEncoding,
@@ -684,7 +700,10 @@ fn reject_native_text(text: &str) -> Result<(), CwdError> {
 ///
 /// The presented text byte bound is checked before it is split, so an oversized presentation is
 /// refused before any component work. Empty and `.` components are dropped, each `..` removes one
-/// retained segment, and a `..` with no retained segment is refused.
+/// retained segment, and a `..` with no retained segment is refused. A bounded preflight pass
+/// validates every ordinary component and the retained depth before any segment is allocated, and
+/// the retained-segment bound is enforced at every normalization step, including a temporary depth
+/// that a later parent component would reduce.
 fn parse_segments(
     text: &str,
     mut segments: Vec<LogicalCwdSegment>,
@@ -701,32 +720,46 @@ fn parse_segments(
         ));
     }
     reject_native_text(text)?;
-    if text.starts_with('/') {
+    let absolute = text.starts_with('/');
+    let mut depth = if absolute { 0 } else { segments.len() };
+    for component in text.split('/') {
+        match component {
+            "" | "." => {}
+            ".." => {
+                if depth == 0 {
+                    return Err(CwdError::new(
+                        CwdDiagnosticCode::Escape,
+                        "a relative component would leave the declared logical root",
+                    ));
+                }
+                depth -= 1;
+            }
+            _ => {
+                validate_segment_text(component, limits)?;
+                depth += 1;
+                if depth > limits.max_segments() {
+                    return Err(CwdError::new(
+                        CwdDiagnosticCode::LimitExceeded,
+                        format!(
+                            "{depth} segments are retained, beyond the {} segment bound",
+                            limits.max_segments()
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+    if absolute {
         segments.clear();
     }
     for component in text.split('/') {
         match component {
             "" | "." => {}
             ".." => {
-                if segments.pop().is_none() {
-                    return Err(CwdError::new(
-                        CwdDiagnosticCode::Escape,
-                        "a relative component would leave the declared logical root",
-                    ));
-                }
+                segments.pop();
             }
             _ => segments.push(LogicalCwdSegment::new(component, limits)?),
         }
-    }
-    if segments.len() > limits.max_segments() {
-        return Err(CwdError::new(
-            CwdDiagnosticCode::LimitExceeded,
-            format!(
-                "{} segments are retained, beyond the {} segment bound",
-                segments.len(),
-                limits.max_segments()
-            ),
-        ));
     }
     Ok(segments)
 }

@@ -25,8 +25,12 @@ never `.` or `..`.
 segment count, and root or segment bytes. The declared defaults are
 `CWD_DEFAULT_MAX_PATH_BYTES`, `CWD_DEFAULT_MAX_SEGMENTS`, and
 `CWD_DEFAULT_MAX_SEGMENT_BYTES`. The presented text byte bound is checked before
-the text is split, so an oversized presentation is refused before component
-work.
+the text is split, and the byte-entry path checks the presented byte bound
+before UTF-8 validation, so an oversized presentation is refused before
+component or encoding work. A bounded preflight pass validates every component
+and the retained depth before any segment is allocated, and the
+retained-segment bound applies at every normalization step, including a
+temporary depth that a later parent component would reduce.
 
 ## Normalization and composition
 

@@ -180,6 +180,25 @@ fn cwd_roots_and_segments_refuse_malformed_forms() {
         )),
         CwdDiagnosticCode::InvalidEncoding
     );
+    // The presented byte bound precedes UTF-8 validation, for valid and invalid oversized input.
+    assert_eq!(
+        refusal(LogicalWorkingDirectory::from_bytes(
+            "root",
+            &[b'a'; 17],
+            &tight()
+        )),
+        CwdDiagnosticCode::LimitExceeded
+    );
+    let mut oversized_invalid = vec![b'a'; 17];
+    oversized_invalid.push(0xff);
+    assert_eq!(
+        refusal(LogicalWorkingDirectory::from_bytes(
+            "root",
+            &oversized_invalid,
+            &tight()
+        )),
+        CwdDiagnosticCode::LimitExceeded
+    );
 }
 
 /// Portable text is rooted, normalized explicitly, and never resolved against a host.
@@ -332,6 +351,42 @@ fn cwd_bounds_are_exact_at_and_beyond_the_boundary() {
         )),
         CwdDiagnosticCode::LimitExceeded
     );
+
+    // Multibyte segment bytes count against the exact segment byte bound.
+    assert_eq!(
+        refusal(LogicalWorkingDirectory::from_text("root", "/ééé", &bounds)),
+        CwdDiagnosticCode::LimitExceeded
+    );
+    assert_eq!(cwd("root", "/éé", &bounds).as_text(), "root/éé");
+
+    // Composition at the canonical path limit stays admitted and remains exact.
+    assert_eq!(
+        exact
+            .compose("../e")
+            .unwrap_or_else(|error| panic!("the boundary composition is admitted: {error}")),
+        exact
+    );
+    assert_eq!(
+        exact
+            .compose("../x")
+            .unwrap_or_else(|error| panic!("the boundary sibling composition is admitted: {error}"))
+            .as_text(),
+        "root/abcd/abcd/x"
+    );
+
+    // The retained-count bound applies at every normalization step: a temporary depth a later
+    // parent component would reduce is still refused before component allocation.
+    let one_segment = CwdLimits::new(64, 1, 4)
+        .unwrap_or_else(|error| panic!("the one-segment limits are valid: {error}"));
+    assert_eq!(
+        refusal(LogicalWorkingDirectory::from_text(
+            "root",
+            "/a/b/../c",
+            &one_segment
+        )),
+        CwdDiagnosticCode::LimitExceeded
+    );
+    assert_eq!(cwd("root", "/a/b/../c", &declared()).as_text(), "root/a/c");
 }
 
 /// Target encoding and case behavior is selected explicitly and folds only ASCII uppercase.
