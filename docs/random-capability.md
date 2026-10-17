@@ -51,8 +51,9 @@ recording is a requirement awaiting normative interface rows, not behavior this 
 The family declares exactly one public module, `std.random::entropy`, in canonical name order under
 `GNT-50.1-random-modules-and-item-rows`, with the family scope and applicability of
 `GNT-50.0-random-foundation-scope`: one module at the stable tier, application-only over the library
-and binary targets. The model `RandomModuleRow`, `RANDOM_MODULE_ROWS`, and
-`RANDOM_MODULE_CLAUSES` publish the row and its owning clauses. The row binds only those two
+and binary targets. The model `DeclaredModuleRow` value in
+`RANDOM_MODULE_ROWS` with the `RANDOM_MODULE_CLAUSES` vocabulary publish the row and its
+owning clauses. The row binds only those two
 clauses and names a capability-backed namespace: it is not a raw entropy API, a draw operation, a
 capability grant, or an authority grant, and it is not declared by
 `GNT-34.1-canonical-hierarchy-and-package-names` or `GNT-29.8-time-randomness-and-secret-contracts`.

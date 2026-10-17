@@ -8,14 +8,14 @@
 //! wrong-class, wrong-tier, wrong-applicability, or wrong-clause candidate without mutating it. It
 //! also proves that an invented or duplicated name is refused rather than admitted.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::{
-    DeclaredModuleRow, ModuleSetRefusal, NUM_MODULE_CLAUSES, NUM_MODULE_ROWS, NameClass,
-    RANDOM_MODULE_CLAUSES, RANDOM_MODULE_ROWS, SemanticMode, StabilityTier, TEXT_MODULE_CLAUSES,
-    TEXT_MODULE_ROWS, TargetKind, admit_declared_modules,
+    DeclaredModuleRow, NUM_MODULE_CLAUSES, NUM_MODULE_ROWS, NameClass, RANDOM_MODULE_CLAUSES,
+    RANDOM_MODULE_ROWS, SemanticMode, StabilityTier, TEXT_MODULE_CLAUSES, TEXT_MODULE_ROWS,
+    TargetKind,
 };
 
 const TEXT_SCOPE: &str = "GNT-41.0-text-foundation-scope";
@@ -118,6 +118,68 @@ fn owner<'a>(owners: &'a [(&'a str, &'a str)], name: &str) -> &'a str {
         .unwrap_or_else(|| panic!("`{name}` is one of the adopted module names"))
 }
 
+/// One refusal of a closed module-name set in this lane.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Refusal {
+    Missing,
+    Unexpected,
+    Duplicate,
+    OutOfOrder,
+    WrongClass,
+    WrongTier,
+    WrongApplicability,
+    WrongClauses,
+}
+
+/// Admits exactly one closed module-name set without mutating either input.
+///
+/// The comparison is lane-local by design: this slice publishes name rows, not a declare or
+/// admit surface, so the refusal machinery lives in the conformance evidence rather than the
+/// library facade.
+fn admits(declared: &[DeclaredModuleRow], expected: &[DeclaredModuleRow]) -> Result<(), Refusal> {
+    let mut seen = BTreeSet::new();
+    for row in declared {
+        if !seen.insert(row.name) {
+            return Err(Refusal::Duplicate);
+        }
+    }
+    let expected_names = expected.iter().map(|row| row.name).collect::<BTreeSet<_>>();
+    if declared
+        .iter()
+        .any(|row| !expected_names.contains(row.name))
+    {
+        return Err(Refusal::Unexpected);
+    }
+    if expected.iter().any(|row| !seen.contains(row.name)) {
+        return Err(Refusal::Missing);
+    }
+    if declared
+        .iter()
+        .map(|row| row.name)
+        .ne(expected.iter().map(|row| row.name))
+    {
+        return Err(Refusal::OutOfOrder);
+    }
+    for candidate in declared {
+        let Some(expected_row) = expected.iter().find(|row| row.name == candidate.name) else {
+            return Err(Refusal::Unexpected);
+        };
+        if candidate.class != expected_row.class {
+            return Err(Refusal::WrongClass);
+        }
+        if candidate.tier != expected_row.tier {
+            return Err(Refusal::WrongTier);
+        }
+        if candidate.modes != expected_row.modes || candidate.targets != expected_row.targets {
+            return Err(Refusal::WrongApplicability);
+        }
+        if candidate.clauses != expected_row.clauses {
+            return Err(Refusal::WrongClauses);
+        }
+    }
+    Ok(())
+}
+
 #[test]
 fn text_module_names_trace_to_their_owning_clauses_in_specification_order() {
     let specification = read_text(&workspace_root().join("SPEC.md"));
@@ -176,6 +238,22 @@ fn text_module_names_trace_to_their_owning_clauses_in_specification_order() {
         }
     }
     let clause = clause_body(&specification, TEXT_NAMES);
+    for model in [
+        "`DeclaredModuleRow`",
+        "`TEXT_MODULE_ROWS`",
+        "`TEXT_MODULE_CLAUSES`",
+    ] {
+        assert!(
+            clause.contains(model),
+            "the clause names the model surface {model}"
+        );
+    }
+    for absent in ["`TextModuleRow`", "`admit_declared_modules`"] {
+        assert!(
+            !clause.contains(absent),
+            "the clause must not name {absent}"
+        );
+    }
     for (name, _) in TEXT_OWNERS {
         assert!(
             clause.contains(&format!("`{name}`")),
@@ -231,6 +309,22 @@ fn numeric_module_names_trace_to_their_owning_clauses_in_specification_order() {
         }
     }
     let clause = clause_body(&specification, NUM_NAMES);
+    for model in [
+        "`DeclaredModuleRow`",
+        "`NUM_MODULE_ROWS`",
+        "`NUM_MODULE_CLAUSES`",
+    ] {
+        assert!(
+            clause.contains(model),
+            "the clause names the model surface {model}"
+        );
+    }
+    for absent in ["`NumModuleRow`", "`admit_declared_modules`"] {
+        assert!(
+            !clause.contains(absent),
+            "the clause must not name {absent}"
+        );
+    }
     for (name, _) in NUM_OWNERS {
         assert!(
             clause.contains(&format!("`{name}`")),
@@ -264,7 +358,24 @@ fn random_module_name_is_owned_by_its_own_scope_and_row_clauses() {
         .unwrap_or_else(|| panic!("the specification anchors `{RANDOM_NAMES}`"));
     assert!(scope < naming, "the random scope precedes its row clause");
 
-    assert!(clause_body(&specification, RANDOM_NAMES).contains("`std.random::entropy`"));
+    let row_clause = clause_body(&specification, RANDOM_NAMES);
+    assert!(row_clause.contains("`std.random::entropy`"));
+    for model in [
+        "`DeclaredModuleRow`",
+        "`RANDOM_MODULE_ROWS`",
+        "`RANDOM_MODULE_CLAUSES`",
+    ] {
+        assert!(
+            row_clause.contains(model),
+            "the clause names the model surface {model}"
+        );
+    }
+    for absent in ["`RandomModuleRow`", "`admit_declared_modules`"] {
+        assert!(
+            !row_clause.contains(absent),
+            "the clause must not name {absent}"
+        );
+    }
     for unrelated in [
         "GNT-34.1-canonical-hierarchy-and-package-names",
         "GNT-29.8-time-randomness-and-secret-contracts",
@@ -277,15 +388,12 @@ fn random_module_name_is_owned_by_its_own_scope_and_row_clauses() {
 }
 
 fn assert_closed_set_refusals(expected: &[DeclaredModuleRow]) {
-    assert_eq!(admit_declared_modules(expected, expected), Ok(()));
+    assert_eq!(admits(expected, expected), Ok(()));
 
     let mut missing = expected.to_vec();
     missing.remove(0);
     let snapshot = missing.clone();
-    assert_eq!(
-        admit_declared_modules(&missing, expected),
-        Err(ModuleSetRefusal::Missing)
-    );
+    assert_eq!(admits(&missing, expected), Err(Refusal::Missing));
     assert_eq!(missing, snapshot, "a missing-row refusal mutates nothing");
 
     let mut extra = expected.to_vec();
@@ -293,19 +401,13 @@ fn assert_closed_set_refusals(expected: &[DeclaredModuleRow]) {
     invented.name = "std.text::invented";
     extra.push(invented);
     let snapshot = extra.clone();
-    assert_eq!(
-        admit_declared_modules(&extra, expected),
-        Err(ModuleSetRefusal::Unexpected)
-    );
+    assert_eq!(admits(&extra, expected), Err(Refusal::Unexpected));
     assert_eq!(extra, snapshot, "an extra-row refusal mutates nothing");
 
     let mut duplicate = expected.to_vec();
     duplicate.push(expected[0]);
     let snapshot = duplicate.clone();
-    assert_eq!(
-        admit_declared_modules(&duplicate, expected),
-        Err(ModuleSetRefusal::Duplicate)
-    );
+    assert_eq!(admits(&duplicate, expected), Err(Refusal::Duplicate));
     assert_eq!(
         duplicate, snapshot,
         "a duplicate-row refusal mutates nothing"
@@ -315,37 +417,28 @@ fn assert_closed_set_refusals(expected: &[DeclaredModuleRow]) {
         let mut reordered = expected.to_vec();
         reordered.swap(0, 1);
         let snapshot = reordered.clone();
-        assert_eq!(
-            admit_declared_modules(&reordered, expected),
-            Err(ModuleSetRefusal::OutOfOrder)
-        );
+        assert_eq!(admits(&reordered, expected), Err(Refusal::OutOfOrder));
         assert_eq!(reordered, snapshot, "an order refusal mutates nothing");
     }
 
     let mut wrong_class = expected.to_vec();
     wrong_class[0].class = NameClass::Package;
     let snapshot = wrong_class.clone();
-    assert_eq!(
-        admit_declared_modules(&wrong_class, expected),
-        Err(ModuleSetRefusal::WrongClass)
-    );
+    assert_eq!(admits(&wrong_class, expected), Err(Refusal::WrongClass));
     assert_eq!(wrong_class, snapshot, "a class refusal mutates nothing");
 
     let mut wrong_tier = expected.to_vec();
     wrong_tier[0].tier = StabilityTier::Experimental;
     let snapshot = wrong_tier.clone();
-    assert_eq!(
-        admit_declared_modules(&wrong_tier, expected),
-        Err(ModuleSetRefusal::WrongTier)
-    );
+    assert_eq!(admits(&wrong_tier, expected), Err(Refusal::WrongTier));
     assert_eq!(wrong_tier, snapshot, "a tier refusal mutates nothing");
 
     let mut wrong_applicability = expected.to_vec();
     wrong_applicability[0].modes = &[SemanticMode::Durable];
     let snapshot = wrong_applicability.clone();
     assert_eq!(
-        admit_declared_modules(&wrong_applicability, expected),
-        Err(ModuleSetRefusal::WrongApplicability)
+        admits(&wrong_applicability, expected),
+        Err(Refusal::WrongApplicability)
     );
     assert_eq!(
         wrong_applicability, snapshot,
@@ -355,10 +448,7 @@ fn assert_closed_set_refusals(expected: &[DeclaredModuleRow]) {
     let mut wrong_clauses = expected.to_vec();
     wrong_clauses[0].clauses = &["GNT-41.12-text-module-names"];
     let snapshot = wrong_clauses.clone();
-    assert_eq!(
-        admit_declared_modules(&wrong_clauses, expected),
-        Err(ModuleSetRefusal::WrongClauses)
-    );
+    assert_eq!(admits(&wrong_clauses, expected), Err(Refusal::WrongClauses));
     assert_eq!(wrong_clauses, snapshot, "a clause refusal mutates nothing");
 }
 
@@ -377,8 +467,8 @@ fn invented_and_duplicated_names_are_refused() {
         row.name = "std.text::invented";
         invented.push(row);
         assert_eq!(
-            admit_declared_modules(&invented, expected),
-            Err(ModuleSetRefusal::Unexpected),
+            admits(&invented, expected),
+            Err(Refusal::Unexpected),
             "a name no clause declares is refused"
         );
         assert!(expected.iter().all(|declared| declared.name != row.name));
@@ -386,8 +476,8 @@ fn invented_and_duplicated_names_are_refused() {
         let mut duplicated = expected.to_vec();
         duplicated.push(expected[0]);
         assert_eq!(
-            admit_declared_modules(&duplicated, expected),
-            Err(ModuleSetRefusal::Duplicate),
+            admits(&duplicated, expected),
+            Err(Refusal::Duplicate),
             "a duplicated name is refused"
         );
     }
