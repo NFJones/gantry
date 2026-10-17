@@ -291,6 +291,115 @@ pub struct DeclaredModuleRow {
     pub clauses: &'static [&'static str],
 }
 
+/// Validates one family item surface against the clause rows that publish it.
+///
+/// The check is closed and non-mutating: a package whose applicability, exports, item metadata,
+/// or item set differs from the rows of `GNT-34.6-stability-tiers` and
+/// `GNT-34.8-defining-identity-and-interface-digest` is refused rather than repaired, and a
+/// partial surface is refused rather than completed. Declared state is read only, so a refusal
+/// leaves the graph exactly as it was declared.
+pub(crate) fn validate_declared_surface(
+    graph: &StdGraph,
+    package: &StdPackage,
+    rows: &[DeclaredModuleRow],
+    modes: &[SemanticMode],
+    targets: &[TargetKind],
+) -> Result<(), StdlibError> {
+    if package.modes().iter().copied().ne(modes.iter().copied())
+        || package
+            .targets()
+            .iter()
+            .copied()
+            .ne(targets.iter().copied())
+    {
+        return Err(StdlibError::new(
+            StdlibDiagnosticCode::UnsupportedApplicability,
+            format!(
+                "`{}` must declare exactly the applicability of its clause rows",
+                package.name()
+            ),
+        ));
+    }
+    if package.exports().iter().any(|export| {
+        !rows
+            .iter()
+            .any(|row| export == &canonical_std_path(row.name))
+    }) {
+        return Err(StdlibError::new(
+            StdlibDiagnosticCode::InvalidNameClassification,
+            format!(
+                "`{}` exports a name outside its declared modules",
+                package.name()
+            ),
+        ));
+    }
+    let owner = package.name();
+    if graph.names().iter().any(|name| name.owner() == owner) {
+        return Err(StdlibError::new(
+            StdlibDiagnosticCode::InvalidNameClassification,
+            format!("`{owner}` declares a name outside its declared modules"),
+        ));
+    }
+    let present = rows
+        .iter()
+        .filter(|row| package.item(row.name).is_some())
+        .count();
+    if package.items().len() != present {
+        return Err(StdlibError::new(
+            StdlibDiagnosticCode::InvalidNameClassification,
+            format!(
+                "`{}` declares an item outside its declared modules",
+                package.name()
+            ),
+        ));
+    }
+    if present != 0 && present != rows.len() {
+        return Err(StdlibError::new(
+            StdlibDiagnosticCode::InvalidNameClassification,
+            format!(
+                "`{}` declares a partial item surface instead of its whole set",
+                package.name()
+            ),
+        ));
+    }
+    for row in rows {
+        let Some(item) = package.item(row.name) else {
+            continue;
+        };
+        if item.class() != row.class {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::InvalidNameClassification,
+                format!(
+                    "`{}` is declared outside its module classification",
+                    row.name
+                ),
+            ));
+        }
+        if item.tier() != row.tier {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::InvalidStabilityTransition,
+                format!("`{}` is declared outside its declared tier", row.name),
+            ));
+        }
+        if item.modes().iter().copied().ne(row.modes.iter().copied())
+            || item
+                .targets()
+                .iter()
+                .copied()
+                .ne(row.targets.iter().copied())
+        {
+            return Err(StdlibError::new(
+                StdlibDiagnosticCode::UnsupportedApplicability,
+                format!(
+                    "`{}` is declared outside its declared applicability",
+                    row.name
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// One frozen architecture diagnostic of `GNT-34.0`-`GNT-34.12`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum StdlibDiagnosticCode {

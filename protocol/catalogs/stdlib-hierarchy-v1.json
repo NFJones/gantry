@@ -23,7 +23,74 @@
         "std.core",
         "std.text"
       ],
-      "interface_digest": "9119d15daf6f71458856cad21cfa744817d2b1fbbbe91fd0f250fe43d318daef"
+      "interface_digest": "9119d15daf6f71458856cad21cfa744817d2b1fbbbe91fd0f250fe43d318daef",
+      "items": [
+        {
+          "name": "std.codec.base64",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.codec.binary",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.codec.compression",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.codec.hex",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.codec.json",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        }
+      ]
     },
     {
       "name": "std.collections",
@@ -40,7 +107,48 @@
       "dependencies": [
         "std.core"
       ],
-      "interface_digest": "57980b3fa64f4147e0b33dbf74b433d52fe2feda9a469eb613f3dc4ecc9961fc"
+      "interface_digest": "57980b3fa64f4147e0b33dbf74b433d52fe2feda9a469eb613f3dc4ecc9961fc",
+      "items": [
+        {
+          "name": "std.collections.map",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.collections.range",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.collections.set",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        }
+      ]
     },
     {
       "name": "std.core",
@@ -55,7 +163,35 @@
         "binary"
       ],
       "dependencies": [],
-      "interface_digest": "161852803da016fdb4551e7848540e9c98ebe93b96e882fc64791687f6a58f04"
+      "interface_digest": "161852803da016fdb4551e7848540e9c98ebe93b96e882fc64791687f6a58f04",
+      "items": [
+        {
+          "name": "std.core.option",
+          "class": "module",
+          "tier": "foundational",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.core.result",
+          "class": "module",
+          "tier": "foundational",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        }
+      ]
     },
     {
       "name": "std.crypto",
@@ -74,7 +210,35 @@
         "std.core",
         "std.num"
       ],
-      "interface_digest": "dcaa6d846bcdde15cfe4d773b95ba68f63f35528e979189f4524800dba77ebb2"
+      "interface_digest": "dcaa6d846bcdde15cfe4d773b95ba68f63f35528e979189f4524800dba77ebb2",
+      "items": [
+        {
+          "name": "std.crypto.hash",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.crypto.signature",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        }
+      ]
     },
     {
       "name": "std.data",
@@ -94,7 +258,48 @@
         "std.core",
         "std.text"
       ],
-      "interface_digest": "2289cb5b4d1e9cbf097ecc35f366beab43edafab41284146a9a530a9068d49f7"
+      "interface_digest": "2289cb5b4d1e9cbf097ecc35f366beab43edafab41284146a9a530a9068d49f7",
+      "items": [
+        {
+          "name": "std.data.http",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.data.mime",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.data.url",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        }
+      ]
     },
     {
       "name": "std.env",
@@ -108,7 +313,45 @@
         "binary"
       ],
       "dependencies": [],
-      "interface_digest": "fe9834c35fe0b22e80fef0ce0775ce1da7f0dbd05cf797dca1b974f1b96ee484"
+      "interface_digest": "fe9834c35fe0b22e80fef0ce0775ce1da7f0dbd05cf797dca1b974f1b96ee484",
+      "items": [
+        {
+          "name": "std.env.arguments",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.env.environment",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.env.working_directory",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        }
+      ]
     },
     {
       "name": "std.num",
@@ -125,7 +368,128 @@
       "dependencies": [
         "std.core"
       ],
-      "interface_digest": "d7b103bc2a9f9408afbd3dec3a47a8f367a460023acc14ac792bba56470b49d6"
+      "interface_digest": "11012795934942632529011fd07e0fb5c0e07d0382c8c5863e65a72ee9a04445",
+      "items": [
+        {
+          "name": "std.num.bits",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.num.conversions",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.num.floating",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.num.integer",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.num.overflow",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.num.prng",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.num.text",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "std.random",
+      "class": "package",
+      "tier": "stable",
+      "modes": [
+        "application"
+      ],
+      "targets": [
+        "library",
+        "binary"
+      ],
+      "dependencies": [],
+      "interface_digest": "76f4a8dbcdc4ed17ab4b6b7500a03a43d9fb562c3061ad197250eac675e318d8",
+      "items": [
+        {
+          "name": "std.random.entropy",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        }
+      ]
     },
     {
       "name": "std.text",
@@ -143,7 +507,126 @@
         "std.collections",
         "std.core"
       ],
-      "interface_digest": "3de353720b239a858e1fa41aaaedb470f0d2254b3b526df6fe9e9a8f147e61ec"
+      "interface_digest": "be09ae7290f710bcecb4bf69fb49666638f03e6ec471347a38fdf6e35328a9c9",
+      "items": [
+        {
+          "name": "std.text.builders",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.text.case_mapping",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.text.comparison",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.text.conversions",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.text.graphemes",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.text.matching",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.text.normalization",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.text.traversal",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.text.values",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "portable",
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        }
+      ]
     }
   ]
 }

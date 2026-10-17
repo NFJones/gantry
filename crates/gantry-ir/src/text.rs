@@ -29,7 +29,10 @@ use gantry_core::unicode::{
 
 use crate::TargetKind;
 use crate::scalar::CharValue;
-use crate::stdlib::{DeclaredModuleRow, NameClass, StabilityTier};
+use crate::stdlib::{
+    DeclaredModuleRow, NameClass, PackageFamily, StabilityTier, StdGraph, StdItem,
+    StdlibDiagnosticCode, StdlibError,
+};
 use gantry_core::mode::SemanticMode;
 
 /// The declared clauses of Section 41, in specification order
@@ -190,6 +193,108 @@ pub const TEXT_MODULE_ROWS: [DeclaredModuleRow; 9] = [
         ],
     },
 ];
+
+/// The exported-item rows of `std.text` of `GNT-34.6-stability-tiers` and
+/// `GNT-34.8-defining-identity-and-interface-digest`, derived from the closed module set of
+/// `GNT-41.12-text-module-names`.
+///
+/// The rows are exactly the [`DeclaredModuleRow`] values the naming clause publishes, so an
+/// exported item is never invented beside its owning clause: every name, classification, tier,
+/// applicability, and clause list is the one the reviewed clause set already fixes. A row declares
+/// a module name only and publishes no exported callable, operation, signature, behavior, or
+/// runtime availability.
+pub const TEXT_ITEMS: [DeclaredModuleRow; 9] = TEXT_MODULE_ROWS;
+
+/// Declares the published item surface of `std.text` over one standard-library graph
+/// (`GNT-34.6-stability-tiers`, `GNT-34.8-defining-identity-and-interface-digest`).
+///
+/// The owning package must already be declared, and every item carries the applicability of its own
+/// clause row, so an item is never applicable outside the applicability its clause fixes
+/// (`GNT-34.7-applicability-and-feature-granularity`). A package whose applicability, exports,
+/// names, item metadata, or item set differs from the rows is refused before any item is declared,
+/// and a second declaration of one item is refused by the graph rather than merged.
+pub fn declare_text_surface(graph: &mut StdGraph) -> Result<(), StdlibError> {
+    let owner = PackageFamily::Text.package_name();
+    let present = {
+        let package = graph.package(&owner).ok_or_else(|| {
+            StdlibError::new(
+                StdlibDiagnosticCode::UnknownEdge,
+                format!("`{owner}` is not declared, so its item surface cannot be declared"),
+            )
+        })?;
+        crate::stdlib::validate_declared_surface(
+            graph,
+            package,
+            &TEXT_ITEMS,
+            &TEXT_MODULE_MODES,
+            &TEXT_MODULE_TARGETS,
+        )?;
+        TEXT_ITEMS
+            .iter()
+            .filter(|row| package.item(row.name).is_some())
+            .count()
+    };
+    if present == TEXT_ITEMS.len() {
+        let row = TEXT_ITEMS[0];
+        return graph.declare_item(StdItem::new(
+            row.name,
+            row.class,
+            row.tier,
+            row.modes,
+            row.targets,
+        )?);
+    }
+    for row in TEXT_ITEMS {
+        graph.declare_item(StdItem::new(
+            row.name,
+            row.class,
+            row.tier,
+            row.modes,
+            row.targets,
+        )?)?;
+    }
+    Ok(())
+}
+
+/// Admits an already-declared `std.text` surface as exactly its nine module rows.
+pub fn admit_text_surface(graph: &StdGraph) -> Result<(), StdlibError> {
+    let owner = PackageFamily::Text.package_name();
+    let package = graph.package(&owner).ok_or_else(|| {
+        StdlibError::new(
+            StdlibDiagnosticCode::UnknownEdge,
+            format!("`{owner}` is not declared, so its item surface cannot be admitted"),
+        )
+    })?;
+    crate::stdlib::validate_declared_surface(
+        graph,
+        package,
+        &TEXT_ITEMS,
+        &TEXT_MODULE_MODES,
+        &TEXT_MODULE_TARGETS,
+    )?;
+    if TEXT_ITEMS
+        .iter()
+        .any(|row| package.item(row.name).is_none())
+    {
+        return Err(StdlibError::new(
+            StdlibDiagnosticCode::InvalidNameClassification,
+            "the declared std.text item surface is incomplete".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+/// Returns the canonical pure hierarchy with the published item surface of `std.text` declared
+/// (`GNT-34.6-stability-tiers`, `GNT-34.8-defining-identity-and-interface-digest`).
+///
+/// The family owns this declaration, so `canonical_pure_hierarchy` keeps carrying packages,
+/// applicability, and edges only while this constructor adds the clause-derived item rows and, with
+/// them, the package interface digest of `GNT-34.8` over those items.
+pub fn canonical_text_hierarchy() -> Result<StdGraph, StdlibError> {
+    let mut graph = crate::stdlib::canonical_pure_hierarchy()?;
+    declare_text_surface(&mut graph)?;
+    Ok(graph)
+}
 
 /// One frozen text-foundation diagnostic of `GNT-41.0-text-foundation-scope`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
