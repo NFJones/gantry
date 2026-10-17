@@ -270,6 +270,118 @@ impl StabilityTier {
     }
 }
 
+/// One declared public module name of a family naming clause and the clauses that publish it.
+///
+/// A row is a pure declaration: it carries a canonical item name, its classification and tier,
+/// its applicability, and the exact clauses that publish the module, in specification order. It
+/// carries no operation, callable signature, behavior, authority, or runtime availability.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DeclaredModuleRow {
+    /// The canonical logical item name, such as `std.text::builders`.
+    pub name: &'static str,
+    /// The declared name classification of `GNT-34.2-name-classification`.
+    pub class: NameClass,
+    /// The declared stability tier of `GNT-34.6-stability-tiers`.
+    pub tier: StabilityTier,
+    /// The declared semantic modes, in canonical order.
+    pub modes: &'static [SemanticMode],
+    /// The declared target kinds, in canonical order.
+    pub targets: &'static [TargetKind],
+    /// The clauses that publish this module, in specification order.
+    pub clauses: &'static [&'static str],
+}
+
+/// One refusal of a closed declared-module set.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ModuleSetRefusal {
+    /// An expected module name is absent from the candidate set.
+    Missing,
+    /// A module name outside the declared set is present in the candidate set.
+    Unexpected,
+    /// One module name occurs more than once in the candidate set.
+    Duplicate,
+    /// The candidate rows are not in canonical name order.
+    OutOfOrder,
+    /// A candidate row's name classification differs from its declared class.
+    WrongClass,
+    /// A candidate row's stability tier differs from its declared tier.
+    WrongTier,
+    /// A candidate row's semantic modes or target kinds differ from its declared applicability.
+    WrongApplicability,
+    /// A candidate row's clause list or its specification order differs from the declared list.
+    WrongClauses,
+}
+
+impl ModuleSetRefusal {
+    /// Returns the stable diagnostic spelling of this refusal.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Missing => "declared-module-missing",
+            Self::Unexpected => "declared-module-unexpected",
+            Self::Duplicate => "declared-module-duplicate",
+            Self::OutOfOrder => "declared-module-out-of-order",
+            Self::WrongClass => "declared-module-wrong-class",
+            Self::WrongTier => "declared-module-wrong-tier",
+            Self::WrongApplicability => "declared-module-wrong-applicability",
+            Self::WrongClauses => "declared-module-wrong-clauses",
+        }
+    }
+}
+
+/// Admits exactly one closed declared-module set without mutating either input.
+///
+/// `declared` is the candidate set and `expected` is the closed set that a naming clause declares.
+/// The function refuses a missing, extra, duplicate, out-of-order, wrong-class, wrong-tier,
+/// wrong-applicability, or wrong-clause candidate. It borrows both sets, so it can never repair,
+/// reorder, drop, or add a row: a refusal leaves the candidate exactly as it was.
+pub fn admit_declared_modules(
+    declared: &[DeclaredModuleRow],
+    expected: &[DeclaredModuleRow],
+) -> Result<(), ModuleSetRefusal> {
+    let mut seen = BTreeSet::new();
+    for row in declared {
+        if !seen.insert(row.name) {
+            return Err(ModuleSetRefusal::Duplicate);
+        }
+    }
+    let expected_names = expected.iter().map(|row| row.name).collect::<BTreeSet<_>>();
+    if declared
+        .iter()
+        .any(|row| !expected_names.contains(row.name))
+    {
+        return Err(ModuleSetRefusal::Unexpected);
+    }
+    if expected.iter().any(|row| !seen.contains(row.name)) {
+        return Err(ModuleSetRefusal::Missing);
+    }
+    if declared
+        .iter()
+        .map(|row| row.name)
+        .ne(expected.iter().map(|row| row.name))
+    {
+        return Err(ModuleSetRefusal::OutOfOrder);
+    }
+    for candidate in declared {
+        let Some(expected_row) = expected.iter().find(|row| row.name == candidate.name) else {
+            return Err(ModuleSetRefusal::Unexpected);
+        };
+        if candidate.class != expected_row.class {
+            return Err(ModuleSetRefusal::WrongClass);
+        }
+        if candidate.tier != expected_row.tier {
+            return Err(ModuleSetRefusal::WrongTier);
+        }
+        if candidate.modes != expected_row.modes || candidate.targets != expected_row.targets {
+            return Err(ModuleSetRefusal::WrongApplicability);
+        }
+        if candidate.clauses != expected_row.clauses {
+            return Err(ModuleSetRefusal::WrongClauses);
+        }
+    }
+    Ok(())
+}
+
 /// One frozen architecture diagnostic of `GNT-34.0`-`GNT-34.12`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum StdlibDiagnosticCode {

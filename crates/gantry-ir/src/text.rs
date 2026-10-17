@@ -27,11 +27,14 @@ use gantry_core::unicode::{
     grapheme_cluster_boundaries, normalize_nfc, normalize_nfd, to_full_lowercase, to_full_uppercase,
 };
 
+use crate::TargetKind;
 use crate::scalar::CharValue;
+use crate::stdlib::{DeclaredModuleRow, NameClass, StabilityTier};
+use gantry_core::mode::SemanticMode;
 
 /// The declared clauses of Section 41, in specification order
-/// (`GNT-41.0` through `GNT-41.9`).
-pub const TEXT_CLAUSES: [&str; 12] = [
+/// (`GNT-41.0` through `GNT-41.12`).
+pub const TEXT_CLAUSES: [&str; 13] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -44,6 +47,148 @@ pub const TEXT_CLAUSES: [&str; 12] = [
     "GNT-41.9-canonical-text-conversions",
     "GNT-41.10-canonical-text-admission-bound",
     "GNT-41.11-canonical-text-value-bound",
+    "GNT-41.12-text-module-names",
+];
+
+/// The clauses that declare the closed `std.text` module set, in specification order.
+pub const TEXT_MODULE_CLAUSES: [&str; 2] = [
+    "GNT-41.0-text-foundation-scope",
+    "GNT-41.12-text-module-names",
+];
+
+/// The declared semantic modes of every `std.text` module row of `GNT-41.12`.
+pub const TEXT_MODULE_MODES: [SemanticMode; 2] =
+    [SemanticMode::Portable, SemanticMode::Application];
+
+/// The declared target kinds of every `std.text` module row of `GNT-41.12`.
+pub const TEXT_MODULE_TARGETS: [TargetKind; 2] = [TargetKind::Library, TargetKind::Binary];
+
+/// The declared public modules of `std.text`, in canonical name order (`GNT-41.12`).
+///
+/// Each row binds the scope clause, the clause that publishes the module's behavior, the declared
+/// admission bound where the module admits a sequence, the published-value bound, and the naming
+/// clause, in specification order. The rows declare names only: they publish no exported item,
+/// operation, callable signature, behavior, or runtime availability.
+pub const TEXT_MODULE_ROWS: [DeclaredModuleRow; 9] = [
+    DeclaredModuleRow {
+        name: "std.text::builders",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        modes: &TEXT_MODULE_MODES,
+        targets: &TEXT_MODULE_TARGETS,
+        clauses: &[
+            "GNT-41.0-text-foundation-scope",
+            "GNT-41.4-canonical-text-builders",
+            "GNT-41.11-canonical-text-value-bound",
+            "GNT-41.12-text-module-names",
+        ],
+    },
+    DeclaredModuleRow {
+        name: "std.text::case_mapping",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        modes: &TEXT_MODULE_MODES,
+        targets: &TEXT_MODULE_TARGETS,
+        clauses: &[
+            "GNT-41.0-text-foundation-scope",
+            "GNT-41.3-canonical-text-case-mapping",
+            "GNT-41.11-canonical-text-value-bound",
+            "GNT-41.12-text-module-names",
+        ],
+    },
+    DeclaredModuleRow {
+        name: "std.text::comparison",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        modes: &TEXT_MODULE_MODES,
+        targets: &TEXT_MODULE_TARGETS,
+        clauses: &[
+            "GNT-41.0-text-foundation-scope",
+            "GNT-41.6-canonical-text-comparison",
+            "GNT-41.11-canonical-text-value-bound",
+            "GNT-41.12-text-module-names",
+        ],
+    },
+    DeclaredModuleRow {
+        name: "std.text::conversions",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        modes: &TEXT_MODULE_MODES,
+        targets: &TEXT_MODULE_TARGETS,
+        clauses: &[
+            "GNT-41.0-text-foundation-scope",
+            "GNT-41.9-canonical-text-conversions",
+            "GNT-41.10-canonical-text-admission-bound",
+            "GNT-41.11-canonical-text-value-bound",
+            "GNT-41.12-text-module-names",
+        ],
+    },
+    DeclaredModuleRow {
+        name: "std.text::graphemes",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        modes: &TEXT_MODULE_MODES,
+        targets: &TEXT_MODULE_TARGETS,
+        clauses: &[
+            "GNT-41.0-text-foundation-scope",
+            "GNT-41.7-canonical-grapheme-clusters",
+            "GNT-41.11-canonical-text-value-bound",
+            "GNT-41.12-text-module-names",
+        ],
+    },
+    DeclaredModuleRow {
+        name: "std.text::matching",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        modes: &TEXT_MODULE_MODES,
+        targets: &TEXT_MODULE_TARGETS,
+        clauses: &[
+            "GNT-41.0-text-foundation-scope",
+            "GNT-41.8-bounded-text-matching",
+            "GNT-41.11-canonical-text-value-bound",
+            "GNT-41.12-text-module-names",
+        ],
+    },
+    DeclaredModuleRow {
+        name: "std.text::normalization",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        modes: &TEXT_MODULE_MODES,
+        targets: &TEXT_MODULE_TARGETS,
+        clauses: &[
+            "GNT-41.0-text-foundation-scope",
+            "GNT-41.2-canonical-text-normalization",
+            "GNT-41.11-canonical-text-value-bound",
+            "GNT-41.12-text-module-names",
+        ],
+    },
+    DeclaredModuleRow {
+        name: "std.text::traversal",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        modes: &TEXT_MODULE_MODES,
+        targets: &TEXT_MODULE_TARGETS,
+        clauses: &[
+            "GNT-41.0-text-foundation-scope",
+            "GNT-41.5-canonical-text-traversal",
+            "GNT-41.11-canonical-text-value-bound",
+            "GNT-41.12-text-module-names",
+        ],
+    },
+    DeclaredModuleRow {
+        name: "std.text::values",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        modes: &TEXT_MODULE_MODES,
+        targets: &TEXT_MODULE_TARGETS,
+        clauses: &[
+            "GNT-41.0-text-foundation-scope",
+            "GNT-41.1-canonical-text-values",
+            "GNT-41.10-canonical-text-admission-bound",
+            "GNT-41.11-canonical-text-value-bound",
+            "GNT-41.12-text-module-names",
+        ],
+    },
 ];
 
 /// One frozen text-foundation diagnostic of `GNT-41.0-text-foundation-scope`.

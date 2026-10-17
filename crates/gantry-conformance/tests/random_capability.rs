@@ -8,9 +8,19 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::ir::generated::{HostDomainFamily, HostTarget};
-use gantry::ir::{CONSTANT_CLAUSES, HOST_DOMAIN_CLAUSES, PackageFamily, STDLIB_CLAUSES};
+use gantry::ir::{
+    CONSTANT_CLAUSES, HOST_DOMAIN_CLAUSES, PackageFamily, RANDOM_MODULE_CLAUSES, STDLIB_CLAUSES,
+};
 
-const REQUIRED_ANCHORS: [&str; 5] = ["GNT-29.8", "GNT-29.10", "GNT-29.15", "GNT-32.3", "GNT-34.1"];
+const REQUIRED_ANCHORS: [&str; 7] = [
+    "GNT-29.8",
+    "GNT-29.10",
+    "GNT-29.15",
+    "GNT-32.3",
+    "GNT-34.1",
+    "GNT-50.0-random-foundation-scope",
+    "GNT-50.1-random-modules-and-item-rows",
+];
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -30,6 +40,7 @@ fn declared_anchor(token: &str) -> bool {
         .iter()
         .chain(HOST_DOMAIN_CLAUSES.iter())
         .chain(CONSTANT_CLAUSES.iter())
+        .chain(RANDOM_MODULE_CLAUSES.iter())
         .any(|anchor| *anchor == token || anchor.starts_with(&introduced))
 }
 
@@ -49,6 +60,7 @@ fn declared_section(token: &str) -> bool {
         .iter()
         .chain(HOST_DOMAIN_CLAUSES.iter())
         .chain(CONSTANT_CLAUSES.iter())
+        .chain(RANDOM_MODULE_CLAUSES.iter())
         .any(|anchor| {
             *anchor == token || anchor.starts_with(&dotted) || anchor.starts_with(&hyphenated)
         })

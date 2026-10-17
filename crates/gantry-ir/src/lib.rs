@@ -50,6 +50,7 @@ mod path;
 mod primitive;
 mod prng;
 mod protected;
+mod random;
 pub mod registry;
 mod resource;
 mod scalar;
@@ -428,9 +429,9 @@ pub use collections::{
 // backtracking, host regular-expression semantics, or locale.
 pub use text::{
     CaseMapping, NormalizationForm, PATTERN_INSTRUCTION_BOUND, PATTERN_REPEAT_BOUND,
-    PATTERN_SCALAR_BOUND, PATTERN_STEP_BOUND, Pattern, TEXT_CLAUSES, TEXT_VALUE_SCALAR_BOUND,
-    TextBuilder, TextDiagnosticCode, TextError, TextGraphemes, TextOrdering, TextRange,
-    TextScalars, TextValue,
+    PATTERN_SCALAR_BOUND, PATTERN_STEP_BOUND, Pattern, TEXT_CLAUSES, TEXT_MODULE_CLAUSES,
+    TEXT_MODULE_MODES, TEXT_MODULE_ROWS, TEXT_MODULE_TARGETS, TEXT_VALUE_SCALAR_BOUND, TextBuilder,
+    TextDiagnosticCode, TextError, TextGraphemes, TextOrdering, TextRange, TextScalars, TextValue,
 };
 // The Section 40 deterministic numeric foundation is declaration-only: it publishes the versioned
 // deterministic generator identity and its exact step, with no host entropy, global state, secure
@@ -438,6 +439,12 @@ pub use text::{
 pub use prng::{
     DeterministicPrng, NUM_CLAUSES, PRNG_ALGORITHM, PRNG_ALGORITHM_VERSION, PRNG_MIX_FIRST,
     PRNG_MIX_SECOND, PRNG_STATE_INCREMENT, PrngAlgorithmVersion,
+};
+// The Section 50 random family is declaration-only: it publishes the closed module-name row of the
+// capability-backed `std.random` family with its owning clauses and application-only applicability,
+// and declares no draw API, entropy source, capability, adapter, or runtime availability.
+pub use random::{
+    RANDOM_MODULE_CLAUSES, RANDOM_MODULE_MODES, RANDOM_MODULE_ROWS, RANDOM_MODULE_TARGETS,
 };
 // The Section 40 numeric algorithms are declaration-only primitives: the checked integer and bit
 // operations publish exact canonical values or exactly one declared deterministic failure, and the
@@ -447,9 +454,9 @@ pub use prng::{
 // coercion, implicit widening, ambient rounding, locale formatting, or host dependence.
 pub use numeric::{
     BinaryBitOperation, BinaryFloatAlgorithm, CheckedIntegerAlgorithm, NEGATE_WIRE_NAME,
-    NumericConversion, UnaryBitOperation, UnaryFloatAlgorithm, apply_in_mode, float_to_int,
-    format_canonical_float, format_canonical_int, int_to_float, negate, parse_canonical_float,
-    parse_canonical_int,
+    NUM_MODULE_CLAUSES, NUM_MODULE_MODES, NUM_MODULE_ROWS, NUM_MODULE_TARGETS, NumericConversion,
+    UnaryBitOperation, UnaryFloatAlgorithm, apply_in_mode, float_to_int, format_canonical_float,
+    format_canonical_int, int_to_float, negate, parse_canonical_float, parse_canonical_int,
 };
 // The Section 34 standard-library architecture model is declaration-only: it records
 // the logical package hierarchy, its dependency DAG, the edition prelude, facade
@@ -457,15 +464,16 @@ pub use numeric::{
 // physical repository layout entering an identity.
 pub use std_hierarchy::canonical_std_hierarchy;
 pub use stdlib::{
-    CANONICAL_PRELUDE_EDITION, CANONICAL_PRELUDE_MEMBERS, FacadeReexport, FeatureSelection,
-    MAX_STD_NAME_BYTES, MAX_STD_PACKAGES, NameClass, PRELUDE_BINDINGS, PackageFamily, Prelude,
-    PreludeBinding, Relocation, STD_PRESENTATION_REFUSALS, STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER,
-    STDLIB_NON_CLAIMS, SelectedInstance, StabilityTier, StabilityTransition, StdContractVersion,
-    StdDeprecation, StdGraph, StdGraphIdentity, StdInterfaceIdentity, StdItem, StdManifest,
-    StdManifestEntry, StdName, StdPackage, StdPathInspection, StdPresentation,
-    StdlibDiagnosticCode, StdlibError, StdlibNonClaim, StdlibNonClaimAssertion,
-    admit_tooling_inputs, canonical_pure_hierarchy, check_layout_identity, check_stdlib_non_claims,
-    inspect_presentation, require_applicable,
+    CANONICAL_PRELUDE_EDITION, CANONICAL_PRELUDE_MEMBERS, DeclaredModuleRow, FacadeReexport,
+    FeatureSelection, MAX_STD_NAME_BYTES, MAX_STD_PACKAGES, ModuleSetRefusal, NameClass,
+    PRELUDE_BINDINGS, PackageFamily, Prelude, PreludeBinding, Relocation,
+    STD_PRESENTATION_REFUSALS, STDLIB_CLAUSES, STDLIB_NON_CLAIM_ORDER, STDLIB_NON_CLAIMS,
+    SelectedInstance, StabilityTier, StabilityTransition, StdContractVersion, StdDeprecation,
+    StdGraph, StdGraphIdentity, StdInterfaceIdentity, StdItem, StdManifest, StdManifestEntry,
+    StdName, StdPackage, StdPathInspection, StdPresentation, StdlibDiagnosticCode, StdlibError,
+    StdlibNonClaim, StdlibNonClaimAssertion, admit_declared_modules, admit_tooling_inputs,
+    canonical_pure_hierarchy, check_layout_identity, check_stdlib_non_claims, inspect_presentation,
+    require_applicable,
 };
 pub use target::{
     AbiEnvironment, Architecture, BranchDeclaration, BranchMatch, BranchOutcome,

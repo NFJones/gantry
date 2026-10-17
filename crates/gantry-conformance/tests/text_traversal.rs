@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use gantry::ir::{CharValue, TEXT_CLAUSES, TextValue};
 
 /// The declared clauses of Section 41, written out independently of the model.
-const EXPECTED_CLAUSES: [&str; 12] = [
+const EXPECTED_CLAUSES: [&str; 13] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -20,6 +20,7 @@ const EXPECTED_CLAUSES: [&str; 12] = [
     "GNT-41.9-canonical-text-conversions",
     "GNT-41.10-canonical-text-admission-bound",
     "GNT-41.11-canonical-text-value-bound",
+    "GNT-41.12-text-module-names",
 ];
 const TRAVERSAL_CLAUSE: &str = "GNT-41.5-canonical-text-traversal";
 

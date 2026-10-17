@@ -62,8 +62,12 @@ fn canonical_modes_surface_is_published() {
     let anchor = "GNT-40.7-canonical-integer-overflow-modes";
     assert_eq!(
         NUM_CLAUSES.last(),
-        Some(&anchor),
-        "the numeric section publishes the overflow-mode clause last"
+        Some(&"GNT-40.8-numeric-module-names"),
+        "the numeric section publishes the module-name clause last"
+    );
+    assert!(
+        NUM_CLAUSES.contains(&anchor),
+        "the numeric section publishes the overflow-mode clause"
     );
     assert!(note.contains(anchor), "the note names `{anchor}`");
     let (clause, following) = clause_body(&specification, anchor);
@@ -72,8 +76,13 @@ fn canonical_modes_surface_is_published() {
         "the overflow-mode clause declares a body"
     );
     assert!(
-        !following.contains("<a id=\"GNT-40."),
-        "no further clause of the numeric section follows the overflow-mode clause"
+        following.contains("<a id=\"GNT-40.8-numeric-module-names\">"),
+        "the module-name clause follows the overflow-mode clause"
+    );
+    assert_eq!(
+        specification.matches("<a id=\"GNT-40.").count(),
+        NUM_CLAUSES.len(),
+        "the numeric section declares one anchor per published clause"
     );
     assert_eq!(
         OverflowMode::ALL.map(OverflowMode::as_str),

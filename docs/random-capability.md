@@ -32,6 +32,10 @@ refused rather than substituted, deferred, or inferred from the host.
   be presented as such a guarantee.
 - `GNT-32.3` refuses secure-random draws in constant initializers: a declaration whose initializer
   reaches a secure-random draw must not evaluate.
+- `GNT-50.0-random-foundation-scope` and `GNT-50.1-random-modules-and-item-rows` declare the
+  closed module row of the family: `std.random::entropy`, one module at the stable tier with the
+  application mode over the library and binary targets. They declare no draw operation, bound, or
+  authority.
 
 ## Separation from deterministic randomness
 
@@ -42,11 +46,23 @@ secure. `GNT-29.8` and `GNT-29.15` grant no randomness, entropy, or secret acces
 records that durable code must record returned values instead of drawing again on recovery; that
 recording is a requirement awaiting normative interface rows, not behavior this surface ships.
 
+## Declared module names
+
+The family declares exactly one public module, `std.random::entropy`, in canonical name order under
+`GNT-50.1-random-modules-and-item-rows`, with the family scope and applicability of
+`GNT-50.0-random-foundation-scope`: one module at the stable tier, application-only over the library
+and binary targets. The model `RandomModuleRow`, `RANDOM_MODULE_ROWS`, and
+`RANDOM_MODULE_CLAUSES` publish the row and its owning clauses. The row binds only those two
+clauses and names a capability-backed namespace: it is not a raw entropy API, a draw operation, a
+capability grant, or an authority grant, and it is not declared by
+`GNT-34.1-canonical-hierarchy-and-package-names` or `GNT-29.8-time-randomness-and-secret-contracts`.
+
 ## What this surface does not claim
 
-- It declares no draw API, no request or byte bound, no adapter failure mapping, no cancellation or
-  concurrency rule, no accepted-draw settlement, and no durable-recording rule; those need normative
-  interface rows before an implementation may claim them.
+- It declares the module name only: no draw API, no request or byte bound, no adapter failure
+  mapping, no cancellation or concurrency rule, no accepted-draw settlement, and no
+  durable-recording rule; those need normative interface rows before an implementation may claim
+  them.
 - It grants no entropy, no host adapter, and no portable or durable applicability for randomness
   itself. Whether a drawn value may enter durable state is undecided until the draw result type and
   the durable interface are normative.

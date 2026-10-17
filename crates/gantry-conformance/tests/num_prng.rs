@@ -14,7 +14,7 @@ use gantry::ir::{
     PrngAlgorithmVersion, SCALAR_CLAUSES, STDLIB_CLAUSES,
 };
 
-const REQUIRED_ANCHORS: [&str; 8] = [
+const REQUIRED_ANCHORS: [&str; 9] = [
     "GNT-40.0-deterministic-numeric-scope",
     "GNT-40.1-deterministic-prng-identity",
     "GNT-40.2-checked-integer-algorithms",
@@ -23,6 +23,7 @@ const REQUIRED_ANCHORS: [&str; 8] = [
     "GNT-40.5-finite-float-algorithms",
     "GNT-40.6-canonical-numeric-text",
     "GNT-40.7-canonical-integer-overflow-modes",
+    "GNT-40.8-numeric-module-names",
 ];
 
 fn workspace_root() -> PathBuf {

@@ -15,7 +15,7 @@ const LIMITS_CLAUSE: &str = "GNT-41.10-canonical-text-admission-bound";
 
 /// The text surface this slice publishes, written out independently of the model and the note: the
 /// clause anchors in specification order and the registered refusal spellings in declaration order.
-const EXPECTED_CLAUSES: [&str; 12] = [
+const EXPECTED_CLAUSES: [&str; 13] = [
     "GNT-41.0-text-foundation-scope",
     "GNT-41.1-canonical-text-values",
     "GNT-41.2-canonical-text-normalization",
@@ -28,6 +28,7 @@ const EXPECTED_CLAUSES: [&str; 12] = [
     "GNT-41.9-canonical-text-conversions",
     "GNT-41.10-canonical-text-admission-bound",
     "GNT-41.11-canonical-text-value-bound",
+    "GNT-41.12-text-module-names",
 ];
 const EXPECTED_DIAGNOSTICS: [&str; 7] = [
     "text-invalid-utf8",
@@ -468,8 +469,8 @@ fn admissions_enforce_the_declared_admission_bound() {
     assert_eq!(TEXT_VALUE_SCALAR_BOUND, 65_536);
     assert_eq!(
         TEXT_CLAUSES.len(),
-        12,
-        "the section declares twelve clauses"
+        13,
+        "the section declares thirteen clauses"
     );
     assert!(TEXT_CLAUSES.contains(&LIMITS_CLAUSE));
     let detail = |observed: usize| {

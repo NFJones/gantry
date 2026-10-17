@@ -11,9 +11,116 @@
 //! no source-literal grammar, work limit, cancellation safe point, quota, schema, recovery,
 //! durability, boundary encoding, lowering, machine representation, or family behavior.
 
+use crate::TargetKind;
 use crate::scalar::OverflowMode;
+use crate::stdlib::{DeclaredModuleRow, NameClass, StabilityTier};
+use gantry_core::mode::SemanticMode;
 use gantry_core::numeric::{GANTRY_INT_MAXIMUM, GANTRY_INT_MINIMUM, GantryFloat, GantryInt};
 use gantry_core::portable::DeterministicEvaluationCode;
+
+/// The clauses that declare the closed `std.num` module set, in specification order.
+pub const NUM_MODULE_CLAUSES: [&str; 2] = [
+    "GNT-40.0-deterministic-numeric-scope",
+    "GNT-40.8-numeric-module-names",
+];
+
+/// The declared semantic modes of every `std.num` module row of `GNT-40.8`.
+pub const NUM_MODULE_MODES: [SemanticMode; 2] = [SemanticMode::Portable, SemanticMode::Application];
+
+/// The declared target kinds of every `std.num` module row of `GNT-40.8`.
+pub const NUM_MODULE_TARGETS: [TargetKind; 2] = [TargetKind::Library, TargetKind::Binary];
+
+/// The declared public modules of `std.num`, in canonical name order (`GNT-40.8`).
+///
+/// Each row binds the scope clause, the clause that publishes the module's behavior, and the
+/// naming clause, in specification order. The rows declare names only: they publish no exported
+/// item, operation, callable signature, behavior, or runtime availability.
+pub const NUM_MODULE_ROWS: [DeclaredModuleRow; 7] = [
+    DeclaredModuleRow {
+        name: "std.num::bits",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        modes: &NUM_MODULE_MODES,
+        targets: &NUM_MODULE_TARGETS,
+        clauses: &[
+            "GNT-40.0-deterministic-numeric-scope",
+            "GNT-40.4-integer-bit-operations",
+            "GNT-40.8-numeric-module-names",
+        ],
+    },
+    DeclaredModuleRow {
+        name: "std.num::conversions",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        modes: &NUM_MODULE_MODES,
+        targets: &NUM_MODULE_TARGETS,
+        clauses: &[
+            "GNT-40.0-deterministic-numeric-scope",
+            "GNT-40.3-numeric-conversions",
+            "GNT-40.8-numeric-module-names",
+        ],
+    },
+    DeclaredModuleRow {
+        name: "std.num::floating",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        modes: &NUM_MODULE_MODES,
+        targets: &NUM_MODULE_TARGETS,
+        clauses: &[
+            "GNT-40.0-deterministic-numeric-scope",
+            "GNT-40.5-finite-float-algorithms",
+            "GNT-40.8-numeric-module-names",
+        ],
+    },
+    DeclaredModuleRow {
+        name: "std.num::integer",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        modes: &NUM_MODULE_MODES,
+        targets: &NUM_MODULE_TARGETS,
+        clauses: &[
+            "GNT-40.0-deterministic-numeric-scope",
+            "GNT-40.2-checked-integer-algorithms",
+            "GNT-40.8-numeric-module-names",
+        ],
+    },
+    DeclaredModuleRow {
+        name: "std.num::overflow",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        modes: &NUM_MODULE_MODES,
+        targets: &NUM_MODULE_TARGETS,
+        clauses: &[
+            "GNT-40.0-deterministic-numeric-scope",
+            "GNT-40.7-canonical-integer-overflow-modes",
+            "GNT-40.8-numeric-module-names",
+        ],
+    },
+    DeclaredModuleRow {
+        name: "std.num::prng",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        modes: &NUM_MODULE_MODES,
+        targets: &NUM_MODULE_TARGETS,
+        clauses: &[
+            "GNT-40.0-deterministic-numeric-scope",
+            "GNT-40.1-deterministic-prng-identity",
+            "GNT-40.8-numeric-module-names",
+        ],
+    },
+    DeclaredModuleRow {
+        name: "std.num::text",
+        class: NameClass::Module,
+        tier: StabilityTier::Stable,
+        modes: &NUM_MODULE_MODES,
+        targets: &NUM_MODULE_TARGETS,
+        clauses: &[
+            "GNT-40.0-deterministic-numeric-scope",
+            "GNT-40.6-canonical-numeric-text",
+            "GNT-40.8-numeric-module-names",
+        ],
+    },
+];
 
 /// One admitted binary checked integer algorithm of `GNT-40.2`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
