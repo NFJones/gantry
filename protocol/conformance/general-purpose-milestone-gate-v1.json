@@ -135,7 +135,7 @@
     },
     {
       "path": "protocol/conformance/general-purpose-foundation-gate-v1.json",
-      "sha256": "2e6fff61f6efa2ff91c08182d6d1c6cdec1b921db28f119c965f2234adb59145"
+      "sha256": "e9a61eeed4e474b29b4a69d32e067fa80da808056b7ce7afb295e6220bddd0a7"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",

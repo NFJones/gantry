@@ -151,7 +151,7 @@
     },
     {
       "path": "protocol/conformance/async-execution-adoption-v1.json",
-      "sha256": "f43d576c842386f04a852a987162dd7e18b3afe2987d4669bb310a0ae18f476d"
+      "sha256": "6b3beac83676730b6171a73dcb95688d649a32c789dc222485630a7dec1fb583"
     },
     {
       "path": "protocol/conformance/general-purpose-preregistration-gate-v1.json",

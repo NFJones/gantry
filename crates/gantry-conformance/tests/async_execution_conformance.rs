@@ -31,7 +31,7 @@ const PREREQUISITES: [(&str, &str, &str, &str, &str); 5] = [
         "a6915ef212b9e245da00fd383f79bc81f05c3556",
         "Close the native source concurrency evidence gate.",
         "protocol/conformance/native-source-concurrency-gate-v1.json",
-        "b91cf779b7f75ff72fb2a39501244793ce72ca7cfda14d6569e61688acad8d18",
+        "93722e7f38d8a630b1c414d7aaf13a0d6e37f7fc6bb777caf07f9de3d4fbaf97",
     ),
     (
         "GNT-ASYNC-PROOF-001",
@@ -59,7 +59,7 @@ const ARTIFACTS: [(&str, &str); 8] = [
     ),
     (
         "protocol/conformance/async-execution-adoption-v1.json",
-        "f43d576c842386f04a852a987162dd7e18b3afe2987d4669bb310a0ae18f476d",
+        "6b3beac83676730b6171a73dcb95688d649a32c789dc222485630a7dec1fb583",
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
