@@ -436,9 +436,11 @@ pub use collections::{
 // backtracking, host regular-expression semantics, or locale.
 pub use text::{
     CaseMapping, NormalizationForm, PATTERN_INSTRUCTION_BOUND, PATTERN_REPEAT_BOUND,
-    PATTERN_SCALAR_BOUND, PATTERN_STEP_BOUND, Pattern, TEXT_CLAUSES, TEXT_MODULE_CLAUSES,
-    TEXT_MODULE_MODES, TEXT_MODULE_ROWS, TEXT_MODULE_TARGETS, TEXT_VALUE_SCALAR_BOUND, TextBuilder,
-    TextDiagnosticCode, TextError, TextGraphemes, TextOrdering, TextRange, TextScalars, TextValue,
+    PATTERN_SCALAR_BOUND, PATTERN_STEP_BOUND, Pattern, TEXT_CLAUSES, TEXT_ITEMS,
+    TEXT_MODULE_CLAUSES, TEXT_MODULE_MODES, TEXT_MODULE_ROWS, TEXT_MODULE_TARGETS,
+    TEXT_VALUE_SCALAR_BOUND, TextBuilder, TextDiagnosticCode, TextError, TextGraphemes,
+    TextOrdering, TextRange, TextScalars, TextValue, admit_text_surface, canonical_text_hierarchy,
+    declare_text_surface,
 };
 // The Section 40 deterministic numeric foundation is declaration-only: it publishes the versioned
 // deterministic generator identity and its exact step, with no host entropy, global state, secure
@@ -451,7 +453,9 @@ pub use prng::{
 // capability-backed `std.random` family with its owning clauses and application-only applicability,
 // and declares no draw API, entropy source, capability, adapter, or runtime availability.
 pub use random::{
-    RANDOM_MODULE_CLAUSES, RANDOM_MODULE_MODES, RANDOM_MODULE_ROWS, RANDOM_MODULE_TARGETS,
+    RANDOM_ITEMS, RANDOM_MODULE_CLAUSES, RANDOM_MODULE_MODES, RANDOM_MODULE_ROWS,
+    RANDOM_MODULE_TARGETS, admit_random_surface, canonical_random_hierarchy,
+    declare_random_package, declare_random_surface,
 };
 // The Section 40 numeric algorithms are declaration-only primitives: the checked integer and bit
 // operations publish exact canonical values or exactly one declared deterministic failure, and the
@@ -460,9 +464,10 @@ pub use random::{
 // apply the declared modes to the algorithms without any implicit wrapping or saturation, masking,
 // coercion, implicit widening, ambient rounding, locale formatting, or host dependence.
 pub use numeric::{
-    BinaryBitOperation, BinaryFloatAlgorithm, CheckedIntegerAlgorithm, NEGATE_WIRE_NAME,
+    BinaryBitOperation, BinaryFloatAlgorithm, CheckedIntegerAlgorithm, NEGATE_WIRE_NAME, NUM_ITEMS,
     NUM_MODULE_CLAUSES, NUM_MODULE_MODES, NUM_MODULE_ROWS, NUM_MODULE_TARGETS, NumericConversion,
-    UnaryBitOperation, UnaryFloatAlgorithm, apply_in_mode, float_to_int, format_canonical_float,
+    UnaryBitOperation, UnaryFloatAlgorithm, admit_num_surface, apply_in_mode,
+    canonical_num_hierarchy, declare_num_surface, float_to_int, format_canonical_float,
     format_canonical_int, int_to_float, negate, parse_canonical_float, parse_canonical_int,
 };
 // The Section 34 standard-library architecture model is declaration-only: it records

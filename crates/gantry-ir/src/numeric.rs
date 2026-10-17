@@ -13,7 +13,10 @@
 
 use crate::TargetKind;
 use crate::scalar::OverflowMode;
-use crate::stdlib::{DeclaredModuleRow, NameClass, StabilityTier};
+use crate::stdlib::{
+    DeclaredModuleRow, NameClass, PackageFamily, StabilityTier, StdGraph, StdItem,
+    StdlibDiagnosticCode, StdlibError,
+};
 use gantry_core::mode::SemanticMode;
 use gantry_core::numeric::{GANTRY_INT_MAXIMUM, GANTRY_INT_MINIMUM, GantryFloat, GantryInt};
 use gantry_core::portable::DeterministicEvaluationCode;
@@ -121,6 +124,105 @@ pub const NUM_MODULE_ROWS: [DeclaredModuleRow; 7] = [
         ],
     },
 ];
+
+/// The exported-item rows of `std.num` of `GNT-34.6-stability-tiers` and
+/// `GNT-34.8-defining-identity-and-interface-digest`, derived from the closed module set of
+/// `GNT-40.8-numeric-module-names`.
+///
+/// The rows are exactly the [`DeclaredModuleRow`] values the naming clause publishes, so an
+/// exported item is never invented beside its owning clause: every name, classification, tier,
+/// applicability, and clause list is the one the reviewed clause set already fixes. A row declares
+/// a module name only and publishes no exported callable, operation, signature, behavior, or
+/// runtime availability.
+pub const NUM_ITEMS: [DeclaredModuleRow; 7] = NUM_MODULE_ROWS;
+
+/// Declares the published item surface of `std.num` over one standard-library graph
+/// (`GNT-34.6-stability-tiers`, `GNT-34.8-defining-identity-and-interface-digest`).
+///
+/// The owning package must already be declared, and every item carries the applicability of its own
+/// clause row, so an item is never applicable outside the applicability its clause fixes
+/// (`GNT-34.7-applicability-and-feature-granularity`). A package whose applicability, exports,
+/// names, item metadata, or item set differs from the rows is refused before any item is declared,
+/// and a second declaration of one item is refused by the graph rather than merged.
+pub fn declare_num_surface(graph: &mut StdGraph) -> Result<(), StdlibError> {
+    let owner = PackageFamily::Num.package_name();
+    let present = {
+        let package = graph.package(&owner).ok_or_else(|| {
+            StdlibError::new(
+                StdlibDiagnosticCode::UnknownEdge,
+                format!("`{owner}` is not declared, so its item surface cannot be declared"),
+            )
+        })?;
+        crate::stdlib::validate_declared_surface(
+            graph,
+            package,
+            &NUM_ITEMS,
+            &NUM_MODULE_MODES,
+            &NUM_MODULE_TARGETS,
+        )?;
+        NUM_ITEMS
+            .iter()
+            .filter(|row| package.item(row.name).is_some())
+            .count()
+    };
+    if present == NUM_ITEMS.len() {
+        let row = NUM_ITEMS[0];
+        return graph.declare_item(StdItem::new(
+            row.name,
+            row.class,
+            row.tier,
+            row.modes,
+            row.targets,
+        )?);
+    }
+    for row in NUM_ITEMS {
+        graph.declare_item(StdItem::new(
+            row.name,
+            row.class,
+            row.tier,
+            row.modes,
+            row.targets,
+        )?)?;
+    }
+    Ok(())
+}
+
+/// Admits an already-declared `std.num` surface as exactly its seven module rows.
+pub fn admit_num_surface(graph: &StdGraph) -> Result<(), StdlibError> {
+    let owner = PackageFamily::Num.package_name();
+    let package = graph.package(&owner).ok_or_else(|| {
+        StdlibError::new(
+            StdlibDiagnosticCode::UnknownEdge,
+            format!("`{owner}` is not declared, so its item surface cannot be admitted"),
+        )
+    })?;
+    crate::stdlib::validate_declared_surface(
+        graph,
+        package,
+        &NUM_ITEMS,
+        &NUM_MODULE_MODES,
+        &NUM_MODULE_TARGETS,
+    )?;
+    if NUM_ITEMS.iter().any(|row| package.item(row.name).is_none()) {
+        return Err(StdlibError::new(
+            StdlibDiagnosticCode::InvalidNameClassification,
+            "the declared std.num item surface is incomplete".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+/// Returns the canonical pure hierarchy with the published item surface of `std.num` declared
+/// (`GNT-34.6-stability-tiers`, `GNT-34.8-defining-identity-and-interface-digest`).
+///
+/// The family owns this declaration, so `canonical_pure_hierarchy` keeps carrying packages,
+/// applicability, and edges only while this constructor adds the clause-derived item rows and, with
+/// them, the package interface digest of `GNT-34.8` over those items.
+pub fn canonical_num_hierarchy() -> Result<StdGraph, StdlibError> {
+    let mut graph = crate::stdlib::canonical_pure_hierarchy()?;
+    declare_num_surface(&mut graph)?;
+    Ok(graph)
+}
 
 /// One admitted binary checked integer algorithm of `GNT-40.2`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

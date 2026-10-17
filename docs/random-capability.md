@@ -67,3 +67,18 @@ capability grant, or an authority grant, and it is not declared by
 - It grants no entropy, no host adapter, and no portable or durable applicability for randomness
   itself. Whether a drawn value may enter durable state is undecided until the draw result type and
   the durable interface are normative.
+
+## Exported item row (`GNT-34.6`, `GNT-34.8`)
+
+The exported item row of the family is declared from the same vocabulary: `RANDOM_ITEMS` holds the
+single `DeclaredModuleRow` value of `RANDOM_MODULE_ROWS`, `declare_random_package` declares the
+capability-backed `std.random` package together with that row, `declare_random_surface` declares the
+item over an already-declared package, `admit_random_surface` admits an already-declared surface
+only as that one row, and `canonical_random_hierarchy` composes the package and its row onto the
+canonical pure hierarchy. The package is application-only over the library and binary targets and
+declares no dependency edge, so the family stays outside the pure dependency DAG while its item
+enters the `GNT-34.8-defining-identity-and-interface-digest` identity. The lane
+`crates/gantry-conformance/tests/stdlib_items.rs` pins the row and refuses an invented, duplicate,
+wrong-class, wrong-tier, wrong-applicability, or otherwise partial candidate without mutating the
+graph. The row remains a capability-backed namespace: no draw operation, callable signature,
+request or byte bound, capability or authority grant, adapter, or runtime availability is added.

@@ -46,11 +46,22 @@ depends on a host adapter. Physical Rust crate layout is nonsemantic: splitting 
 combining crates does not change logical source identity
 (`GNT-34.8-defining-identity-and-interface-digest`).
 
-The declaration carries package identities, applicability, and edges, plus the two
+The base declaration carries package identities, applicability, and edges, plus the two
 enumerated prelude items of `std.core` (the explicit exception below). Every other item
-belongs to the family that owns its API surface, so the non-core families declare no
-items yet: `std.collections`, for example, declares none until its collection API rows are
-normative (`GNT-GP-COLL-001`).
+belongs to the family that owns its API surface, so the base constructor declares none for
+the non-core families and each family constructor adds its own reviewed rows.
+
+`canonical_std_hierarchy` composes the declared item surfaces in canonical family order
+(`declare_collections_surface`, `declare_codec_surface`, `declare_crypto_surface`,
+`declare_data_surface`, `declare_env_surface`, `declare_num_surface`,
+`declare_random_package` with `declare_random_surface`, and `declare_text_surface`). The
+`std.text` and `std.num` rows derive from the closed module sets of
+`GNT-41.12-text-module-names` and `GNT-40.8-numeric-module-names`, and the single
+`std.random` row derives from `GNT-50.1-random-modules-and-item-rows`. The capability-backed
+`std.random` package declares no dependency edge, so it joins the aggregate without changing
+the pure DAG. Every item enters the `GNT-34.8-defining-identity-and-interface-digest`
+package identity, and `crates/gantry-conformance/tests/stdlib_items.rs` pins the closed sets,
+the item-derived digests, and the refusals.
 
 ## Edition prelude
 

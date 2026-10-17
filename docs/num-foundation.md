@@ -180,3 +180,20 @@ allocation and logical construction remain outside these bounds. Recovery restar
 ## Declared module names (`GNT-40.8`)
 
 `GNT-40.8-numeric-module-names` declares the closed public module set of the pure `std.num` family in canonical name order — `std.num::bits`, `std.num::conversions`, `std.num::floating`, `std.num::integer`, `std.num::overflow`, `std.num::prng`, and `std.num::text` — each classified as a module at the stable tier with the family portable and application modes over the library and binary targets. Every row binds `GNT-40.0-deterministic-numeric-scope`, the clause that publishes its behavior (`GNT-40.1-deterministic-prng-identity` through `GNT-40.7-canonical-integer-overflow-modes`), and `GNT-40.8-numeric-module-names`, in specification order, and the model `DeclaredModuleRow` values in `NUM_MODULE_ROWS` with the `NUM_MODULE_CLAUSES` vocabulary publish them. The clause declares no callable signature, operation, conversion, algorithm, behavior, exported item row, declare or admit surface, aggregate or catalog export, interface identity, prelude member, `std.random` module, adapter dependency, or pure-DAG change, and stable namespace compatibility is neither a stable-edition status nor runtime availability.
+
+## Exported item rows (`GNT-40.0`, `GNT-40.8`, `GNT-34.6`, `GNT-34.8`)
+
+`NUM_ITEMS` derives the exported item surface of `std.num` from the closed module set of
+`GNT-40.8-numeric-module-names`: exactly the seven rows `std.num::bits`, `std.num::conversions`,
+`std.num::floating`, `std.num::integer`, `std.num::overflow`, `std.num::prng`, and `std.num::text`,
+each at the module class, the stable tier, and the portable and application modes over the library
+and binary targets, carrying `GNT-40.0-deterministic-numeric-scope`, the clause that publishes its
+behavior, and the naming clause in specification order. `declare_num_surface` and
+`admit_num_surface` publish the declaration and admission pair, and `canonical_num_hierarchy`
+composes the surface onto the canonical pure hierarchy. The rows enter the
+`GNT-34.8-defining-identity-and-interface-digest` identity of the package, so the family package
+republishes a digest over them; no callable signature, algorithm, behavior, durable mode, edition
+prelude member, adapter dependency, or pure-DAG edge is added. The lane
+`crates/gantry-conformance/tests/stdlib_items.rs` pins the exact set, its clause order, the digest,
+and the refusal of an invented, missing, extra, duplicate, wrong-class, wrong-tier,
+wrong-applicability, wrong-clause, or partial set without mutation.
