@@ -5156,6 +5156,41 @@ fn live_resource_structs_seed_the_resource_class_and_fold_stored_members() {
     assert!(!properties.is_source_protected());
 }
 
+/// A source constructor of the admitted carrier form is refused, while an ordinary `affine
+/// struct` and a bare `live_resource struct` value remain constructible.
+#[test]
+fn affine_live_resource_declarations_refuse_source_construction() {
+    for source in [
+        "affine live_resource struct Handle { token: Int } fn main() { let h: Handle = Handle { token: 1 }; discard h; }",
+        "affine live_resource struct Handle { token: Int } fn main() { discard Handle { token: 1 }; }",
+        "affine live_resource struct Box<T> { value: T } fn main() { let b: Box<Int> = Box { value: 1 }; discard b; }",
+    ] {
+        let rejected = analyze(source);
+        assert_ne!(rejected.status(), AnalysisStatus::Valid, "{source}");
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "live-resource-construction"),
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+    }
+
+    for source in [
+        "affine struct Plain { value: Int } fn main() { let p: Plain = Plain { value: 1 }; discard p; }",
+        "live_resource struct Bare { token: Int } fn main() { let b: Bare = Bare { token: 1 }; discard b; }",
+    ] {
+        let accepted = analyze(source);
+        assert_eq!(
+            accepted.status(),
+            AnalysisStatus::Valid,
+            "{source}: {:?}",
+            accepted.diagnostics()
+        );
+    }
+}
+
 /// The admitted `affine live_resource struct` form seeds three independent facts, and the affine
 /// member fold carries all three to a stored aggregate while the bare form keeps its own contract.
 #[test]

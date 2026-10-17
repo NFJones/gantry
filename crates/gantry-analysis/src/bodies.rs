@@ -271,6 +271,7 @@ struct StructFieldShape {
 #[derive(Clone, Debug)]
 struct StructShape {
     descriptor: TypeDescriptor,
+    path: CanonicalPath,
     fields: BTreeMap<Arc<str>, StructFieldShape>,
 }
 
@@ -834,6 +835,7 @@ fn build_body_context(
                         symbol.id,
                         StructShape {
                             descriptor: TypeDescriptor::declared(symbol.path.clone()),
+                            path: symbol.path.clone(),
                             fields,
                         },
                     );
@@ -8131,6 +8133,34 @@ fn closed_type_arguments(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Refuses a source construction of the admitted carrier declaration form.
+///
+/// A carrier is acquired by its owning operation and never assembled from source fields, so a
+/// constructor of an `affine live_resource struct` declaration is refused under the declared
+/// `live-resource-construction` diagnostic. An ordinary `affine struct` and a bare
+/// `live_resource struct` keep their existing construction behavior.
+fn refuse_carrier_construction(
+    context: &BodyContext,
+    path: &CanonicalPath,
+    span: &SourceSpan,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    if context
+        .capability_declarations
+        .get(path.as_str())
+        .is_some_and(GenericDeclarationShape::is_affine_live_resource)
+    {
+        diagnostics.push(body_diagnostic(
+            "live-resource-construction",
+            DiagnosticCategory::Type,
+            "a struct constructor would forge a value of an admitted affine live_resource declaration",
+            span.clone(),
+            [("declaration", path.as_str())],
+        )?);
+    }
+    Ok(())
+}
+
 fn infer_struct(
     tree: &SyntaxTree,
     node: &gantry_frontend::SyntaxNode,
@@ -8170,6 +8200,7 @@ fn infer_struct(
     let constructor = tree
         .node(struct_expression)
         .ok_or(AnalysisError::Invariant)?;
+    refuse_carrier_construction(context, &shape.path, constructor.span(), diagnostics)?;
     let mut supplied = BTreeSet::new();
     for initializer in constructor.children().iter().copied().filter(|child| {
         tree.node(*child)
@@ -8254,6 +8285,7 @@ fn infer_generic_struct(
     let constructor = tree
         .node(struct_expression)
         .ok_or(AnalysisError::Invariant)?;
+    refuse_carrier_construction(context, &shape.path, constructor.span(), diagnostics)?;
     let mut supplied = BTreeSet::new();
     let mut initializers = Vec::new();
     for initializer in constructor.children().iter().copied().filter(|child| {

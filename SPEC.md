@@ -4152,6 +4152,12 @@ ordinary snapshot, restore, value reconstruction, or entry conversion of that ty
 be refused rather than reconstructed, and no checkpoint or reconstruction format may
 encode one.
 
+A struct constructor, a field literal, or any other source expression that would mint a
+value of a type declared by the admitted form MUST be rejected at analysis time under
+the `live-resource-construction` diagnostic, because a carrier is acquired by its owning
+operation and never assembled from source fields. A value of an ordinary `affine struct`
+type, and of a bare `live_resource struct` type, remains constructible exactly as before.
+
 The admitted form grants no authority and decides no behavior. It creates, admits,
 transfers, or releases no resource, value, handle, or operation; it grants no cleanup,
 release, or acquisition authority and no admission at any boundary; and it states no

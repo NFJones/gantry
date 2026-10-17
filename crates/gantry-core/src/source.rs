@@ -1732,6 +1732,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A quoted string contains an unescaped line terminator.",
     },
     DiagnosticCodeDefinition {
+        code: "live-resource-construction",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A source expression would construct a value of an admitted affine live_resource declaration.",
+    },
+    DiagnosticCodeDefinition {
         code: "mismatched-interpolation-delimiter",
         phase: DiagnosticPhase::Lexical,
         category: DiagnosticCategory::Lexical,
