@@ -726,7 +726,7 @@ pub struct InMemoryIoTransport {
     shared: Arc<Mutex<InMemoryIoState>>,
 }
 
-/// The private state one in-memory endpoint owns, kept behind the registry-held physical slot.
+/// The private state one in-memory endpoint owns, carried inside the caller binding.
 struct InMemoryIoState {
     /// Exactly the initialized octets of this stream.
     contents: Vec<u8>,
@@ -771,7 +771,7 @@ impl InMemoryIoTransport {
         })
     }
 
-    /// Returns an observation handle over the same registry-held octets.
+    /// Returns an observation handle over the same caller-bound octets.
     ///
     /// The handle observes retention and readiness only; it grants no machine authority, no
     /// admission, and no receipt, and it does not move or copy the physical value.
@@ -841,8 +841,8 @@ impl BoundedIoEndpoint for InMemoryIoTransport {
 
 /// One observation handle over an [`InMemoryIoTransport`]'s retained octets.
 ///
-/// The handle is the in-memory analogue of observing a registry-owned physical slot: it shows the
-/// retained octets and declared readiness after every observer of the attempt has been dropped.
+/// The handle observes one caller-bound endpoint: it shows the retained octets and declared
+/// readiness after the settlement service and every attempt outcome have been dropped.
 pub struct InMemoryIoHandle {
     shared: Arc<Mutex<InMemoryIoState>>,
 }
@@ -886,7 +886,7 @@ impl InMemoryIoHandle {
 /// Bounded settlement service for one authenticated Section 45 receiver occurrence.
 ///
 /// The service holds no physical value and no account borrow of its own: the endpoint stays in the
-/// registry-held slot the caller bound, and one attempt borrows the account for the length of that
+/// caller-owned binding, and one attempt borrows the account for the length of that
 /// single call. One attempt publishes at most one settlement, and the service refuses a second
 /// attempt rather than charging, observing, or settling twice.
 pub struct IoSettlementService<'a> {
@@ -1254,25 +1254,11 @@ fn settle_attempt<T: BoundedIoEndpoint>(
             cancelled,
         );
     }
-    let containment = match post {
+    let lease_fault = match post {
         AdmissionState::Unreadable => Some(IoOperationalFault::AdmissionLeaseUnreadable),
         AdmissionState::Closed => Some(IoOperationalFault::AdmissionClosed),
         AdmissionState::Open | AdmissionState::Cancelled => None,
     };
-    if let Some(fault) = containment {
-        return failed(
-            &mut loan,
-            &binding,
-            IoCallFault::Operational(fault),
-            FailureFacts {
-                outcome: ExternalOutcome::Ambiguous,
-                progress: None,
-                evidence: IoEvidence::NoOctets,
-            },
-            settled_at_us,
-            cancelled,
-        );
-    }
     match classify(response.completion(), &binding, provided) {
         Classification::Settled { progress, evidence } => {
             if cancelled {
@@ -1282,6 +1268,16 @@ fn settle_attempt<T: BoundedIoEndpoint>(
                     progress,
                     evidence,
                     None,
+                    settled_at_us,
+                );
+            }
+            if let Some(fault) = lease_fault {
+                return lease_contained(
+                    &mut loan,
+                    &binding,
+                    fault,
+                    progress,
+                    evidence,
                     settled_at_us,
                 );
             }
@@ -1308,6 +1304,16 @@ fn settle_attempt<T: BoundedIoEndpoint>(
                     progress,
                     IoEvidence::NoOctets,
                     Some(backpressure),
+                    settled_at_us,
+                );
+            }
+            if let Some(fault) = lease_fault {
+                return lease_contained(
+                    &mut loan,
+                    &binding,
+                    fault,
+                    progress,
+                    IoEvidence::NoOctets,
                     settled_at_us,
                 );
             }
@@ -1363,6 +1369,39 @@ fn settle_attempt<T: BoundedIoEndpoint>(
             settled_at_us,
             cancelled,
         ),
+    }
+}
+
+/// Publishes one containment settlement that keeps the completion facts it validated.
+///
+/// The octets stay protected evidence rather than successful output, because a closed or unreadable
+/// admission can no longer confirm publication. The fault is the lease state, not anything the
+/// completion established, and a completion that established its own fault never reaches here:
+/// malformed, mismatched, foreign, family, and native facts keep their own fault kind, because
+/// their evidence must not be trusted as retained progress.
+fn lease_contained<T: BoundedIoEndpoint>(
+    loan: &mut HostReceiverLoan<'_, T>,
+    binding: &IoCallBinding,
+    fault: IoOperationalFault,
+    progress: ProgressObservation,
+    evidence: IoEvidence,
+    settled_at_us: u64,
+) -> IoCallOutcome {
+    match publish(
+        loan,
+        binding,
+        ExternalOutcome::Ambiguous,
+        progress,
+        evidence,
+        settled_at_us,
+    ) {
+        Ok(settlement) => IoCallOutcome::Failed(IoFailedCall {
+            fault: IoCallFault::Operational(fault),
+            publication: IoPublication::Published(settlement),
+            stage: IoAttemptStage::Dispatched,
+            cancelled: false,
+        }),
+        Err(error) => failed_publication(error, false),
     }
 }
 
@@ -2648,7 +2687,15 @@ mod tests {
             .settlement()
             .unwrap_or_else(|| panic!("a closed admission still settles this attempt once"));
         assert_eq!(settlement.outcome(), ExternalOutcome::Ambiguous);
-        assert_eq!(settlement.evidence(), &IoEvidence::NoOctets);
+        assert_eq!(settlement.progress(), ProgressObservation::Eof);
+        assert_eq!(
+            settlement.evidence(),
+            &IoEvidence::Read {
+                requested: 2,
+                returned: b"ab".to_vec(),
+                ended: true,
+            }
+        );
     }
 
     /// An admission lease poisoned after dispatch is contained, not read as cancellation.
@@ -2676,6 +2723,118 @@ mod tests {
             &IoCallFault::Operational(IoOperationalFault::AdmissionLeaseUnreadable)
         );
         assert!(!failed.cancelled());
+        let settlement = failed
+            .settlement()
+            .unwrap_or_else(|| panic!("an unreadable lease still settles this attempt once"));
+        assert_eq!(settlement.outcome(), ExternalOutcome::Ambiguous);
+        assert_eq!(
+            settlement.evidence(),
+            &IoEvidence::Read {
+                requested: 2,
+                returned: b"ab".to_vec(),
+                ended: true,
+            }
+        );
+    }
+
+    /// A closed admission after a partial write keeps the exact accepted prefix.
+    #[test]
+    fn a_closed_admission_after_a_partial_write_keeps_the_accepted_prefix() {
+        let fixture = Fixture::new();
+        let endpoint =
+            ScriptedEndpoint::new(IoHostCompletion::Write { accepted: 3 }).closing(fixture.lease());
+        let mut resource = fixture.bind(endpoint);
+        let mut service = fixture.service(IoOperation::Write);
+        let outcome = service.attempt(
+            &mut resource,
+            IoRequest::write(5).unwrap_or_else(|error| panic!("request: {error:?}")),
+            b"ABCDE",
+        );
+        let IoCallOutcome::Failed(failed) = outcome else {
+            panic!("a closed admission must be contained, observed {outcome:?}")
+        };
+        assert_eq!(
+            failed.fault(),
+            &IoCallFault::Operational(IoOperationalFault::AdmissionClosed)
+        );
+        let settlement = failed
+            .settlement()
+            .unwrap_or_else(|| panic!("a closed admission still settles this attempt once"));
+        assert_eq!(settlement.progress(), ProgressObservation::ShortWrite);
+        assert_eq!(
+            settlement.evidence(),
+            &IoEvidence::Write {
+                provided: 5,
+                accepted: 3,
+                prefix: b"ABC".to_vec(),
+            }
+        );
+    }
+
+    /// An unreadable lease after a partial write keeps the exact accepted prefix.
+    #[test]
+    fn an_unreadable_lease_after_a_partial_write_keeps_the_accepted_prefix() {
+        let fixture = Fixture::new();
+        let endpoint = ScriptedEndpoint::new(IoHostCompletion::Write { accepted: 3 })
+            .poisoning(fixture.lease());
+        let mut resource = fixture.bind(endpoint);
+        let mut service = fixture.service(IoOperation::Write);
+        let outcome = service.attempt(
+            &mut resource,
+            IoRequest::write(5).unwrap_or_else(|error| panic!("request: {error:?}")),
+            b"ABCDE",
+        );
+        let IoCallOutcome::Failed(failed) = outcome else {
+            panic!("an unreadable lease must be contained, observed {outcome:?}")
+        };
+        assert_eq!(
+            failed.fault(),
+            &IoCallFault::Operational(IoOperationalFault::AdmissionLeaseUnreadable)
+        );
+        let settlement = failed
+            .settlement()
+            .unwrap_or_else(|| panic!("an unreadable lease still settles this attempt once"));
+        assert_eq!(
+            settlement.evidence(),
+            &IoEvidence::Write {
+                provided: 5,
+                accepted: 3,
+                prefix: b"ABC".to_vec(),
+            }
+        );
+    }
+
+    /// A malformed completion keeps its own fault even when the lease is also contained.
+    #[test]
+    fn a_malformed_completion_takes_precedence_over_lease_containment() {
+        let fixture = Fixture::new();
+        let endpoint = ScriptedEndpoint::new(IoHostCompletion::Read {
+            advanced: 5,
+            bytes: b"ab".to_vec(),
+            ended: false,
+        })
+        .closing(fixture.lease());
+        let mut resource = fixture.bind(endpoint);
+        let mut service = fixture.service(IoOperation::Read);
+        let outcome = service.attempt(
+            &mut resource,
+            IoRequest::read(5).unwrap_or_else(|error| panic!("request: {error:?}")),
+            &[],
+        );
+        let IoCallOutcome::Failed(failed) = outcome else {
+            panic!("a malformed completion must be contained, observed {outcome:?}")
+        };
+        assert_eq!(
+            failed.fault(),
+            &IoCallFault::Operational(IoOperationalFault::ReadLength {
+                advanced: 5,
+                returned: 2,
+            })
+        );
+        let settlement = failed
+            .settlement()
+            .unwrap_or_else(|| panic!("a malformed completion still settles this attempt once"));
+        assert_eq!(settlement.evidence(), &IoEvidence::NoOctets);
     }
 
     /// An admission lease poisoned before dispatch refuses admission without any effect.

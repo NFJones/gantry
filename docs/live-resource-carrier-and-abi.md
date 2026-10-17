@@ -172,6 +172,10 @@ to infer precedence:
 - A cancellation observed there withholds publication of octets and settles the attempt as
   cancelled with an ambiguous external outcome. Known accepted octets stay retained as protected
   evidence, and any not-ready witness the completion established is kept.
+- One declared exception to the ambiguous cancellation outcome is a family refusal. It is a
+  before-effect domain refusal, so a cancelled family refusal still settles with a rejected
+  external outcome and a usable resource state, and it reports the family fault with the
+  cancellation fact recorded beside it.
 - Cancellation never erases a fault the completion established. A malformed length, a
   request-mismatched completion, a family refusal, or a protected native diagnostic keeps its own
   distinct fault kind, and the cancellation is recorded as an additional settlement fact.
@@ -179,6 +183,12 @@ to infer precedence:
   completion whether or not cancellation was also observed.
 - A lease that is closed by other accepted work, or unreadable, is a contained operational failure,
   not a cancellation. No cancellation fact is invented from a lease state that is not one.
+- A valid completion contained only by its lease keeps its validated progress and its exact octets
+  as protected evidence instead of settling as not-started. Its published outcome is ambiguous
+  because admission can no longer confirm publication, and its fault is the lease state.
+- A fault the completion itself established takes precedence over lease containment. Malformed,
+  mismatched, foreign, family, and native facts keep their own fault kind, and no malformed or
+  foreign completion evidence is ever retained as progress.
 
 ### 3.3 Cleanup and recovery
 
