@@ -1944,6 +1944,7 @@ pub(crate) struct GenericDeclarationShape {
     affine: bool,
     must_consume: bool,
     live_resource: bool,
+    affine_live_resource: bool,
     expandable: bool,
 }
 
@@ -1956,6 +1957,11 @@ impl GenericDeclarationShape {
     /// Returns whether the declaration is a `live_resource struct`.
     pub(crate) const fn is_live_resource(&self) -> bool {
         self.live_resource
+    }
+
+    /// Returns whether the declaration is the admitted `affine live_resource struct` form.
+    pub(crate) const fn is_affine_live_resource(&self) -> bool {
+        self.affine_live_resource
     }
 
     /// Returns whether the declaration is an `affine struct`.
@@ -2177,6 +2183,9 @@ pub(crate) fn collect_generic_declaration_shapes(
                 && direct_child(tree, owner, SyntaxForm::MustConsumeStructModifier).is_some();
             let live_resource = matches!(node.form(), SyntaxForm::StructDeclaration)
                 && direct_child(tree, owner, SyntaxForm::LiveResourceStructModifier).is_some();
+            let affine_live_resource = matches!(node.form(), SyntaxForm::StructDeclaration)
+                && direct_child(tree, owner, SyntaxForm::AffineLiveResourceStructModifier)
+                    .is_some();
             declarations.insert(
                 symbol.path.as_str().to_owned(),
                 GenericDeclarationShape {
@@ -2184,9 +2193,10 @@ pub(crate) fn collect_generic_declaration_shapes(
                     declaration: node.span().clone(),
                     members,
                     predicates,
-                    affine,
+                    affine: affine || affine_live_resource,
                     must_consume,
-                    live_resource,
+                    live_resource: live_resource || affine_live_resource,
+                    affine_live_resource,
                     expandable: !rejected_declarations.contains(symbol.path.as_str()),
                 },
             );
@@ -2321,6 +2331,7 @@ pub(crate) fn prove_transfer_eligibility(
 struct DeclaredClasses {
     ownership: Option<OwnershipClass>,
     live_resource: bool,
+    ordinary_recovery_unavailable: bool,
 }
 
 /// Algebra and cache policy for one proof over the retained stored-member graph.
@@ -2412,6 +2423,9 @@ impl StoredMemberProperty for IndependentProperty<'_> {
         }
         if declared.live_resource {
             seed = seed.combine(IndependentTypeProperties::live_resource());
+        }
+        if declared.ordinary_recovery_unavailable {
+            seed = seed.combine(IndependentTypeProperties::ordinary_recovery_unavailable());
         }
         seed
     }
@@ -2562,6 +2576,7 @@ fn declared_classes(
         return DeclaredClasses {
             ownership: None,
             live_resource: false,
+            ordinary_recovery_unavailable: false,
         };
     };
     DeclaredClasses {
@@ -2573,6 +2588,7 @@ fn declared_classes(
             None
         },
         live_resource: shape.is_live_resource(),
+        ordinary_recovery_unavailable: shape.is_affine_live_resource(),
     }
 }
 

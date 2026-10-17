@@ -119,6 +119,8 @@ pub enum SyntaxForm {
     MustConsumeStructModifier,
     /// `live_resource` marker preceding a struct declaration.
     LiveResourceStructModifier,
+    /// `affine` immediately followed by `live_resource`, the one admitted modifier pair.
+    AffineLiveResourceStructModifier,
     /// Struct field declaration.
     StructField,
     /// `enum` declaration.

@@ -198,6 +198,20 @@ impl IndependentTypeProperties {
         }
     }
 
+    /// Seed contributed by the admitted `affine live_resource struct` form.
+    ///
+    /// The form separately seeds the affine ownership class and the live resource class through
+    /// the two seeds above. This seed carries the third and independent fact it declares: ordinary
+    /// recovery is unavailable for the declared type, so no value recovery projection may
+    /// reconstruct one.
+    #[must_use]
+    pub const fn ordinary_recovery_unavailable() -> Self {
+        Self {
+            recovery_projection: RecoveryProjectionClass::Unavailable,
+            ..Self::empty_aggregate()
+        }
+    }
+
     /// Seed contributed by an ownership-modifier declaration independent of its members.
     ///
     /// The only task transfer a spawned block admits is an independent logical copy, so an
@@ -256,6 +270,15 @@ impl IndependentTypeProperties {
     #[must_use]
     pub const fn recovery_projection_class(self) -> RecoveryProjectionClass {
         self.recovery_projection
+    }
+
+    /// Returns whether ordinary value recovery is available at all.
+    #[must_use]
+    pub const fn has_ordinary_recovery(self) -> bool {
+        matches!(
+            self.recovery_projection,
+            RecoveryProjectionClass::SealedValue
+        )
     }
 }
 
