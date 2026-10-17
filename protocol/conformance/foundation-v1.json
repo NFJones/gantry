@@ -793,7 +793,7 @@
     "path": "protocol/requirements/generated/requirements-v1.json",
     "requirement_count": 635,
     "section14_excerpt_count": 51,
-    "sha256": "8a9a9207cbd7fc161af4fd7dcb79d4946b491b1c59fe28fe37360387713e6494"
+    "sha256": "fe2d7a8e2154154d519d067d77e1181caf4cdb34ac11f60a24399c20575f66ce"
   },
   "specification": {
     "path": "SPEC.md",

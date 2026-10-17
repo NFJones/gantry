@@ -8,7 +8,7 @@
   },
   "prerequisite_source": {
     "path": "protocol/catalogs/general-purpose-preregistration-v1.json",
-    "sha256": "98c057f7113df0c9bf31d3a68c3040e3de1f6c6657af67022411d047aa02f78b"
+    "sha256": "5ea08809d72f0dcda0e9bb3f22cca9d5718a45beee7f5506122f139763429e5f"
   },
   "verifies": [
     "artifact-digest-integrity",

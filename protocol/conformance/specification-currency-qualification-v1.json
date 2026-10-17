@@ -364,15 +364,15 @@
     },
     {
       "path": "protocol/conformance/async-execution-conformance-v1.json",
-      "sha256": "db2098d6a088b6f3d947ddb61e5a175bf00e42ed9c8060a1f39e13cd508ac192"
+      "sha256": "48e1068bff50a99c8356a2db52c39b1f3972a72258da39d195aaad727cee60a3"
     },
     {
       "path": "protocol/conformance/async-execution-contract-v1.json",
-      "sha256": "ce10334c332ddb652975faee906421410d8301000f0a41d3732164fb10485279"
+      "sha256": "dca5fd73dd6297c0cffd4410697fe314d6ff573db2c5f8841f420b6ec3057904"
     },
     {
       "path": "protocol/conformance/async-execution-gate-v1.json",
-      "sha256": "0deeb3e4b0e7166c11436c142b3459339b3889289e2102030dcf2dd320c63013"
+      "sha256": "94c392b35979f6b791c1e9277a23cbea30e2975c166a4de37f691fa55a0ad8d0"
     },
     {
       "path": "protocol/conformance/async-execution-observation-v1.json",
@@ -388,7 +388,7 @@
     },
     {
       "path": "protocol/conformance/async-source-lowering-v1.json",
-      "sha256": "9258f4f57a50ae3edcfc3618c2ee0b1ef8028dbe8585d72b63a66233d6cd1f1c"
+      "sha256": "02e770d09cd066d66d4176ab4dd2cc9110722a7bee56a0872f46f84b26f3fd77"
     },
     {
       "path": "protocol/conformance/automatic-durable-root-v1.json",
@@ -484,7 +484,7 @@
     },
     {
       "path": "protocol/conformance/foundation-v1.json",
-      "sha256": "bbf1473be2c88ee3f723bb82d2e49edb09424e56951dd75fd2ab98566575736d"
+      "sha256": "0d995ba0cf699467f5e9abd20d77247e07178f8082c00b1435af4f98b3ef281f"
     },
     {
       "path": "protocol/conformance/frontend-gate-v1.json",
@@ -504,11 +504,11 @@
     },
     {
       "path": "protocol/conformance/general-purpose-foundation-gate-v1.json",
-      "sha256": "e9a61eeed4e474b29b4a69d32e067fa80da808056b7ce7afb295e6220bddd0a7"
+      "sha256": "de7293c6fd1617e4ac7bbea0c41c3bfdbcfe0dd0701ace8b5c193a423cd7750a"
     },
     {
       "path": "protocol/conformance/general-purpose-milestone-gate-v1.json",
-      "sha256": "e8f33de2e32ba268c81b51ce6b931203e03966985ff1bc04f142168c66c88cff"
+      "sha256": "552a4cffa20ab767ff36c8455db51f039a783c6a07c27e4daea54ab790afbeae"
     },
     {
       "path": "protocol/conformance/general-purpose-preregistration-gate-v1.json",
@@ -572,7 +572,7 @@
     },
     {
       "path": "protocol/conformance/native-source-concurrency-gate-v1.json",
-      "sha256": "93722e7f38d8a630b1c414d7aaf13a0d6e37f7fc6bb777caf07f9de3d4fbaf97"
+      "sha256": "4f3946c5335c6714190f535fc1bf277d3e9d23fa2ed526437bd8067d9322c686"
     },
     {
       "path": "protocol/conformance/owned-activities-v1.json",
