@@ -37,6 +37,8 @@ mod durable_start;
 mod interpreter;
 #[cfg(feature = "evaluator")]
 mod start;
+#[cfg(feature = "evaluator")]
+mod test_workflow;
 #[cfg(feature = "frontend")]
 mod validate;
 
@@ -93,6 +95,18 @@ pub use start::{
     ActionMappingRevision, AgentMappingRevision, MappingRevisions, RootSessionProvenance,
     RootSessionSpecification, RootSessionState, StartExecutionAccepted, StartExecutionFailure,
     StartExecutionRequest, StartExecutionResult, ValidatedEntryInput,
+};
+#[cfg(feature = "evaluator")]
+pub use test_workflow::{
+    TEST_WORKFLOW_FRONTEND_STAGES, TEST_WORKFLOW_JOBS, TEST_WORKFLOW_LANGUAGE_EDITION,
+    TEST_WORKFLOW_OUTPUT_CEILING_BYTES, TEST_WORKFLOW_POLICY_REVISION, TEST_WORKFLOW_REPORT_FORMAT,
+    TEST_WORKFLOW_REPORT_VERSION, TEST_WORKFLOW_STDLIB_CONTRACT, TEST_WORKFLOW_TOOLCHAIN_IDENTITY,
+    TestPolicyBound, TestWorkflowDeclarations, TestWorkflowDeclaredInputs, TestWorkflowDiagnostic,
+    TestWorkflowFailure, TestWorkflowFeatures, TestWorkflowIdentity, TestWorkflowIdentityError,
+    TestWorkflowInventory, TestWorkflowPackage, TestWorkflowPolicy, TestWorkflowPolicyError,
+    TestWorkflowRefusal, TestWorkflowReport, TestWorkflowRequest, TestWorkflowSelection,
+    TestWorkflowServices, TestWorkflowSpan, TestWorkflowStage, TestWorkflowStatus,
+    TestWorkflowTargetClassification, TestWorkflowTargetResult, run_test_workflow,
 };
 #[cfg(feature = "analyzer")]
 pub use validate::{
