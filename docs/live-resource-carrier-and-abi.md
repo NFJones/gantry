@@ -21,10 +21,14 @@ builds on, and none of it is reimplemented or described as absent:
   `ResourceSubjectBinding`, `LivenessRoot`, `ResourceCarrier::ReconstructionRecord`, and
   `admit_resource_carrier` through `ResourceRegistry` and `AdmittedResource`
   (`GNT-28.7-durable-resource-reconstruction`, `GNT-28.10-resource-accounting-non-claims`).
-- The process-local physical slot is `OwnedHostResource<T>` with its private `HostValueSlot`,
-  bound by `OwnedHostResource::bind`/`bind_with_charges`, invoked through `invoke`/
-  `invoke_with_charges`, finalized by `finish`, and disposed by the contained private disposal
-  job. The slot carries no accounting and the account carries no host value.
+- Two distinct landed transports exist and must not be conflated. The caller-bound transport is
+  `OwnedHostResource<T>`: it owns one `AdmittedResource` handle and one physical value, is created
+  by `OwnedHostResource::bind`/`bind_with_charges`, invoked through `invoke`/`invoke_with_charges`,
+  finalized by `finish`, and disposes its value when dropped. The registry-owned physical slot is
+  separate: `ResourceRegistry::attach_host_value` installs a `HostValueSlot` inside the registry,
+  presence and quiescence are inspected through `has_host_value` and `host_values_are_quiescent`,
+  and extraction yields a contained `HostDisposalJob` rather than a borrow route back to the
+  caller. Neither carries accounting facts: the account carries no host value.
 - The exclusive receiver loan is `HostReceiverLoan`, acquired by `borrow_receiver`,
   `borrow_receiver_with_charges`, or `borrow_receiver_from_pending`, observed by `observe`,
   invoked by `invoke`, and settled by `settle` or `settle_failure`. Abandoning an unsettled loan
@@ -32,7 +36,8 @@ builds on, and none of it is reimplemented or described as absent:
 - Serviced off-worker cleanup is `ResourceCleanupObserver` over
   `submit_settled_resource_cleanup`, `submit_emergency_resource_cleanup`, and
   `submit_task_resource_cleanup`, with `ResourcePhysicalCleanupResults` reporting independent
-  per-resource outcomes.
+  per-resource outcomes. It operates on registry-attached values through the coordinator, so it
+  applies to the registry-owned slot and not to a caller-bound transport that was never attached.
 - Section 20 pins the model: `OperationKind` (`ValueAction`, `ProtectedOperation`,
   `LiveResource`), `ReceiverOwnership` (`BorrowedLoan`, `TransferredIn`, `RetainedByCaller`),
   `LoanId::seal`, `LiveResource::{observe,settle,settle_failure,half_close,fence,interrupt}`,
@@ -157,7 +162,25 @@ rows stay with their owning family clauses (Sections 46 and 47 and the D5 consol
 this record only fixes that the ABI must authenticate the arrangement, and that the accepted
 prefix, not the requested quantity, is the output fact.
 
-### 3.2 Cleanup and recovery
+### 3.2 Cancellation, completion, and cleanup precedence
+
+One completion and one cancellation can race. The settlement rule is stated once, so no caller has
+to infer precedence:
+
+- The admission lease is rechecked once, after the call returns and before any observation or
+  settlement. That instant is the single linearization point of the race.
+- A cancellation observed there withholds publication of octets and settles the attempt as
+  cancelled with an ambiguous external outcome. Known accepted octets stay retained as protected
+  evidence, and any not-ready witness the completion established is kept.
+- Cancellation never erases a fault the completion established. A malformed length, a
+  request-mismatched completion, a family refusal, or a protected native diagnostic keeps its own
+  distinct fault kind, and the cancellation is recorded as an additional settlement fact.
+- A completion of another operation, generation, owner, kind, or quantity is contained as a foreign
+  completion whether or not cancellation was also observed.
+- A lease that is closed by other accepted work, or unreadable, is a contained operational failure,
+  not a cancellation. No cancellation fact is invented from a lease state that is not one.
+
+### 3.3 Cleanup and recovery
 
 Every live resource has one authoritative predecessor and one cleanup obligation:
 
@@ -209,8 +232,17 @@ restates:
   progress record, its external outcome, and the model-derived resource state;
 - the machine-issued admission lease for the two admission rechecks that make the completion and
   cancellation race deterministic;
+- the caller-bound `OwnedHostResource` transport for physical ownership, so the accepted octets
+  survive loss of every observer of the attempt while the binding remains the physical owner;
 - the model `ReadinessObservation` of `GNT-24.1-atomic-registration-and-readiness-recheck` for the
   blocked settlement fact.
+
+Retention and cleanup boundary. This slice drives the caller-bound transport and therefore does
+not claim registry-owned retention: discarding the binding disposes the endpoint, and registry
+attachment plus off-worker physical cleanup of a discarded binding belong to the consumer slice
+that also records the durable cleanup cut. What this slice does guarantee is that losing the
+settlement service or any outcome keeps the accepted octets and the machine-issued admission
+lease, because neither is owned by the attempt.
 
 It adds no source handle, no adapter, no family integration, no durable cleanup cut, and no task
 transfer. It does not edit `SPEC.md`, and it does not declare `affine live_resource struct` in any

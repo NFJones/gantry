@@ -2,27 +2,31 @@
 //!
 //! These rows exercise only the public surface the runtime publishes for one bounded
 //! Section 45 call: the admitted request bound, the executor-neutral endpoint boundary, the
-//! bounded in-memory transport, the authenticated receiver occurrence and call binding, and the
-//! settlement service admission gate. They perform no filesystem, socket, console, or process
-//! I/O, open no source handle, and publish no adapter, family integration, durable cleanup cut,
-//! or task transfer. The producer-side settlement facts, the cancellation races, and the
+//! bounded in-memory transport, the authenticated receiver occurrence and call binding, the
+//! settlement service admission gate, and one end-to-end read settled through the public service
+//! over an admitted account. They perform no filesystem, socket, console, or process I/O, open no
+//! source handle, and publish no adapter, family integration, durable cleanup cut, or task
+//! transfer. The cancellation races, the closed and unreadable lease containment, and the
 //! contained-failure lanes are exercised by the runtime crate own unit tests, which can drive the
 //! machine-issued admission lease directly.
 
 use std::sync::Arc;
 
 use gantry::identity::ProtocolIdentity;
-use gantry::ir::generated::RecoveryClass;
+use gantry::ir::generated::{OperationSiteKind, RecoveryClass};
 use gantry::ir::{
-    CanonicalPath, DisclosureCharge, EffectSet, Instruction, InstructionKind, IoBackpressure,
-    IoOperation, IoRequest, LoanId, LogicalOperationId, MachineProgram, ObservationAllowance,
-    OperationAbi, OperationKind, OwnerGeneration, ReceiverOwnership, ResourceGenerationId,
+    CanonicalPath, CanonicalSignature, DisclosureCharge, EffectSet, ExecutableAction,
+    ExecutableOperation, ExternalOutcome, Instruction, InstructionKind, IoBackpressure,
+    IoOperation, IoRequest, LivenessRoot, LoanId, LogicalOperationId, MachineProgram,
+    ObservationAllowance, OperationAbi, OperationKind, OwnerGeneration, ProgressObservation,
+    ReceiverOwnership, ResourceCarrier, ResourceGenerationId, ResourceLedger, ResourceState,
     StaticSiteId, StructuralPosition, TypeDescriptor, Workflow,
 };
 use gantry::portable::IdentityKind;
 use gantry::runtime::{
-    BoundedIoEndpoint, InMemoryIoTransport, IoCallBinding, IoHostCompletion, IoOccurrence,
-    IoRefusal, IoSettlementService, Machine, MachineLimits,
+    AdmittedResource, BoundedIoEndpoint, InMemoryIoTransport, IoCallBinding, IoCallOutcome,
+    IoEvidence, IoHostCompletion, IoOccurrence, IoRefusal, IoSettlementService, Machine,
+    MachineLimits, OwnedHostResource,
 };
 use gantry::value::DEFAULT_VALUE_LIMITS;
 
@@ -87,6 +91,71 @@ fn binding(kind: IoOperation, request: IoRequest) -> IoCallBinding {
         .unwrap_or_else(|error| panic!("loan occurrence: {error:?}"));
     IoCallBinding::bind(occurrence, request)
         .unwrap_or_else(|error| panic!("loan binding: {error:?}"))
+}
+
+/// One live-resource action declaration the machine authenticates as Section 20 live.
+fn live_operation() -> ExecutableOperation {
+    let action = path("crate::stream");
+    ExecutableOperation {
+        kind: OperationSiteKind::Action,
+        section20_kind: Some(OperationKind::LiveResource),
+        result_type: TypeDescriptor::UNIT,
+        action: Some(ExecutableAction {
+            path: action.clone(),
+            signature: CanonicalSignature::action(
+                RecoveryClass::Idempotent,
+                &action,
+                &[],
+                &TypeDescriptor::UNIT,
+            ),
+            recovery: RecoveryClass::Idempotent,
+            parameters: Vec::new(),
+        }),
+        template_segments: Vec::new(),
+        interpolation_types: Vec::new(),
+        named_input_names: Vec::new(),
+        named_input_types: Vec::new(),
+        retry_limit: None,
+        session_mode: None,
+        attempted: false,
+    }
+}
+
+/// One machine prepared at exactly one pending live-resource occurrence.
+fn live_machine() -> Machine {
+    let workflow = Workflow {
+        path: path("crate::main"),
+        parameters: Vec::new(),
+        result: TypeDescriptor::UNIT,
+        effects: EffectSet::default(),
+        instructions: vec![Instruction {
+            site: position(0),
+            ty: TypeDescriptor::UNIT,
+            kind: InstructionKind::OperationCall {
+                operation: live_operation(),
+                operands: 0,
+            },
+        }],
+    };
+    let program = MachineProgram::new(vec![workflow])
+        .unwrap_or_else(|error| panic!("fixture program: {error:?}"));
+    let limits = MachineLimits::new(64, 8, 8, 4, 8, DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| panic!("fixture limits"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x32; 32])
+        .unwrap_or_else(|error| panic!("fixture identity: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program),
+        &path("crate::main"),
+        Vec::new(),
+        execution,
+        limits,
+    )
+    .unwrap_or_else(|error| panic!("fixture machine: {error:?}"));
+    let _ = machine.step();
+    if machine.pending_resource_subject().is_none() {
+        panic!("the fixture machine must prepare one live-resource occurrence");
+    }
+    machine
 }
 
 /// One empty machine, which supplies no pending occurrence.
@@ -225,6 +294,63 @@ fn an_occurrence_requires_an_exclusive_loan_and_binds_the_request_kind() {
             request: IoOperation::Write,
         })
     );
+}
+
+/// The public service settles exactly one read of one admitted occurrence, once.
+#[test]
+fn the_public_service_settles_one_read_and_refuses_a_second_attempt() {
+    let machine = live_machine();
+    let subject = machine
+        .pending_resource_subject()
+        .unwrap_or_else(|| panic!("pending subject"));
+    let owner = OwnerGeneration::new(4);
+    let record = ResourceLedger::new(
+        owner,
+        ResourceState::Usable,
+        &[LivenessRoot::Resource, LivenessRoot::Loan],
+        &[],
+    )
+    .unwrap_or_else(|error| panic!("fixture ledger: {error:?}"))
+    .durable_record();
+    let account = AdmittedResource::admit(ResourceCarrier::ReconstructionRecord, record, subject)
+        .unwrap_or_else(|error| panic!("fixture account: {error:?}"));
+    let transport = InMemoryIoTransport::bounded(b"ab".to_vec(), 4)
+        .unwrap_or_else(|error| panic!("transport: {error:?}"));
+    let handle = transport.handle();
+    let mut resource =
+        OwnedHostResource::bind(account, transport).unwrap_or_else(|_| panic!("fixture binding"));
+    let mut service = IoSettlementService::new(
+        &machine,
+        owner,
+        IoOperation::Read,
+        allowance(4),
+        Vec::new(),
+        7,
+    )
+    .unwrap_or_else(|error| panic!("fixture service: {error:?}"));
+    let request = IoRequest::read(4).unwrap_or_else(|error| panic!("request: {error:?}"));
+    let outcome = service.attempt(&mut resource, request.clone(), &[]);
+    let IoCallOutcome::Settled(settlement) = outcome else {
+        panic!("a read must settle, observed {outcome:?}")
+    };
+    assert_eq!(settlement.outcome(), ExternalOutcome::Accepted);
+    assert_eq!(settlement.progress(), ProgressObservation::Eof);
+    assert_eq!(
+        settlement.evidence(),
+        &IoEvidence::Read {
+            requested: 4,
+            returned: b"ab".to_vec(),
+            ended: true,
+        }
+    );
+    assert_eq!(settlement.settled_at_us(), 7);
+    let settled_record = resource.account().durable_record();
+    assert_eq!(
+        service.attempt(&mut resource, request, &[]),
+        IoCallOutcome::Refused(IoRefusal::DuplicateSettlement)
+    );
+    assert_eq!(resource.account().durable_record(), settled_record);
+    assert_eq!(handle.retained(), b"ab".to_vec());
 }
 
 /// The settlement service refuses an exhausted allowance before any loan, charge, or effect.

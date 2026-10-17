@@ -32,9 +32,12 @@
 //!   new admitted occurrence, because a settled loan root is never reopened by this module.
 //! * Cancellation and interruption are settlement facts, not progress. The admission lease is
 //!   rechecked once, after the single call returns and before any observation or settlement, so
-//!   a cancellation observed at or before that point withholds publication while the accepted
-//!   prefix stays retained as protected evidence. A cancellation observed after that point does
-//!   not retract a settlement that already exists.
+//!   the completion and cancellation race has one deterministic linearization point. A
+//!   cancellation observed at that point withholds publication while any known accepted prefix
+//!   stays retained as protected evidence; it never erases a fault the completion established, and
+//!   it is never reported for a lease that is merely closed or unreadable, which are contained
+//!   operational failures instead. A cancellation observed after that point does not retract a
+//!   settlement that already exists.
 //! * A malformed host completion length or a request-mismatched completion is a contained
 //!   operational failure: no bytes or prefixes are published, and no claim is made that an
 //!   external effect was undone. Family domain refusals, operational faults, and protected native
@@ -42,9 +45,11 @@
 //! * A late, duplicate, wrong-owner, or wrong-generation completion can neither publish nor
 //!   refund twice: one attempt publishes at most once, and a second attempt is refused before it
 //!   can charge, observe, or settle again.
-//! * Dropping a service, an outcome, or the physical binding does not fabricate a settlement. The
-//!   registry-owned slot keeps the accepted in-memory octets and the account keeps the admission
-//!   lease and its accepted-work obligation.
+//! * Dropping the settlement service, or any outcome it produced, does not fabricate a settlement.
+//!   The accepted in-memory octets stay in the endpoint the caller bound and the machine-issued
+//!   admission lease stays shared with the account, so losing every observer of the attempt keeps
+//!   both. This slice binds a caller-owned transport: registry-owned slot retention and off-worker
+//!   physical cleanup of a discarded binding are consumed by the consumer slice, not claimed here.
 //!
 //! This module publishes no source handle, live source admission, adapter, host-family
 //! integration, durable cleanup cut, or task transfer, and it performs no filesystem, socket,
@@ -288,6 +293,10 @@ pub enum IoOperationalFault {
     Panicked,
     /// The endpoint's retained state was unreadable, so no completion could be formed.
     StateUnreadable,
+    /// Other accepted work closed admission after this call was dispatched.
+    AdmissionClosed,
+    /// The admission lease became unreadable after this call was dispatched.
+    AdmissionLeaseUnreadable,
     /// The endpoint declared a capacity or initial length its own bound refuses.
     Capacity {
         /// The declared retention capacity.
@@ -440,6 +449,10 @@ impl IoSettlement {
     }
 
     /// Returns the exact evidence this settlement publishes.
+    ///
+    /// A cancelled settlement withholds its octets from publication and keeps them here as
+    /// protected evidence, so an accepted prefix stays observable without being reported as
+    /// successful output.
     #[must_use]
     pub const fn evidence(&self) -> &IoEvidence {
         &self.evidence
@@ -504,6 +517,7 @@ pub enum IoAttemptStage {
 pub struct IoCancelledCall {
     settlement: IoSettlement,
     stage: IoAttemptStage,
+    blocked: Option<IoBackpressure>,
 }
 
 impl IoCancelledCall {
@@ -517,6 +531,15 @@ impl IoCancelledCall {
     #[must_use]
     pub const fn stage(&self) -> IoAttemptStage {
         self.stage
+    }
+
+    /// Returns the not-ready witness this attempt observed before cancellation settled it.
+    ///
+    /// Cancellation withholds publication but never erases a witness the completion established, so
+    /// a blocked call that is cancelled still reports which peer was not ready.
+    #[must_use]
+    pub const fn blocked(&self) -> Option<IoBackpressure> {
+        self.blocked
     }
 }
 
@@ -568,6 +591,7 @@ pub struct IoFailedCall {
     fault: IoCallFault,
     publication: IoPublication,
     stage: IoAttemptStage,
+    cancelled: bool,
 }
 
 impl IoFailedCall {
@@ -593,6 +617,16 @@ impl IoFailedCall {
     #[must_use]
     pub const fn stage(&self) -> IoAttemptStage {
         self.stage
+    }
+
+    /// Returns whether cancellation was observed at this attempt own recheck instant.
+    ///
+    /// The fault is always the fault the completion established. Cancellation is recorded here as
+    /// an additional settlement fact, so a cancelled attempt never reports a smaller fault set than
+    /// the same attempt would report without cancellation.
+    #[must_use]
+    pub const fn cancelled(&self) -> bool {
+        self.cancelled
     }
 }
 
@@ -998,11 +1032,6 @@ fn admission_state(lease: &Mutex<crate::machine::ResourceOperationLease>) -> Adm
     }
 }
 
-/// Reports whether cancellation was requested at the exact recheck instant.
-fn cancellation_requested(lease: &Mutex<crate::machine::ResourceOperationLease>) -> bool {
-    !matches!(admission_state(lease), AdmissionState::Open)
-}
-
 /// Refuses one request before dispatch when it does not belong to this bounded attempt.
 fn pre_dispatch_refusal(
     kind: IoOperation,
@@ -1104,6 +1133,20 @@ fn publish<T: BoundedIoEndpoint>(
     })
 }
 
+/// The settlement facts one contained failure still records.
+///
+/// `progress` is the observation such a failure can still support; `None` settles at the progress
+/// the receiver already retained, because a malformed, foreign, refused, or cancelled completion
+/// never advances it here and is never published as partial output.
+struct FailureFacts {
+    /// The observed external outcome this failure records.
+    outcome: ExternalOutcome,
+    /// The observation this failure can still support, when it supports one.
+    progress: Option<ProgressObservation>,
+    /// The exact evidence this failure publishes.
+    evidence: IoEvidence,
+}
+
 /// Publishes one failure settlement and returns the contained failure outcome.
 ///
 /// `progress` is the observation such a failure can still support; `None` settles at the progress
@@ -1113,13 +1156,19 @@ fn failed<T: BoundedIoEndpoint>(
     loan: &mut HostReceiverLoan<'_, T>,
     binding: &IoCallBinding,
     fault: IoCallFault,
-    outcome: ExternalOutcome,
-    progress: Option<ProgressObservation>,
-    evidence: IoEvidence,
+    facts: FailureFacts,
     settled_at_us: u64,
+    cancelled: bool,
 ) -> IoCallOutcome {
-    let progress = progress.unwrap_or_else(|| loan.live().progress());
-    let publication = match publish(loan, binding, outcome, progress, evidence, settled_at_us) {
+    let progress = facts.progress.unwrap_or_else(|| loan.live().progress());
+    let publication = match publish(
+        loan,
+        binding,
+        facts.outcome,
+        progress,
+        facts.evidence,
+        settled_at_us,
+    ) {
         Ok(settlement) => IoPublication::Published(settlement),
         Err(error) => IoPublication::Refused(error),
     };
@@ -1127,6 +1176,7 @@ fn failed<T: BoundedIoEndpoint>(
         fault,
         publication,
         stage: IoAttemptStage::Dispatched,
+        cancelled,
     })
 }
 
@@ -1134,21 +1184,25 @@ fn failed<T: BoundedIoEndpoint>(
 ///
 /// The refusal is reported as the fault of this attempt: nothing was published, and the accepted
 /// work keeps its obligation instead of being reported as a completed call.
-fn failed_publication(error: IoCallFault) -> IoCallOutcome {
+fn failed_publication(error: IoCallFault, cancelled: bool) -> IoCallOutcome {
     IoCallOutcome::Failed(IoFailedCall {
         fault: error.clone(),
         publication: IoPublication::Refused(error),
         stage: IoAttemptStage::Dispatched,
+        cancelled,
     })
 }
 
 /// Settles the one dispatched call of one attempt.
 ///
 /// The occurrence is authenticated from the loan itself, so a completion of another operation,
-/// generation, owner, kind, or quantity cannot be published for this call. Cancellation is
-/// rechecked once, after the call returned and before any observation, so a cancellation observed
-/// at or before that point withholds publication while known accepted octets stay retained as
-/// protected evidence.
+/// generation, owner, kind, or quantity cannot be published for this call. The admission lease is
+/// rechecked once, after the call returned and before any observation, so the completion and
+/// cancellation race has one deterministic linearization point. That recheck is read without
+/// invention: an observed cancellation settles the attempt as cancelled while withholding
+/// publication of octets, a lease that is merely closed or unreadable is a contained failure rather
+/// than a cancellation, and a fault the completion established is never erased by a cancellation
+/// that raced it.
 fn settle_attempt<T: BoundedIoEndpoint>(
     mut loan: HostReceiverLoan<'_, T>,
     kind: IoOperation,
@@ -1168,104 +1222,177 @@ fn settle_attempt<T: BoundedIoEndpoint>(
     let response = match dispatch(&mut loan, &binding, provided) {
         Ok(response) => response,
         Err(HostResourceError::Boundary(_)) => {
+            let cancelled = matches!(admission_state(lease), AdmissionState::Cancelled);
             return failed(
                 &mut loan,
                 &binding,
                 IoCallFault::Operational(IoOperationalFault::Panicked),
-                ExternalOutcome::Ambiguous,
-                None,
-                IoEvidence::NoOctets,
+                FailureFacts {
+                    outcome: ExternalOutcome::Ambiguous,
+                    progress: None,
+                    evidence: IoEvidence::NoOctets,
+                },
                 settled_at_us,
+                cancelled,
             );
         }
         Err(error) => return IoCallOutcome::Refused(IoRefusal::Transport(error)),
     };
+    let post = admission_state(lease);
+    let cancelled = matches!(post, AdmissionState::Cancelled);
     if response.binding() != &binding {
         return failed(
             &mut loan,
             &binding,
             IoCallFault::Operational(IoOperationalFault::ForeignCompletion),
-            ExternalOutcome::Ambiguous,
-            None,
-            IoEvidence::NoOctets,
+            FailureFacts {
+                outcome: ExternalOutcome::Ambiguous,
+                progress: None,
+                evidence: IoEvidence::NoOctets,
+            },
             settled_at_us,
+            cancelled,
         );
     }
-    let classification = classify(response.completion(), &binding, provided);
-    if cancellation_requested(lease) {
-        let (progress, evidence) = cancelled_facts(&classification, loan.live().progress());
-        return match publish(
+    let containment = match post {
+        AdmissionState::Unreadable => Some(IoOperationalFault::AdmissionLeaseUnreadable),
+        AdmissionState::Closed => Some(IoOperationalFault::AdmissionClosed),
+        AdmissionState::Open | AdmissionState::Cancelled => None,
+    };
+    if let Some(fault) = containment {
+        return failed(
             &mut loan,
             &binding,
-            ExternalOutcome::Ambiguous,
-            progress,
-            evidence,
+            IoCallFault::Operational(fault),
+            FailureFacts {
+                outcome: ExternalOutcome::Ambiguous,
+                progress: None,
+                evidence: IoEvidence::NoOctets,
+            },
             settled_at_us,
-        ) {
-            Ok(settlement) => IoCallOutcome::Cancelled(IoCancelledCall {
-                settlement,
-                stage: IoAttemptStage::Dispatched,
-            }),
-            Err(error) => failed_publication(error),
-        };
+            cancelled,
+        );
     }
-    match classification {
+    match classify(response.completion(), &binding, provided) {
+        Classification::Settled { progress, evidence } => {
+            if cancelled {
+                return cancelled_call(
+                    &mut loan,
+                    &binding,
+                    progress,
+                    evidence,
+                    None,
+                    settled_at_us,
+                );
+            }
+            match publish(
+                &mut loan,
+                &binding,
+                ExternalOutcome::Accepted,
+                progress,
+                evidence,
+                settled_at_us,
+            ) {
+                Ok(settlement) => IoCallOutcome::Settled(settlement),
+                Err(error) => failed_publication(error, cancelled),
+            }
+        }
         Classification::Blocked {
             backpressure,
             progress,
-        } => match publish(
-            &mut loan,
-            &binding,
-            ExternalOutcome::Rejected,
-            progress,
-            IoEvidence::NoOctets,
-            settled_at_us,
-        ) {
-            Ok(settlement) => IoCallOutcome::Blocked(IoBlockedCall {
-                settlement,
-                backpressure,
-                readiness: ReadinessObservation::NotReady,
-            }),
-            Err(error) => failed_publication(error),
-        },
-        Classification::Settled { progress, evidence } => match publish(
-            &mut loan,
-            &binding,
-            ExternalOutcome::Accepted,
-            progress,
-            evidence,
-            settled_at_us,
-        ) {
-            Ok(settlement) => IoCallOutcome::Settled(settlement),
-            Err(error) => failed_publication(error),
-        },
+        } => {
+            if cancelled {
+                return cancelled_call(
+                    &mut loan,
+                    &binding,
+                    progress,
+                    IoEvidence::NoOctets,
+                    Some(backpressure),
+                    settled_at_us,
+                );
+            }
+            match publish(
+                &mut loan,
+                &binding,
+                ExternalOutcome::Rejected,
+                progress,
+                IoEvidence::NoOctets,
+                settled_at_us,
+            ) {
+                Ok(settlement) => IoCallOutcome::Blocked(IoBlockedCall {
+                    settlement,
+                    backpressure,
+                    readiness: ReadinessObservation::NotReady,
+                }),
+                Err(error) => failed_publication(error, cancelled),
+            }
+        }
         Classification::Family(fault) => failed(
             &mut loan,
             &binding,
             IoCallFault::Family(fault),
-            ExternalOutcome::Rejected,
-            Some(ProgressObservation::NotStarted),
-            IoEvidence::NoOctets,
+            FailureFacts {
+                outcome: ExternalOutcome::Rejected,
+                progress: Some(ProgressObservation::NotStarted),
+                evidence: IoEvidence::NoOctets,
+            },
             settled_at_us,
+            cancelled,
         ),
         Classification::Native(diagnostic) => failed(
             &mut loan,
             &binding,
             IoCallFault::Native(diagnostic),
-            ExternalOutcome::Ambiguous,
-            None,
-            IoEvidence::NoOctets,
+            FailureFacts {
+                outcome: ExternalOutcome::Ambiguous,
+                progress: None,
+                evidence: IoEvidence::NoOctets,
+            },
             settled_at_us,
+            cancelled,
         ),
         Classification::Contained { fault, progress } => failed(
             &mut loan,
             &binding,
             IoCallFault::Operational(fault),
-            ExternalOutcome::Ambiguous,
-            progress,
-            IoEvidence::NoOctets,
+            FailureFacts {
+                outcome: ExternalOutcome::Ambiguous,
+                progress,
+                evidence: IoEvidence::NoOctets,
+            },
             settled_at_us,
+            cancelled,
         ),
+    }
+}
+
+/// Publishes one cancelled settlement, withholding octets and keeping every observed witness.
+///
+/// The settlement records an ambiguous external outcome, because a cancelled call may or may not
+/// have applied an effect, and it retains any known accepted octets as protected evidence rather
+/// than publishing them as output.
+fn cancelled_call<T: BoundedIoEndpoint>(
+    loan: &mut HostReceiverLoan<'_, T>,
+    binding: &IoCallBinding,
+    progress: ProgressObservation,
+    evidence: IoEvidence,
+    blocked: Option<IoBackpressure>,
+    settled_at_us: u64,
+) -> IoCallOutcome {
+    match publish(
+        loan,
+        binding,
+        ExternalOutcome::Ambiguous,
+        progress,
+        evidence,
+        settled_at_us,
+    ) {
+        Ok(settlement) => IoCallOutcome::Cancelled(IoCancelledCall {
+            settlement,
+            stage: IoAttemptStage::Dispatched,
+            blocked,
+        }),
+        Err(error) => failed_publication(error, true),
     }
 }
 
@@ -1433,20 +1560,6 @@ fn classify(
             progress: None,
         },
         IoHostCompletion::Native(diagnostic) => Classification::Native(diagnostic.clone()),
-    }
-}
-
-/// Derives the progress and protected evidence one cancelled settlement retains.
-fn cancelled_facts(
-    classification: &Classification,
-    retained: ProgressObservation,
-) -> (ProgressObservation, IoEvidence) {
-    match classification {
-        Classification::Settled { progress, evidence } => (*progress, evidence.clone()),
-        Classification::Blocked { progress, .. } => (*progress, IoEvidence::NoOctets),
-        Classification::Family(_)
-        | Classification::Native(_)
-        | Classification::Contained { .. } => (retained, IoEvidence::NoOctets),
     }
 }
 
@@ -1634,9 +1747,32 @@ mod tests {
     struct ScriptedEndpoint {
         completion: IoHostCompletion,
         lease: Option<Arc<Mutex<ResourceOperationLease>>>,
-        cancel_on_call: bool,
+        mid_call: Option<MidCall>,
         owner_override: Option<OwnerGeneration>,
         calls: Arc<AtomicU64>,
+    }
+
+    /// One mid-call mutation of the machine-issued admission lease.
+    #[derive(Clone, Copy)]
+    enum MidCall {
+        /// Report cancellation while the call is in flight.
+        Cancel,
+        /// Close admission as accepted work would.
+        Close,
+        /// Poison the lease so no admission fact is readable afterwards.
+        Poison,
+    }
+
+    /// Poisons one admission lease without printing a panic message.
+    fn poison_lease(lease: &Arc<Mutex<ResourceOperationLease>>) {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let poisoned = Arc::clone(lease);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _guard = poisoned.lock().unwrap_or_else(|error| error.into_inner());
+            panic!("poison the admission lease");
+        }));
+        std::panic::set_hook(previous);
     }
 
     impl ScriptedEndpoint {
@@ -1645,7 +1781,7 @@ mod tests {
             Self {
                 completion,
                 lease: None,
-                cancel_on_call: false,
+                mid_call: None,
                 owner_override: None,
                 calls: Arc::new(AtomicU64::new(0)),
             }
@@ -1654,7 +1790,21 @@ mod tests {
         /// Reports cancellation on this account lease while the call is in flight.
         fn cancelling(mut self, lease: Arc<Mutex<ResourceOperationLease>>) -> Self {
             self.lease = Some(lease);
-            self.cancel_on_call = true;
+            self.mid_call = Some(MidCall::Cancel);
+            self
+        }
+
+        /// Closes admission on this account lease while the call is in flight.
+        fn closing(mut self, lease: Arc<Mutex<ResourceOperationLease>>) -> Self {
+            self.lease = Some(lease);
+            self.mid_call = Some(MidCall::Close);
+            self
+        }
+
+        /// Poisons this account lease while the call is in flight.
+        fn poisoning(mut self, lease: Arc<Mutex<ResourceOperationLease>>) -> Self {
+            self.lease = Some(lease);
+            self.mid_call = Some(MidCall::Poison);
             self
         }
 
@@ -1673,11 +1823,20 @@ mod tests {
     impl BoundedIoEndpoint for ScriptedEndpoint {
         fn attempt(&mut self, call: &IoCallBinding, _provided: &[u8]) -> IoHostResponse {
             self.calls.fetch_add(1, Ordering::SeqCst);
-            if self.cancel_on_call
-                && let Some(lease) = self.lease.as_ref()
-                && let Ok(mut admission) = lease.lock()
-            {
-                admission.cancellation_requested = true;
+            if let (Some(mid_call), Some(lease)) = (self.mid_call, self.lease.as_ref()) {
+                match mid_call {
+                    MidCall::Cancel => {
+                        if let Ok(mut admission) = lease.lock() {
+                            admission.cancellation_requested = true;
+                        }
+                    }
+                    MidCall::Close => {
+                        if let Ok(mut admission) = lease.lock() {
+                            admission.pending = false;
+                        }
+                    }
+                    MidCall::Poison => poison_lease(lease),
+                }
             }
             let binding = match self.owner_override {
                 Some(owner) => IoCallBinding {
@@ -2371,25 +2530,202 @@ mod tests {
         );
     }
 
-    /// A dropped attempt keeps the accepted octets and the admission lease.
+    /// A cancellation that races a malformed completion cannot erase the contained fault.
     #[test]
-    fn a_dropped_attempt_keeps_accepted_octets_and_the_admission_lease() {
+    fn a_cancelled_malformed_completion_keeps_the_contained_fault() {
+        let fixture = Fixture::new();
+        let endpoint = ScriptedEndpoint::new(IoHostCompletion::Read {
+            advanced: 5,
+            bytes: b"ab".to_vec(),
+            ended: false,
+        })
+        .cancelling(fixture.lease());
+        let mut resource = fixture.bind(endpoint);
+        let mut service = fixture.service(IoOperation::Read);
+        let outcome = service.attempt(
+            &mut resource,
+            IoRequest::read(5).unwrap_or_else(|error| panic!("request: {error:?}")),
+            &[],
+        );
+        let IoCallOutcome::Failed(failed) = outcome else {
+            panic!("a cancelled malformed completion must fail, observed {outcome:?}")
+        };
+        assert_eq!(
+            failed.fault(),
+            &IoCallFault::Operational(IoOperationalFault::ReadLength {
+                advanced: 5,
+                returned: 2,
+            })
+        );
+        assert!(failed.cancelled());
+        let settlement = failed
+            .settlement()
+            .unwrap_or_else(|| panic!("a cancelled failure still settles this attempt once"));
+        assert_eq!(settlement.outcome(), ExternalOutcome::Ambiguous);
+        assert_eq!(settlement.evidence(), &IoEvidence::NoOctets);
+    }
+
+    /// A cancellation that races a family refusal keeps the domain fault distinct.
+    #[test]
+    fn a_cancelled_family_refusal_keeps_the_domain_fault() {
+        let code = IoFamilyFault::new("family::refused").unwrap_or_else(|| panic!("family code"));
+        let fixture = Fixture::new();
+        let endpoint = ScriptedEndpoint::new(IoHostCompletion::FamilyRefused(code.clone()))
+            .cancelling(fixture.lease());
+        let mut resource = fixture.bind(endpoint);
+        let mut service = fixture.service(IoOperation::Read);
+        let outcome = service.attempt(
+            &mut resource,
+            IoRequest::read(2).unwrap_or_else(|error| panic!("request: {error:?}")),
+            &[],
+        );
+        let IoCallOutcome::Failed(failed) = outcome else {
+            panic!("a cancelled family refusal must fail, observed {outcome:?}")
+        };
+        assert_eq!(failed.fault(), &IoCallFault::Family(code));
+        assert!(failed.cancelled());
+        let settlement = failed
+            .settlement()
+            .unwrap_or_else(|| panic!("a cancelled family refusal settles once"));
+        assert_eq!(settlement.outcome(), ExternalOutcome::Rejected);
+        assert_eq!(settlement.state(), ResourceState::Usable);
+    }
+
+    /// A cancelled blocked attempt keeps the not-ready witness it observed.
+    #[test]
+    fn a_cancelled_blocked_attempt_keeps_the_readiness_witness() {
+        let fixture = Fixture::new();
+        let endpoint = ScriptedEndpoint::new(IoHostCompletion::Blocked {
+            operation: IoBackpressure::Read,
+        })
+        .cancelling(fixture.lease());
+        let mut resource = fixture.bind(endpoint);
+        let mut service = fixture.service(IoOperation::Read);
+        let outcome = service.attempt(
+            &mut resource,
+            IoRequest::read(2).unwrap_or_else(|error| panic!("request: {error:?}")),
+            &[],
+        );
+        let IoCallOutcome::Cancelled(blocked) = outcome else {
+            panic!("a cancelled blocked attempt settles as cancelled, observed {outcome:?}")
+        };
+        assert_eq!(blocked.blocked(), Some(IoBackpressure::Read));
+        assert_eq!(blocked.stage(), IoAttemptStage::Dispatched);
+        assert_eq!(
+            blocked.settlement().progress(),
+            ProgressObservation::NotStarted
+        );
+        assert_eq!(blocked.settlement().outcome(), ExternalOutcome::Ambiguous);
+        assert_eq!(blocked.settlement().evidence(), &IoEvidence::NoOctets);
+    }
+
+    /// A closed admission after dispatch is contained, and is not reported as cancellation.
+    #[test]
+    fn a_closed_admission_after_dispatch_is_contained_not_cancelled() {
+        let fixture = Fixture::new();
+        let endpoint = ScriptedEndpoint::new(IoHostCompletion::Read {
+            advanced: 2,
+            bytes: b"ab".to_vec(),
+            ended: true,
+        })
+        .closing(fixture.lease());
+        let mut resource = fixture.bind(endpoint);
+        let mut service = fixture.service(IoOperation::Read);
+        let outcome = service.attempt(
+            &mut resource,
+            IoRequest::read(2).unwrap_or_else(|error| panic!("request: {error:?}")),
+            &[],
+        );
+        let IoCallOutcome::Failed(failed) = outcome else {
+            panic!("a closed admission must be contained, observed {outcome:?}")
+        };
+        assert_eq!(
+            failed.fault(),
+            &IoCallFault::Operational(IoOperationalFault::AdmissionClosed)
+        );
+        assert!(!failed.cancelled());
+        let settlement = failed
+            .settlement()
+            .unwrap_or_else(|| panic!("a closed admission still settles this attempt once"));
+        assert_eq!(settlement.outcome(), ExternalOutcome::Ambiguous);
+        assert_eq!(settlement.evidence(), &IoEvidence::NoOctets);
+    }
+
+    /// An admission lease poisoned after dispatch is contained, not read as cancellation.
+    #[test]
+    fn an_unreadable_lease_after_dispatch_is_contained_not_cancelled() {
+        let fixture = Fixture::new();
+        let endpoint = ScriptedEndpoint::new(IoHostCompletion::Read {
+            advanced: 2,
+            bytes: b"ab".to_vec(),
+            ended: true,
+        })
+        .poisoning(fixture.lease());
+        let mut resource = fixture.bind(endpoint);
+        let mut service = fixture.service(IoOperation::Read);
+        let outcome = service.attempt(
+            &mut resource,
+            IoRequest::read(2).unwrap_or_else(|error| panic!("request: {error:?}")),
+            &[],
+        );
+        let IoCallOutcome::Failed(failed) = outcome else {
+            panic!("an unreadable lease must be contained, observed {outcome:?}")
+        };
+        assert_eq!(
+            failed.fault(),
+            &IoCallFault::Operational(IoOperationalFault::AdmissionLeaseUnreadable)
+        );
+        assert!(!failed.cancelled());
+    }
+
+    /// An admission lease poisoned before dispatch refuses admission without any effect.
+    #[test]
+    fn an_unreadable_lease_before_dispatch_refuses_admission() {
+        let fixture = Fixture::new();
+        let transport = InMemoryIoTransport::bounded(b"ab".to_vec(), 4)
+            .unwrap_or_else(|error| panic!("transport: {error:?}"));
+        let handle = transport.handle();
+        let mut resource = fixture.bind(transport);
+        let record = resource.account().durable_record();
+        poison_lease(&fixture.lease());
+        let mut service = fixture.service(IoOperation::Read);
+        let outcome = service.attempt(
+            &mut resource,
+            IoRequest::read(2).unwrap_or_else(|error| panic!("request: {error:?}")),
+            &[],
+        );
+        assert_eq!(
+            outcome,
+            IoCallOutcome::Refused(IoRefusal::AdmissionLeaseUnreadable)
+        );
+        assert_eq!(handle.calls(), 0);
+        assert_eq!(resource.account().durable_record(), record);
+    }
+
+    /// Dropping the attempt retains the accepted octets and the admission lease.
+    ///
+    /// The accepted octets live in the endpoint the caller bound, and the admission lease is shared
+    /// with the machine-issued subject, so losing the settlement service and the attempt outcome
+    /// keeps both. Registry-owned retention across loss of the binding itself, and off-worker
+    /// physical cleanup of it, are the consumer slice integration and are not claimed here.
+    #[test]
+    fn dropping_the_attempt_retains_accepted_octets_and_the_admission_lease() {
         let fixture = Fixture::new();
         let lease = fixture.lease();
         let transport = InMemoryIoTransport::bounded(b"abc".to_vec(), 8)
             .unwrap_or_else(|error| panic!("transport: {error:?}"));
         let handle = transport.handle();
         let mut resource = fixture.bind(transport);
-        let mut service = fixture.service(IoOperation::Write);
-        let outcome = service.attempt(
-            &mut resource,
-            IoRequest::write(3).unwrap_or_else(|error| panic!("request: {error:?}")),
-            b"XYZ",
-        );
-        assert!(matches!(outcome, IoCallOutcome::Settled(_)));
-        let settled_record = resource.account().durable_record();
-        drop(service);
-        drop(resource);
+        let settled_record = {
+            let mut service = fixture.service(IoOperation::Write);
+            let outcome = service.attempt(
+                &mut resource,
+                IoRequest::write(3).unwrap_or_else(|error| panic!("request: {error:?}")),
+                b"XYZ",
+            );
+            assert!(matches!(outcome, IoCallOutcome::Settled(_)));
+            resource.account().durable_record()
+        };
         assert_eq!(handle.retained(), b"abcXYZ".to_vec());
         assert!(
             lease
@@ -2398,5 +2734,7 @@ mod tests {
                 .pending
         );
         assert_eq!(settled_record.operation_state(), ResourceState::Consumed);
+        drop(resource);
+        assert_eq!(handle.retained(), b"abcXYZ".to_vec());
     }
 }
