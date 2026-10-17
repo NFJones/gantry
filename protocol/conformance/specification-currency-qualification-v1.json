@@ -7,9 +7,9 @@
   "candidate": {
     "base_commit": "9454e4966aca526dba89d0981e65cf51cd5cbd8c",
     "currency_repair_parent_commit": "9454e4966aca526dba89d0981e65cf51cd5cbd8c",
-    "reviewed_through_commit": "cb5b0eaffe317221b48f180c5448bca0c7b3c91c",
+    "reviewed_through_commit": "1509b0187e545debdd1568b44edc2db2489055d6",
     "since_commit": "9454e4966aca526dba89d0981e65cf51cd5cbd8c",
-    "tree_sha": "19f6aa52d153cd786296671b4da1dbcee3574fba",
+    "tree_sha": "6e4ca5b3839eb75864261ce6fcfdac8bc00fea26",
     "identity_note": "Content identity is the candidate input digest set plus the candidate tree hash. The record is committed after the candidate, so it names the reviewed-through commit and its tree rather than its own.",
     "toolchain": "1.97.1 minimal with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
     "inputs": [
@@ -239,20 +239,64 @@
   ],
   "successors": [
     {
+      "path": "crates/gantry-conformance/tests/async_execution_conformance.rs",
+      "sha256": "33772df70212b82ca73eb2806398d14fbdb72723ea8e8bb72a643da770702515"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/native_source_concurrency_gate.rs",
+      "sha256": "d86d6728c5d3ff96798a411f4614b214d428ed6f14cd0d20f6c92540cd436d49"
+    },
+    {
+      "path": "protocol/conformance/async-execution-adoption-v1.json",
+      "sha256": "6b3beac83676730b6171a73dcb95688d649a32c789dc222485630a7dec1fb583"
+    },
+    {
+      "path": "protocol/conformance/async-execution-conformance-v1.json",
+      "sha256": "db2098d6a088b6f3d947ddb61e5a175bf00e42ed9c8060a1f39e13cd508ac192"
+    },
+    {
+      "path": "protocol/conformance/async-source-lowering-v1.json",
+      "sha256": "9258f4f57a50ae3edcfc3618c2ee0b1ef8028dbe8585d72b63a66233d6cd1f1c"
+    },
+    {
+      "path": "protocol/conformance/general-purpose-foundation-gate-v1.json",
+      "sha256": "e9a61eeed4e474b29b4a69d32e067fa80da808056b7ce7afb295e6220bddd0a7"
+    },
+    {
+      "path": "protocol/conformance/general-purpose-milestone-gate-v1.json",
+      "sha256": "e8f33de2e32ba268c81b51ce6b931203e03966985ff1bc04f142168c66c88cff"
+    },
+    {
+      "path": "protocol/conformance/generics-traits-adoption-v1.json",
+      "sha256": "60988725e6973ad93591df83b6602f843f1201c9defb60ee2222c6e596c4e629"
+    },
+    {
+      "path": "protocol/conformance/generics-traits-analyzer-gate-v1.json",
+      "sha256": "2d9823c3898ef015052cdfd7da389b433e7e066de7ff8b8ef34f207fcf6ec507"
+    },
+    {
+      "path": "protocol/conformance/generics-traits-conformance-v1.json",
+      "sha256": "5eafc4d9f6d67b45a926400dc78ba7ba8d9c385e3880649a7672a79d40252c76"
+    },
+    {
       "path": "protocol/conformance/manifest-v1.json",
-      "sha256": "859e3badf64d5f53153efb392370a5dbd5fb379bca4b754d4035598632c7dc95"
+      "sha256": ""
+    },
+    {
+      "path": "protocol/conformance/native-source-concurrency-gate-v1.json",
+      "sha256": "93722e7f38d8a630b1c414d7aaf13a0d6e37f7fc6bb777caf07f9de3d4fbaf97"
     },
     {
       "path": "protocol/publication/index-v1.json",
-      "sha256": "eca4429311f6f8233be7211fb1df8e765f55b98dc27b48d7605693fb11e86d68"
+      "sha256": ""
     },
     {
       "path": "protocol/publication/v1/gantry.conformance.json",
-      "sha256": "3976360d8557e6a346ec9d1269c8db92a17dc58b1929036593ac28af835d2a5d"
+      "sha256": ""
     },
     {
       "path": "protocol/publication/verification-v1.json",
-      "sha256": "956d8e80956c27b8aa2f257c88132f6ba310adc89555b4fb5dc81ac82a2c8f8a"
+      "sha256": ""
     },
     {
       "path": "protocol/conformance/specification-currency-qualification-v1.json",
