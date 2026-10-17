@@ -1,0 +1,266 @@
+{
+ "format": "gantry.specification-currency-qualification/v1",
+ "issue": "be47045e-93fb-473b-af7a-2d459aae091c",
+ "status": "verified",
+ "specification_sha256": "7e2a8d5867b7102de2b3dbab9f432855fe2626d3beade56f485a0effad104b13",
+ "superseded_specification_sha256": "ee9282d1a6a80cbf73d1e7f398fff210a61fba61884348dd62a788b1c7e8f745",
+ "candidate": {
+  "base_commit": "1eb17dc92065a6438347ff0391afcf03aaf0ba80",
+  "currency_repair_parent_commit": "4dc14fbc62f41402228b8dcda4b73e6b4537f989",
+  "reviewed_through_commit": "1eb17dc92065a6438347ff0391afcf03aaf0ba80",
+  "since_commit": "8d28bf1f0b12343ee9b5adacd7e20dbc43e29e29",
+  "identity_note": "Content identity is the candidate input digest set. This record is committed after 4dc14fb, so it names its parent commit rather than its own.",
+  "toolchain": "1.97.1 minimal with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
+  "inputs": [
+   {
+    "path": "SPEC.md",
+    "sha256": "7e2a8d5867b7102de2b3dbab9f432855fe2626d3beade56f485a0effad104b13"
+   },
+   {
+    "path": "protocol/requirements/reviewed-v1.json",
+    "sha256": "fff3a1d0a24dce290da227bba51f91b366da644217d09d830f39ff8d575c7e7a"
+   },
+   {
+    "path": "protocol/requirements/section14-v1.json",
+    "sha256": "df119dc2cdb99fdbb3472fa56d92d05f5ced9a7f88736fac194d476872d56d90"
+   },
+   {
+    "path": "protocol/requirements/generated/requirements-v1.json",
+    "sha256": "890ef00a88a7240d4ea453f04bf3a5e0e9578e3a40365e3f076afeff997026d0"
+   },
+   {
+    "path": "Cargo.lock",
+    "sha256": "e26d919c14529b890d0a6695c21a651e4c357045b8062a56e6c2b44d84f99436"
+   },
+   {
+    "path": "fuzz/Cargo.lock",
+    "sha256": "5922cc323286e0a166d53696a9c737f711492e76b5cf0ad473a8e4995bc500dc"
+   }
+  ]
+ },
+ "drift_review": {
+  "specification_commits_reviewed": 213,
+  "requirements_before": {
+   "count": 625,
+   "clauses": 909
+  },
+  "requirements_after": {
+   "count": 635,
+   "clauses": 919
+  },
+  "added_requirements": [
+   {
+    "id": "GNT-28.11-runtime-admission-mapping",
+    "clauses": 1,
+    "profile_reviews": [
+     "analyzer:covered"
+    ]
+   },
+   {
+    "id": "GNT-28.12-operation-state-projection",
+    "clauses": 1,
+    "profile_reviews": [
+     "analyzer:covered"
+    ]
+   },
+   {
+    "id": "GNT-40.8-numeric-module-names",
+    "clauses": 1,
+    "profile_reviews": [
+     "analyzer:covered"
+    ]
+   },
+   {
+    "id": "GNT-41.12-text-module-names",
+    "clauses": 1,
+    "profile_reviews": [
+     "analyzer:covered"
+    ]
+   },
+   {
+    "id": "GNT-48.0-observe-foundation-scope",
+    "clauses": 1,
+    "profile_reviews": [
+     "analyzer:covered"
+    ]
+   },
+   {
+    "id": "GNT-48.1-observe-modules-and-item-rows",
+    "clauses": 1,
+    "profile_reviews": [
+     "analyzer:covered"
+    ]
+   },
+   {
+    "id": "GNT-49.0-environment-foundation-scope",
+    "clauses": 1,
+    "profile_reviews": [
+     "analyzer:covered"
+    ]
+   },
+   {
+    "id": "GNT-49.1-environment-modules-and-item-rows",
+    "clauses": 1,
+    "profile_reviews": [
+     "analyzer:covered"
+    ]
+   },
+   {
+    "id": "GNT-50.0-random-foundation-scope",
+    "clauses": 1,
+    "profile_reviews": [
+     "analyzer:covered"
+    ]
+   },
+   {
+    "id": "GNT-50.1-random-modules-and-item-rows",
+    "clauses": 1,
+    "profile_reviews": [
+     "analyzer:covered"
+    ]
+   }
+  ],
+  "changed_requirement_bodies": [
+   "GNT-2.1",
+   "GNT-20.1-operation-kinds",
+   "GNT-20.3-receiver-loan-and-ownership-transfer",
+   "GNT-20.5-interruption-cancellation-and-late-completion",
+   "GNT-20.7-resource-state-after-failure-and-poisoning",
+   "GNT-20.8-half-close-and-post-failure-ownership",
+   "GNT-20.9-deduplication-retention-and-compaction",
+   "GNT-20.10-retirement-and-stale-owner-fencing",
+   "GNT-28.0-resource-accounting-and-lifetime-contract",
+   "GNT-28.10-resource-accounting-non-claims",
+   "GNT-3-M-CONTEXT-SCOPE",
+   "GNT-3.6",
+   "GNT-47.14-filesystem-durable-carriers",
+   "GNT-5.16",
+   "GNT-5.17"
+  ],
+  "removed_requirements": [],
+  "profile_applicability": [
+   {
+    "profile": "analyzer",
+    "before_covered": 568,
+    "before_not_applicable": 188,
+    "after_covered": 578,
+    "after_not_applicable": 188,
+    "after_planned": 0,
+    "outcome": "closed"
+   },
+   {
+    "profile": "concurrent-evaluator",
+    "before_covered": 330,
+    "before_not_applicable": 7,
+    "after_covered": 330,
+    "after_not_applicable": 7,
+    "after_planned": 0,
+    "outcome": "unchanged and closed"
+   },
+   {
+    "profile": "durable-runtime",
+    "before_covered": 363,
+    "before_not_applicable": 14,
+    "after_covered": 363,
+    "after_not_applicable": 14,
+    "after_planned": 0,
+    "outcome": "unchanged and closed"
+   },
+   {
+    "profile": "embedding",
+    "before_covered": 307,
+    "before_not_applicable": 49,
+    "after_covered": 307,
+    "after_not_applicable": 49,
+    "after_planned": 0,
+    "outcome": "unchanged and closed"
+   },
+   {
+    "profile": "evaluator",
+    "before_covered": 323,
+    "before_not_applicable": 14,
+    "after_covered": 323,
+    "after_not_applicable": 14,
+    "after_planned": 0,
+    "outcome": "unchanged and closed"
+   },
+   {
+    "profile": "frontend",
+    "before_covered": 59,
+    "before_not_applicable": 16,
+    "after_covered": 59,
+    "after_not_applicable": 16,
+    "after_planned": 0,
+    "outcome": "unchanged and closed"
+   }
+  ],
+  "reviewed_categories": [
+   "execution counter, yield, and ownership publication hardening",
+   "operation identity, settlement, deduplication, and stale-owner fencing",
+   "resource accounting, recovery projection, retirement, and atomic charge admission",
+   "filesystem durable carriers, partial progress, and replacement outcome vocabulary",
+   "protected operations, live-resource modifier, and runtime admission mapping",
+   "observe, environment, and random foundation scope and module rows",
+   "standard-library numeric and text module naming clauses"
+  ],
+  "outcome": "Every added requirement block is analyzer-covered naming, admission-mapping, observe, environment, or random scope text. No profile gained a planned, in-progress, or unresolved review, no previously covered profile lost coverage, and the fifteen changed bodies reclassify no profile clause. The accumulated drift therefore leaves the six-profile applicability closed."
+ },
+ "section14_review": {
+  "excerpt_count_before": 51,
+  "excerpt_count_after": 51,
+  "states": [
+   "covered"
+  ],
+  "every_excerpt_has_evidence": true,
+  "outcome": "No Section 14 excerpt was removed, unclassified, or left without evidence across the drift window; all fifty-one remain covered with evidence."
+ },
+ "qualification": {
+  "scope": "Currency of the existing verified async and generics six-profile adoption at this candidate. No new behaviour, normative text, or profile scope is qualified; the evidence is re-executed at the candidate and the applicability review above confirms the classifications still close.",
+  "lanes": [
+   {"lane": "analyzer_gate", "result": "pass"},
+   {"lane": "async_cancellation", "result": "pass"},
+   {"lane": "async_contract_gate", "result": "pass"},
+   {"lane": "async_execution_conformance", "result": "pass"},
+   {"lane": "async_execution_gate", "result": "pass"},
+   {"lane": "async_publication", "result": "pass"},
+   {"lane": "async_source_lowering", "result": "pass"},
+   {"lane": "combined_gate", "result": "pass"},
+   {"lane": "concurrent_gate", "result": "pass"},
+   {"lane": "durable_gate", "result": "pass"},
+   {"lane": "foundation_gate", "result": "pass"},
+   {"lane": "frontend_gate", "result": "pass"},
+   {"lane": "general_purpose_foundation_gate", "result": "pass"},
+   {"lane": "general_purpose_milestone_gate", "result": "pass"},
+   {"lane": "general_purpose_preregistration_gate", "result": "pass"},
+   {"lane": "generics_conformance_gate", "result": "pass"},
+   {"lane": "native_source_concurrency_gate", "result": "pass"},
+   {"lane": "publication_set", "result": "pass"},
+   {"lane": "sequential_gate", "result": "pass"},
+   {"lane": "source_substrate_gate", "result": "pass"}
+  ],
+  "commands": [
+   {"command": "cargo fmt --all --check", "result": "clean"},
+   {"command": "timeout 1500 just check", "result": "exit 0"},
+   {"command": "timeout 1800 just clippy", "result": "exit 0"},
+   {"command": "timeout 1200 cargo run --locked -q -p xtask -- check generated", "result": "exit 0; conformance manifest and corpus, protocol catalog, seven-artifact publication set, protocol bindings, requirement inventory and Unicode tables current"},
+   {"command": "timeout 1200 cargo run --locked -q -p xtask -- check workspace", "result": "exit 0"},
+   {"command": "python3 governance/audit_spec_revision.py", "result": "0 of 14 revision bindings mismatched, down from 5 at the base commit"},
+   {"command": "two consecutive generate requirements plus generate protocol passes", "result": "identical git diff fingerprints; requirements already current and protocol bindings already current on the second pass"},
+   {"command": "timeout 2400 just test", "result": "2 failing targets from 22 at base; both byte-identical to base and recorded in gaps"},
+   {"command": "the twenty conformance lanes above, run at this candidate", "result": "all pass"}
+  ],
+  "publication": {
+   "member_count": 7,
+   "identity_at_currency_repair_parent": "3605bcda248dadb42fd545a7c1ab52becdae90932b1c8876874caf2a9ae12bf8",
+   "identity_note": "Adding this retained record necessarily changes the publication identity. The identity above is the parent publication set; current index, report, and snapshot coherence is enforced by the publication_set and async_publication lanes.",
+   "verification": "publication_set and async_publication lanes pass; index, report, and published SPEC identities agree with current bytes"
+  }
+ },
+ "gaps": [
+  "general_purpose_preregistration reads untracked docs/reference/general-purpose-refactor-issue-plan.md, absent from the worktree and the main checkout and excluded from commits by policy; it fails with No such file or directory before and after this change and is not a pass.",
+  "cargo run --locked -q -p xtask -- check governance and the xtask governance unit test cannot resolve cargo metadata because windows-link 0.2.1 is uncached and the registry cache is read-only; this is an environment limit, not a pass.",
+  "Release readiness, release-matrix, and async-adoption verifiers still fail on stale release records; those records are owned by REL-REFRESH 086a419b and were not rebound by this repair.",
+  "Hosted macOS and alternate-architecture lanes were not executed; no platform qualification is claimed.",
+  "The adoption verdict is currency of the previously verified six-profile scope with re-executed evidence, not a claim of new async or generics behaviour evidence."
+ ]
+}
