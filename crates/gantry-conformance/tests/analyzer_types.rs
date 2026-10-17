@@ -5156,6 +5156,74 @@ fn live_resource_structs_seed_the_resource_class_and_fold_stored_members() {
     assert!(!properties.is_source_protected());
 }
 
+/// The admitted `affine live_resource struct` form seeds three independent facts, and the affine
+/// member fold carries all three to a stored aggregate while the bare form keeps its own contract.
+#[test]
+fn affine_live_resource_structs_seed_three_independent_facts() {
+    use gantry::ir::{OwnershipClass, RecoveryProjectionClass, TypeDescriptor, ValueResourceClass};
+
+    let package = analyze(
+        "affine live_resource struct Handle { token: Int }
+         affine live_resource struct Empty {}
+         affine live_resource struct Generic<T> { value: T }
+         live_resource struct Plain { token: Int }
+         struct Wrapped { handle: Handle }
+         struct HoldsGeneric { inner: Generic<Int> }
+         fn main() {}",
+    );
+    assert_eq!(
+        package.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        package.diagnostics()
+    );
+    let policy = analysis_limits(64, 100);
+    for name in [
+        "crate::Handle",
+        "crate::Empty",
+        "crate::Generic<Int>",
+        "crate::Wrapped",
+    ] {
+        let ty = TypeDescriptor::from_canonical_string(name)
+            .unwrap_or_else(|error| panic!("descriptor failed: {error:?}"));
+        let properties = package
+            .type_capabilities(&ty, policy)
+            .unwrap_or_else(|error| panic!("query failed for {name}: {error:?}"));
+        assert_eq!(
+            properties.resource_class(),
+            ValueResourceClass::LiveResource,
+            "{name}"
+        );
+        assert_eq!(
+            properties.ownership_class(),
+            OwnershipClass::AffineDroppable,
+            "{name}"
+        );
+        assert_eq!(
+            properties.recovery_projection_class(),
+            RecoveryProjectionClass::Unavailable,
+            "{name}"
+        );
+        assert!(!properties.has_sealed_recovery_projection(), "{name}");
+        assert!(!properties.is_task_capturable(), "{name}");
+    }
+    let ty = TypeDescriptor::from_canonical_string("crate::Plain")
+        .unwrap_or_else(|error| panic!("descriptor failed: {error:?}"));
+    let properties = package
+        .type_capabilities(&ty, policy)
+        .unwrap_or_else(|error| panic!("query failed: {error:?}"));
+    assert_eq!(
+        properties.resource_class(),
+        ValueResourceClass::LiveResource
+    );
+    assert_eq!(properties.ownership_class(), OwnershipClass::Copyable);
+    assert_eq!(
+        properties.recovery_projection_class(),
+        RecoveryProjectionClass::SealedValue
+    );
+    assert!(properties.is_task_capturable());
+}
+
 /// A live `MustConsume` place is discharged only by an `owned self` admission: a projection read, a
 /// copied argument, a discard, one branch, a loop iteration, and reuse are all rejected.
 #[test]

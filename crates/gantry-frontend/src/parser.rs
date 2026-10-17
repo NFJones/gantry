@@ -596,12 +596,12 @@ impl<'a> Machine<'a> {
         if self.at_identifier_named("affine") {
             self.begin(SyntaxForm::AffineStructModifier);
             self.consume_current()?;
+            self.finish().map_err(|_| self.invariant_fault())?;
             if self.at_identifier_named("live_resource") {
                 self.begin(SyntaxForm::AffineLiveResourceStructModifier);
                 self.consume_current()?;
                 self.finish().map_err(|_| self.invariant_fault())?;
             }
-            self.finish().map_err(|_| self.invariant_fault())?;
         } else if self.at_identifier_named("must_consume") {
             self.begin(SyntaxForm::MustConsumeStructModifier);
             self.consume_current()?;

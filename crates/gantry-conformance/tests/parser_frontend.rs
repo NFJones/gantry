@@ -446,6 +446,31 @@ fn main(live_resource: Int, handle: Handle) -> Int { let live_resource_again: In
     assert_eq!(live_resource_structs, 2);
 }
 
+/// The one admitted modifier pair is `affine` immediately followed by `live_resource`.
+#[test]
+fn public_parser_accepts_the_affine_live_resource_struct_modifier_pair() {
+    let source = "affine live_resource struct Handle { token: Int }
+affine live_resource struct Empty {}
+affine live_resource struct Box<T> { value: T }
+fn main(affine: Int, live_resource: Int) -> Int { affine + live_resource }";
+    let outcome = parse(source, 512, 16);
+    assert!(outcome.is_valid(), "{:?}", outcome.diagnostics());
+    let tree = outcome.tree().unwrap_or_else(|| unreachable!("valid tree"));
+    let paired = tree
+        .nodes()
+        .iter()
+        .filter(|node| {
+            matches!(node.form(), SyntaxForm::StructDeclaration)
+                && node.children().iter().any(|child| {
+                    tree.node(*child).is_some_and(|n| {
+                        matches!(n.form(), SyntaxForm::AffineLiveResourceStructModifier)
+                    })
+                })
+        })
+        .count();
+    assert_eq!(paired, 3, "every admitted pair is recorded as its own form");
+}
+
 /// `live_resource` without a following `struct` is a syntax fault at item position.
 #[test]
 fn public_parser_rejects_live_resource_without_struct() {
@@ -466,13 +491,14 @@ fn public_parser_rejects_live_resource_without_struct() {
     }
 }
 
-/// A struct declaration names at most one modifier: a second one is a syntax fault, whichever
-/// order the two modifiers are written in.
+/// A struct declaration names at most one modifier, except for the one pair `GNT-6.2j` admits.
+///
+/// `affine` immediately followed by `live_resource` is that admitted pair and is covered by the
+/// acceptance lane below; the reversed order and every `must_consume` combination stay faults.
 #[test]
 fn public_parser_rejects_stacked_struct_modifiers() {
     for source in [
         "live_resource affine struct Token { value: Int }",
-        "affine live_resource struct Token { value: Int }",
         "live_resource must_consume struct Token { value: Int }",
         "must_consume live_resource struct Token { value: Int }",
     ] {
