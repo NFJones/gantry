@@ -234,7 +234,7 @@
   },
   {
    "path": "protocol/conformance/analyzer-gate-v1.json",
-   "sha256": "3e7a9d8ed3ec6af47d7370935d085ce89583909ccd81ed2c8f5d192dd2158286"
+   "sha256": "60d2a2b736289cac05c5d5ae657a886fb2e37d6aa2caf68186d0ea896c2d8840"
   },
   {
    "path": "protocol/conformance/execution-observation-v1.json",
@@ -270,11 +270,11 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "890ef00a88a7240d4ea453f04bf3a5e0e9578e3a40365e3f076afeff997026d0"
+   "sha256": "8a9a9207cbd7fc161af4fd7dcb79d4946b491b1c59fe28fe37360387713e6494"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "fff3a1d0a24dce290da227bba51f91b366da644217d09d830f39ff8d575c7e7a"
+   "sha256": "e035d81ee143cea3487320dcbfb49385b51dc0ef2304d53bd3c366b831c9e08b"
   },
   {
    "path": "protocol/requirements/section14-v1.json",
@@ -399,15 +399,15 @@
  ],
  "review_summaries": [
   {
-   "applicable_clause_count": 356,
+   "applicable_clause_count": 358,
    "covered_count": 307,
-   "not_applicable_count": 49,
+   "not_applicable_count": 51,
    "profile": "embedding"
   },
   {
-   "applicable_clause_count": 337,
+   "applicable_clause_count": 339,
    "covered_count": 323,
-   "not_applicable_count": 14,
+   "not_applicable_count": 16,
    "profile": "evaluator"
   }
  ],

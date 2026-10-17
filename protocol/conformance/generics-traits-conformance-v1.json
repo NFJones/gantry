@@ -86,7 +86,7 @@
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "fff3a1d0a24dce290da227bba51f91b366da644217d09d830f39ff8d575c7e7a"
+   "sha256": "e035d81ee143cea3487320dcbfb49385b51dc0ef2304d53bd3c366b831c9e08b"
   }
  ],
  "environment_gaps": [
@@ -141,32 +141,32 @@
  "profile_review_summary": [
   {
    "profile": "analyzer",
-   "covered_count": 578,
-   "not_applicable_count": 188,
+   "covered_count": 576,
+   "not_applicable_count": 190,
    "planned_count": 0
   },
   {
    "profile": "concurrent-evaluator",
    "covered_count": 330,
-   "not_applicable_count": 7,
+   "not_applicable_count": 9,
    "planned_count": 0
   },
   {
    "profile": "durable-runtime",
    "covered_count": 363,
-   "not_applicable_count": 14,
+   "not_applicable_count": 16,
    "planned_count": 0
   },
   {
    "profile": "embedding",
    "covered_count": 307,
-   "not_applicable_count": 49,
+   "not_applicable_count": 51,
    "planned_count": 0
   },
   {
    "profile": "evaluator",
    "covered_count": 323,
-   "not_applicable_count": 14,
+   "not_applicable_count": 16,
    "planned_count": 0
   },
   {

@@ -49,7 +49,7 @@ const ARTIFACTS: [(&str, &str); 19] = [
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
-        "a02b9cabcda3fb9e5bca55cab2d6a975f2bf78954c1d4b143d1bf8e8f94f37bf",
+        "626658ff27952c7569cd0e34f7764cbc0ef5bb851f98371d4ee5bf4adc58003c",
     ),
     (
         "protocol/conformance/async-execution-observation-v1.json",

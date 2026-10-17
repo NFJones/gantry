@@ -9,7 +9,7 @@
   "currency_repair_parent_commit": "4dc14fbc62f41402228b8dcda4b73e6b4537f989",
   "reviewed_through_commit": "1eb17dc92065a6438347ff0391afcf03aaf0ba80",
   "since_commit": "8d28bf1f0b12343ee9b5adacd7e20dbc43e29e29",
-  "identity_note": "Content identity is the candidate input digest set. This record is committed after 4dc14fb, so it names its parent commit rather than its own.",
+  "identity_note": "Content identity is the candidate input digest set plus the candidate tree hash. This record is committed after the currency repair, so it names its parent and the reviewed-through commit rather than its own.",
   "toolchain": "1.97.1 minimal with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
   "inputs": [
    {
@@ -18,7 +18,7 @@
    },
    {
     "path": "protocol/requirements/reviewed-v1.json",
-    "sha256": "fff3a1d0a24dce290da227bba51f91b366da644217d09d830f39ff8d575c7e7a"
+    "sha256": "e035d81ee143cea3487320dcbfb49385b51dc0ef2304d53bd3c366b831c9e08b"
    },
    {
     "path": "protocol/requirements/section14-v1.json",
@@ -26,7 +26,7 @@
    },
    {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "890ef00a88a7240d4ea453f04bf3a5e0e9578e3a40365e3f076afeff997026d0"
+    "sha256": "8a9a9207cbd7fc161af4fd7dcb79d4946b491b1c59fe28fe37360387713e6494"
    },
    {
     "path": "Cargo.lock",
@@ -36,7 +36,8 @@
     "path": "fuzz/Cargo.lock",
     "sha256": "5922cc323286e0a166d53696a9c737f711492e76b5cf0ad473a8e4995bc500dc"
    }
-  ]
+  ],
+  "tree_sha": "36f66d4449942271cdc0ec165890bc414f4c3278"
  },
  "drift_review": {
   "specification_commits_reviewed": 213,
@@ -53,14 +54,22 @@
     "id": "GNT-28.11-runtime-admission-mapping",
     "clauses": 1,
     "profile_reviews": [
-     "analyzer:covered"
+     "analyzer:not-applicable",
+     "concurrent-evaluator:not-applicable",
+     "durable-runtime:not-applicable",
+     "embedding:not-applicable",
+     "evaluator:not-applicable"
     ]
    },
    {
     "id": "GNT-28.12-operation-state-projection",
     "clauses": 1,
     "profile_reviews": [
-     "analyzer:covered"
+     "analyzer:not-applicable",
+     "concurrent-evaluator:not-applicable",
+     "durable-runtime:not-applicable",
+     "embedding:not-applicable",
+     "evaluator:not-applicable"
     ]
    },
    {
@@ -143,8 +152,8 @@
     "profile": "analyzer",
     "before_covered": 568,
     "before_not_applicable": 188,
-    "after_covered": 578,
-    "after_not_applicable": 188,
+    "after_covered": 576,
+    "after_not_applicable": 190,
     "after_planned": 0,
     "outcome": "closed"
    },
@@ -153,36 +162,36 @@
     "before_covered": 330,
     "before_not_applicable": 7,
     "after_covered": 330,
-    "after_not_applicable": 7,
+    "after_not_applicable": 9,
     "after_planned": 0,
-    "outcome": "unchanged and closed"
+    "outcome": "closed"
    },
    {
     "profile": "durable-runtime",
     "before_covered": 363,
     "before_not_applicable": 14,
     "after_covered": 363,
-    "after_not_applicable": 14,
+    "after_not_applicable": 16,
     "after_planned": 0,
-    "outcome": "unchanged and closed"
+    "outcome": "closed"
    },
    {
     "profile": "embedding",
     "before_covered": 307,
     "before_not_applicable": 49,
     "after_covered": 307,
-    "after_not_applicable": 49,
+    "after_not_applicable": 51,
     "after_planned": 0,
-    "outcome": "unchanged and closed"
+    "outcome": "closed"
    },
    {
     "profile": "evaluator",
     "before_covered": 323,
     "before_not_applicable": 14,
     "after_covered": 323,
-    "after_not_applicable": 14,
+    "after_not_applicable": 16,
     "after_planned": 0,
-    "outcome": "unchanged and closed"
+    "outcome": "closed"
    },
    {
     "profile": "frontend",
@@ -191,7 +200,7 @@
     "after_covered": 59,
     "after_not_applicable": 16,
     "after_planned": 0,
-    "outcome": "unchanged and closed"
+    "outcome": "closed"
    }
   ],
   "reviewed_categories": [
@@ -201,9 +210,10 @@
    "filesystem durable carriers, partial progress, and replacement outcome vocabulary",
    "protected operations, live-resource modifier, and runtime admission mapping",
    "observe, environment, and random foundation scope and module rows",
-   "standard-library numeric and text module naming clauses"
+   "standard-library numeric and text module naming clauses",
+   "Section 28 runtime-only applicability correction under defect 9817a2c3"
   ],
-  "outcome": "Every added requirement block is analyzer-covered naming, admission-mapping, observe, environment, or random scope text. No profile gained a planned, in-progress, or unresolved review, no previously covered profile lost coverage, and the fifteen changed bodies reclassify no profile clause. The accumulated drift therefore leaves the six-profile applicability closed."
+  "outcome": "Eight added blocks are analyzer-covered naming, admission-mapping, observe, environment, or random scope text. The two Section 28 runtime clauses added by the drift, GNT-28.11 and GNT-28.12, are declared applicable to analyzer plus the four runtime and embedding profiles and reviewed not-applicable for every one of them, because Section 28 Applicability restricts them to a runtime profile that separately declares a resource registry and no profile in this repository declares one; defect 9817a2c3 corrects their inherited analyzer-covered mapping. No profile gained a planned, in-progress, or unresolved review, no previously covered profile lost applicable coverage, and the fifteen changed bodies reclassify no profile clause. The accumulated drift therefore leaves six-profile applicability closed."
  },
  "section14_review": {
   "excerpt_count_before": 51,
@@ -217,37 +227,124 @@
  "qualification": {
   "scope": "Currency of the existing verified async and generics six-profile adoption at this candidate. No new behaviour, normative text, or profile scope is qualified; the evidence is re-executed at the candidate and the applicability review above confirms the classifications still close.",
   "lanes": [
-   {"lane": "analyzer_gate", "result": "pass"},
-   {"lane": "async_cancellation", "result": "pass"},
-   {"lane": "async_contract_gate", "result": "pass"},
-   {"lane": "async_execution_conformance", "result": "pass"},
-   {"lane": "async_execution_gate", "result": "pass"},
-   {"lane": "async_publication", "result": "pass"},
-   {"lane": "async_source_lowering", "result": "pass"},
-   {"lane": "combined_gate", "result": "pass"},
-   {"lane": "concurrent_gate", "result": "pass"},
-   {"lane": "durable_gate", "result": "pass"},
-   {"lane": "foundation_gate", "result": "pass"},
-   {"lane": "frontend_gate", "result": "pass"},
-   {"lane": "general_purpose_foundation_gate", "result": "pass"},
-   {"lane": "general_purpose_milestone_gate", "result": "pass"},
-   {"lane": "general_purpose_preregistration_gate", "result": "pass"},
-   {"lane": "generics_conformance_gate", "result": "pass"},
-   {"lane": "native_source_concurrency_gate", "result": "pass"},
-   {"lane": "publication_set", "result": "pass"},
-   {"lane": "sequential_gate", "result": "pass"},
-   {"lane": "source_substrate_gate", "result": "pass"}
+   {
+    "lane": "analyzer_gate",
+    "result": "pass"
+   },
+   {
+    "lane": "async_cancellation",
+    "result": "pass"
+   },
+   {
+    "lane": "async_contract_gate",
+    "result": "pass"
+   },
+   {
+    "lane": "async_execution_conformance",
+    "result": "pass"
+   },
+   {
+    "lane": "async_execution_gate",
+    "result": "pass"
+   },
+   {
+    "lane": "async_publication",
+    "result": "pass"
+   },
+   {
+    "lane": "async_source_lowering",
+    "result": "pass"
+   },
+   {
+    "lane": "combined_gate",
+    "result": "pass"
+   },
+   {
+    "lane": "concurrent_gate",
+    "result": "pass"
+   },
+   {
+    "lane": "durable_gate",
+    "result": "pass"
+   },
+   {
+    "lane": "foundation_gate",
+    "result": "pass"
+   },
+   {
+    "lane": "frontend_gate",
+    "result": "pass"
+   },
+   {
+    "lane": "general_purpose_foundation_gate",
+    "result": "pass"
+   },
+   {
+    "lane": "general_purpose_milestone_gate",
+    "result": "pass"
+   },
+   {
+    "lane": "general_purpose_preregistration_gate",
+    "result": "pass"
+   },
+   {
+    "lane": "generics_conformance_gate",
+    "result": "pass"
+   },
+   {
+    "lane": "native_source_concurrency_gate",
+    "result": "pass"
+   },
+   {
+    "lane": "publication_set",
+    "result": "pass"
+   },
+   {
+    "lane": "sequential_gate",
+    "result": "pass"
+   },
+   {
+    "lane": "source_substrate_gate",
+    "result": "pass"
+   }
   ],
   "commands": [
-   {"command": "cargo fmt --all --check", "result": "clean"},
-   {"command": "timeout 1500 just check", "result": "exit 0"},
-   {"command": "timeout 1800 just clippy", "result": "exit 0"},
-   {"command": "timeout 1200 cargo run --locked -q -p xtask -- check generated", "result": "exit 0; conformance manifest and corpus, protocol catalog, seven-artifact publication set, protocol bindings, requirement inventory and Unicode tables current"},
-   {"command": "timeout 1200 cargo run --locked -q -p xtask -- check workspace", "result": "exit 0"},
-   {"command": "python3 governance/audit_spec_revision.py", "result": "0 of 14 revision bindings mismatched, down from 5 at the base commit"},
-   {"command": "two consecutive generate requirements plus generate protocol passes", "result": "identical git diff fingerprints; requirements already current and protocol bindings already current on the second pass"},
-   {"command": "timeout 2400 just test", "result": "2 failing targets from 22 at base; both byte-identical to base and recorded in gaps"},
-   {"command": "the twenty conformance lanes above, run at this candidate", "result": "all pass"}
+   {
+    "command": "cargo fmt --all --check",
+    "result": "clean"
+   },
+   {
+    "command": "timeout 1500 just check",
+    "result": "exit 0"
+   },
+   {
+    "command": "timeout 1800 just clippy",
+    "result": "exit 0"
+   },
+   {
+    "command": "timeout 1200 cargo run --locked -q -p xtask -- check generated",
+    "result": "exit 0; conformance manifest and corpus, protocol catalog, seven-artifact publication set, protocol bindings, requirement inventory and Unicode tables current"
+   },
+   {
+    "command": "timeout 1200 cargo run --locked -q -p xtask -- check workspace",
+    "result": "exit 0"
+   },
+   {
+    "command": "python3 governance/audit_spec_revision.py",
+    "result": "0 of 14 revision bindings mismatched, down from 5 at the base commit"
+   },
+   {
+    "command": "two consecutive generate requirements plus generate protocol passes",
+    "result": "identical git diff fingerprints; requirements already current and protocol bindings already current on the second pass"
+   },
+   {
+    "command": "timeout 2400 just test",
+    "result": "2 failing targets from 22 at base; both byte-identical to base and recorded in gaps"
+   },
+   {
+    "command": "the twenty conformance lanes above, run at this candidate",
+    "result": "all pass"
+   }
   ],
   "publication": {
    "member_count": 7,

@@ -36311,7 +36311,11 @@
       "body_start_line": 15414,
       "body_end_line": 16176,
       "profiles": [
-        "analyzer"
+        "analyzer",
+        "concurrent-evaluator",
+        "durable-runtime",
+        "embedding",
+        "evaluator"
       ],
       "roles": [
         "harness",
@@ -36323,7 +36327,11 @@
           "start_line": 15414,
           "end_line": 16176,
           "profiles": [
-            "analyzer"
+            "analyzer",
+            "concurrent-evaluator",
+            "durable-runtime",
+            "embedding",
+            "evaluator"
           ],
           "roles": [
             "harness",
@@ -36332,12 +36340,33 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/resource_runtime.rs#resource_spec_scope_includes_both_runtime_mappings_without_analyzer_claims",
-                "crates/gantry-conformance/tests/resource_runtime.rs#runtime_resource_note_pins_claims_to_their_sections"
-              ],
-              "rationale": null
+              "state": "not-applicable",
+              "evidence": [],
+              "rationale": "Section 28 Applicability limits GNT-28.11-runtime-admission-mapping to a runtime profile that separately declares a resource registry. No profile in this repository declares one, and the analyzer profile explicitly does not claim coverage of GNT-28.11 or GNT-28.12."
+            },
+            {
+              "profile": "concurrent-evaluator",
+              "state": "not-applicable",
+              "evidence": [],
+              "rationale": "Section 28 Applicability limits GNT-28.11-runtime-admission-mapping to a runtime profile that separately declares a resource registry. No profile in this repository declares one, and the analyzer profile explicitly does not claim coverage of GNT-28.11 or GNT-28.12."
+            },
+            {
+              "profile": "durable-runtime",
+              "state": "not-applicable",
+              "evidence": [],
+              "rationale": "Section 28 Applicability limits GNT-28.11-runtime-admission-mapping to a runtime profile that separately declares a resource registry. No profile in this repository declares one, and the analyzer profile explicitly does not claim coverage of GNT-28.11 or GNT-28.12."
+            },
+            {
+              "profile": "embedding",
+              "state": "not-applicable",
+              "evidence": [],
+              "rationale": "Section 28 Applicability limits GNT-28.11-runtime-admission-mapping to a runtime profile that separately declares a resource registry. No profile in this repository declares one, and the analyzer profile explicitly does not claim coverage of GNT-28.11 or GNT-28.12."
+            },
+            {
+              "profile": "evaluator",
+              "state": "not-applicable",
+              "evidence": [],
+              "rationale": "Section 28 Applicability limits GNT-28.11-runtime-admission-mapping to a runtime profile that separately declares a resource registry. No profile in this repository declares one, and the analyzer profile explicitly does not claim coverage of GNT-28.11 or GNT-28.12."
             }
           ]
         }
@@ -36351,7 +36380,11 @@
       "body_start_line": 16179,
       "body_end_line": 16220,
       "profiles": [
-        "analyzer"
+        "analyzer",
+        "concurrent-evaluator",
+        "durable-runtime",
+        "embedding",
+        "evaluator"
       ],
       "roles": [
         "harness",
@@ -36363,7 +36396,11 @@
           "start_line": 16179,
           "end_line": 16220,
           "profiles": [
-            "analyzer"
+            "analyzer",
+            "concurrent-evaluator",
+            "durable-runtime",
+            "embedding",
+            "evaluator"
           ],
           "roles": [
             "harness",
@@ -36372,12 +36409,33 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/resource_runtime.rs#resource_spec_scope_includes_both_runtime_mappings_without_analyzer_claims",
-                "crates/gantry-conformance/tests/resource_runtime.rs#runtime_resource_note_pins_claims_to_their_sections"
-              ],
-              "rationale": null
+              "state": "not-applicable",
+              "evidence": [],
+              "rationale": "Section 28 Applicability limits GNT-28.12-operation-state-projection to a runtime profile that separately declares a resource registry. No profile in this repository declares one, and the analyzer profile explicitly does not claim coverage of GNT-28.11 or GNT-28.12."
+            },
+            {
+              "profile": "concurrent-evaluator",
+              "state": "not-applicable",
+              "evidence": [],
+              "rationale": "Section 28 Applicability limits GNT-28.12-operation-state-projection to a runtime profile that separately declares a resource registry. No profile in this repository declares one, and the analyzer profile explicitly does not claim coverage of GNT-28.11 or GNT-28.12."
+            },
+            {
+              "profile": "durable-runtime",
+              "state": "not-applicable",
+              "evidence": [],
+              "rationale": "Section 28 Applicability limits GNT-28.12-operation-state-projection to a runtime profile that separately declares a resource registry. No profile in this repository declares one, and the analyzer profile explicitly does not claim coverage of GNT-28.11 or GNT-28.12."
+            },
+            {
+              "profile": "embedding",
+              "state": "not-applicable",
+              "evidence": [],
+              "rationale": "Section 28 Applicability limits GNT-28.12-operation-state-projection to a runtime profile that separately declares a resource registry. No profile in this repository declares one, and the analyzer profile explicitly does not claim coverage of GNT-28.11 or GNT-28.12."
+            },
+            {
+              "profile": "evaluator",
+              "state": "not-applicable",
+              "evidence": [],
+              "rationale": "Section 28 Applicability limits GNT-28.12-operation-state-projection to a runtime profile that separately declares a resource registry. No profile in this repository declares one, and the analyzer profile explicitly does not claim coverage of GNT-28.11 or GNT-28.12."
             }
           ]
         }

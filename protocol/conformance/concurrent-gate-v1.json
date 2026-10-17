@@ -78,7 +78,7 @@
   },
   {
    "path": "protocol/conformance/sequential-gate-v1.json",
-   "sha256": "4b4ad6bff87d276e657df6375ed8888eaf57e99dfc5d3da5f6aa2eb4357e1afb"
+   "sha256": "b384892a0dc7176cd3d7c239d067cd0abe196831b55eb6c43baba648f8597c32"
   },
   {
    "path": "protocol/conformance/source-spawn-v1.json",
@@ -102,11 +102,11 @@
   },
   {
    "path": "protocol/requirements/generated/requirements-v1.json",
-   "sha256": "890ef00a88a7240d4ea453f04bf3a5e0e9578e3a40365e3f076afeff997026d0"
+   "sha256": "8a9a9207cbd7fc161af4fd7dcb79d4946b491b1c59fe28fe37360387713e6494"
   },
   {
    "path": "protocol/requirements/reviewed-v1.json",
-   "sha256": "fff3a1d0a24dce290da227bba51f91b366da644217d09d830f39ff8d575c7e7a"
+   "sha256": "e035d81ee143cea3487320dcbfb49385b51dc0ef2304d53bd3c366b831c9e08b"
   },
   {
    "path": "protocol/requirements/section14-v1.json",
@@ -188,9 +188,9 @@
   "crates/gantry-conformance/tests/concurrent_task_state.rs#public_task_creation_is_bounded_stable_and_snapshot_isolated"
  ],
  "review_summary": {
-  "applicable_clause_count": 337,
+  "applicable_clause_count": 339,
   "covered_count": 330,
-  "not_applicable_count": 7,
+  "not_applicable_count": 9,
   "profile": "concurrent-evaluator"
  },
  "section14_excerpt_count": 51,
