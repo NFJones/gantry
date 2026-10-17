@@ -359,5 +359,175 @@
   "Release readiness, release-matrix, and async-adoption verifiers still fail on stale release records; those records are owned by REL-REFRESH 086a419b and were not rebound by this repair.",
   "Hosted macOS and alternate-architecture lanes were not executed; no platform qualification is claimed.",
   "The adoption verdict is currency of the previously verified six-profile scope with re-executed evidence, not a claim of new async or generics behaviour evidence."
+ ],
+ "successors": [
+  {
+   "path": "crates/gantry-conformance/tests/async_cancellation.rs",
+   "sha256": "eafe4785a91eb8d43d653b9a16884344fa8c8ee1e942828efdf9960f74fbc964"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/async_execution_conformance.rs",
+   "sha256": "64640f8d67dba8225522f1fa290b91c8f50255e9e16524358de231a1c0e741d3"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/async_execution_gate.rs",
+   "sha256": "455d1fbf097e13abda0019f496b0def2a3bc70b98888434fe7b36f93ea8f07bd"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/native_source_concurrency_gate.rs",
+   "sha256": "582d5d598106a8417da5265194c226f89ea1eacbb486f02e8bb550d68176aaed"
+  },
+  {
+   "path": "crates/gantry-conformance/tests/specification_currency_qualification.rs",
+   "sha256": "5079dd44b2a1ef4b1fe4e73c90573a63c3df2e135cb026e12abd7e3fdd001429"
+  },
+  {
+   "path": "protocol/conformance/analyzer-gate-v1.json",
+   "sha256": "60d2a2b736289cac05c5d5ae657a886fb2e37d6aa2caf68186d0ea896c2d8840"
+  },
+  {
+   "path": "protocol/conformance/async-cancellation-v1.json",
+   "sha256": "d73d309c8dcf370a6aac1c82b4033b8ff36b403ca9ec993c56d1dc2841a499c3"
+  },
+  {
+   "path": "protocol/conformance/async-execution-adoption-v1.json",
+   "sha256": "79247224ab791e3e2696a744b4630d66786d825e10caa24f56ff57e93723207f"
+  },
+  {
+   "path": "protocol/conformance/async-execution-conformance-v1.json",
+   "sha256": "f27989f543ff3a3186a9371348606c2a475f4185770b65c1742260e3652fd4fe"
+  },
+  {
+   "path": "protocol/conformance/async-execution-contract-v1.json",
+   "sha256": "626658ff27952c7569cd0e34f7764cbc0ef5bb851f98371d4ee5bf4adc58003c"
+  },
+  {
+   "path": "protocol/conformance/async-execution-gate-v1.json",
+   "sha256": "1ece7d6994d96d399582618fc9bd75b3764ec5caa13e869d4278c48268c778ab"
+  },
+  {
+   "path": "protocol/conformance/async-source-lowering-v1.json",
+   "sha256": "2ab53bda3be6cfbd4e6648d48c1490d0a82651cc02eb482e8fbc593b39229f0f"
+  },
+  {
+   "path": "protocol/conformance/combined-gate-v1.json",
+   "sha256": "20a165b9deae0917f4d8541eb5be95a41e17ccde9d46672545a28411f51cb113"
+  },
+  {
+   "path": "protocol/conformance/concurrent-gate-v1.json",
+   "sha256": "a93771893d0d1c5d0d9016557aeb4bed7daceabe8975b78d95d9fd81f38e550c"
+  },
+  {
+   "path": "protocol/conformance/corpus-index-v1.json",
+   "sha256": "f59cb9a2524a9874e7847af603927deb859214e60869556fddbb07b92c8799b4"
+  },
+  {
+   "path": "protocol/conformance/durable-gate-v1.json",
+   "sha256": "94687e41a18f0bf40edb78b046faa856d522264f4ef8b0c638fdd392ce17f4c8"
+  },
+  {
+   "path": "protocol/conformance/foundation-v1.json",
+   "sha256": "6540364b9adcc3b756ae305941cdfafd7fd0e69cf01fe6f3f083c9522c40d32d"
+  },
+  {
+   "path": "protocol/conformance/frontend-gate-v1.json",
+   "sha256": "6ce32c8446ec65d985dd14b2ab2299bfa7c37ab24105a43675e59e33e629a4de"
+  },
+  {
+   "path": "protocol/conformance/general-purpose-foundation-gate-v1.json",
+   "sha256": "c61f96782e47b56f322aa2676f77adc6fa908bcfc271884db7e7dc90ca83f2ae"
+  },
+  {
+   "path": "protocol/conformance/general-purpose-milestone-gate-v1.json",
+   "sha256": "70ac14a3bf4d813ea7197222a5c400a95701d92bf99ca040d1adc7d6ddc71204"
+  },
+  {
+   "path": "protocol/conformance/general-purpose-preregistration-gate-v1.json",
+   "sha256": "c5d84a5f83438d5af0a747a3624db8611af21beca3d5ebda5e47a9718c1ae35c"
+  },
+  {
+   "path": "protocol/conformance/generics-traits-adoption-v1.json",
+   "sha256": "93b5e9dbeba1fe7e6297f810a5b511159521dd74d1def6e04a0d2aa5e448dc8d"
+  },
+  {
+   "path": "protocol/conformance/generics-traits-analyzer-gate-v1.json",
+   "sha256": "ce290f49e0c52cf5441b9a5dae0ede0e10bffeff6c1b2724d509ae002e7da72f"
+  },
+  {
+   "path": "protocol/conformance/generics-traits-conformance-v1.json",
+   "sha256": "1eef1a00f1734dfa57c2abb52c5832f0b507c941f918a4ffee5b11f98148839f"
+  },
+  {
+   "path": "protocol/conformance/manifest-v1.json",
+   "sha256": ""
+  },
+  {
+   "path": "protocol/conformance/native-source-concurrency-gate-v1.json",
+   "sha256": "33eef1ea497d0bcc4c0f2e4bafbd0902258b0d189da6ffb98dc0c0b6180b3f8f"
+  },
+  {
+   "path": "protocol/conformance/sequential-gate-v1.json",
+   "sha256": "b384892a0dc7176cd3d7c239d067cd0abe196831b55eb6c43baba648f8597c32"
+  },
+  {
+   "path": "protocol/conformance/source-join-v1.json",
+   "sha256": "1b4ddff192263dc28a984b9b006d1e907ca3cc0c6e590f408330e06eb1d5e05e"
+  },
+  {
+   "path": "protocol/conformance/source-spawn-v1.json",
+   "sha256": "dc6833ba10628522b78daf05e35e59699e8a6065bbd776633813087895166db2"
+  },
+  {
+   "path": "protocol/conformance/source-substrate-gate-v1.json",
+   "sha256": "cb49f43126aeae943f34dae36433eb2a51228ef3aa5dc2d6b973e4fca875461e"
+  },
+  {
+   "path": "protocol/conformance/specification-currency-qualification-v1.json",
+   "sha256": ""
+  },
+  {
+   "path": "protocol/publication/index-v1.json",
+   "sha256": ""
+  },
+  {
+   "path": "protocol/publication/v1/SPEC.md",
+   "sha256": "7e2a8d5867b7102de2b3dbab9f432855fe2626d3beade56f485a0effad104b13"
+  },
+  {
+   "path": "protocol/publication/v1/gantry.authoring.json",
+   "sha256": "2375208ed8d49916acfbf56f1af561f83388ea987f1b5ea39076c14104ff3b19"
+  },
+  {
+   "path": "protocol/publication/v1/gantry.conformance.json",
+   "sha256": ""
+  },
+  {
+   "path": "protocol/publication/v1/gantry.embedding.json",
+   "sha256": "f382870be3d3bdf2ef20870bffd2f19d1b8c8e86aebeb73b3ec9938ecb51df6d"
+  },
+  {
+   "path": "protocol/publication/v1/gantry.ir.json",
+   "sha256": "d7bf3925fc31365a75833170309b8330d5528dc5ac38b53d8ee7c346aa95674f"
+  },
+  {
+   "path": "protocol/publication/v1/gantry.journal.json",
+   "sha256": "1dbe621329647a6fdca6d2b725b32d9fbb51c398a91449646635722d2c45cc7e"
+  },
+  {
+   "path": "protocol/publication/v1/gantry.values.json",
+   "sha256": "8e7b766a0ffd1e43ee05958c8a24265f2acd626f62f307ebdf4dbf1c754b8993"
+  },
+  {
+   "path": "protocol/publication/verification-v1.json",
+   "sha256": ""
+  },
+  {
+   "path": "protocol/requirements/generated/requirements-v1.json",
+   "sha256": "8a9a9207cbd7fc161af4fd7dcb79d4946b491b1c59fe28fe37360387713e6494"
+  },
+  {
+   "path": "protocol/requirements/reviewed-v1.json",
+   "sha256": "e035d81ee143cea3487320dcbfb49385b51dc0ef2304d53bd3c366b831c9e08b"
+  }
  ]
 }

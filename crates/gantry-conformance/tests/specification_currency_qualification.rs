@@ -40,6 +40,7 @@ struct Record {
     section14_review: Section14Review,
     qualification: Qualification,
     gaps: Vec<String>,
+    successors: Vec<Successor>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -53,6 +54,13 @@ struct Candidate {
     identity_note: String,
     toolchain: String,
     inputs: Vec<FileDigest>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Successor {
+    path: String,
+    sha256: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -310,18 +318,8 @@ fn validate(root: &Path, record: &Record) -> Result<(), String> {
     if record.candidate.tree_sha != tree {
         return Err("candidate tree digest differs from the reviewed commit".to_owned());
     }
-    let allowed = [
-        "protocol/",
-        "crates/gantry-conformance/tests/",
-        "docs/",
-        "release/",
-    ];
-    if git_changed_paths(root, &record.candidate.reviewed_through_commit)?
-        .iter()
-        .any(|path| !allowed.iter().any(|prefix| path.starts_with(prefix)))
-    {
-        return Err("candidate source changed outside the allowed evidence scope".to_owned());
-    }
+    validate_successors(root, record)?;
+    reject_uncommitted_inputs(root)?;
     validate_section14(root, &record.section14_review, &specification_sha256)?;
     validate_adoptions(root, &specification_sha256)?;
     validate_qualification(root, &record.qualification)?;
@@ -710,4 +708,146 @@ fn workspace_root() -> PathBuf {
         .and_then(Path::parent)
         .unwrap_or_else(|| unreachable!("conformance crate has a workspace root"))
         .to_path_buf()
+}
+
+fn validate_successors(root: &Path, record: &Record) -> Result<(), String> {
+    let changed = git_changed_paths(root, &record.candidate.reviewed_through_commit)?
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let recorded = record
+        .successors
+        .iter()
+        .map(|successor| successor.path.clone())
+        .collect::<BTreeSet<_>>();
+    if changed != recorded || recorded.len() != record.successors.len() {
+        return Err("recorded successor set differs from the candidate descendants".to_owned());
+    }
+    for successor in &record.successors {
+        if successor.sha256.is_empty() {
+            if !self_referential(&successor.path) {
+                return Err(format!(
+                    "successor has no pinned digest: {}",
+                    successor.path
+                ));
+            }
+            continue;
+        }
+        let bytes = fs::read(root.join(&successor.path)).map_err(io_error)?;
+        if successor.sha256 != sha256(&bytes) {
+            return Err(format!("successor digest differs: {}", successor.path));
+        }
+    }
+    Ok(())
+}
+
+fn self_referential(path: &str) -> bool {
+    path == RECORD_PATH
+        || path == "protocol/conformance/manifest-v1.json"
+        || path == "protocol/publication/v1/gantry.conformance.json"
+        || path == "protocol/publication/index-v1.json"
+        || path == "protocol/publication/verification-v1.json"
+}
+
+fn reject_uncommitted_inputs(root: &Path) -> Result<(), String> {
+    let output = Command::new("git")
+        .current_dir(root)
+        .args(["status", "--porcelain=v1", "-z", "--untracked-files=all"])
+        .output()
+        .map_err(io_error)?;
+    if !output.status.success() {
+        return Err("could not inspect uncommitted inputs".to_owned());
+    }
+    for path in dirty_paths(&output.stdout)? {
+        if dirty_path_is_applicable(&path) {
+            return Err(format!("applicable input is not committed: {path}"));
+        }
+    }
+    Ok(())
+}
+
+fn dirty_paths(bytes: &[u8]) -> Result<Vec<String>, String> {
+    let mut fields = bytes
+        .split(|byte| *byte == 0)
+        .filter(|field| !field.is_empty());
+    let mut paths = Vec::new();
+    while let Some(entry) = fields.next() {
+        if entry.len() < 3 {
+            return Err("unrecognized worktree status entry".to_owned());
+        }
+        let status = &entry[..2];
+        paths.push(String::from_utf8_lossy(&entry[3..]).into_owned());
+        if status.contains(&b'R') || status.contains(&b'C') {
+            let source = fields
+                .next()
+                .ok_or_else(|| "rename entry has no source path".to_owned())?;
+            paths.push(String::from_utf8_lossy(source).into_owned());
+        }
+    }
+    Ok(paths)
+}
+
+fn dirty_path_is_applicable(path: &str) -> bool {
+    !path.starts_with("target/") && !path.starts_with("docs/reference/")
+}
+
+#[test]
+fn qualification_validator_rejects_successor_and_dirty_input_counterexamples() {
+    let root = workspace_root();
+    let record: Record = read_json(&root.join(RECORD_PATH));
+    let mut successor = record.clone();
+    let pinned = successor
+        .successors
+        .iter()
+        .position(|entry| !entry.sha256.is_empty())
+        .unwrap_or_else(|| panic!("a pinned successor exists"));
+    successor.successors[pinned].sha256 = "0".repeat(64);
+    assert!(validate(&root, &successor).is_err());
+
+    let mut missing_successor = record.clone();
+    missing_successor.successors.pop();
+    assert!(validate(&root, &missing_successor).is_err());
+
+    let mut cyclic = record.clone();
+    let non_cyclic = cyclic
+        .successors
+        .iter_mut()
+        .find(|entry| {
+            entry.path.starts_with("protocol/publication/") && !self_referential(&entry.path)
+        })
+        .unwrap_or_else(|| panic!("a non-cyclic publication successor exists"));
+    assert!(!non_cyclic.sha256.is_empty());
+    non_cyclic.sha256.clear();
+    assert!(validate(&root, &cyclic).is_err());
+
+    for entry in &record.successors {
+        assert_eq!(entry.sha256.is_empty(), self_referential(&entry.path));
+    }
+
+    let applicable_to_excluded =
+        dirty_paths(b"R  docs/reference/task.rs\0crates/gantry-runtime/src/task.rs\0")
+            .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        applicable_to_excluded
+            .iter()
+            .any(|path| dirty_path_is_applicable(path))
+    );
+    let excluded_to_applicable =
+        dirty_paths(b"R  crates/gantry-runtime/src/task.rs\0docs/reference/task.rs\0")
+            .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        excluded_to_applicable
+            .iter()
+            .any(|path| dirty_path_is_applicable(path))
+    );
+    let harmless =
+        dirty_paths(b"R  target/a\0target/b\0").unwrap_or_else(|error| panic!("{error}"));
+    assert!(harmless.iter().all(|path| !dirty_path_is_applicable(path)));
+    let literal =
+        dirty_paths(b"?? arrows  ->  in names.rs\0").unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(literal, vec!["arrows  ->  in names.rs".to_owned()]);
+    assert!(dirty_path_is_applicable(
+        "crates/gantry-runtime/src/task.rs"
+    ));
+    assert!(!dirty_path_is_applicable("target/debug/xtask"));
+    assert!(!dirty_path_is_applicable("docs/reference/note.md"));
 }
