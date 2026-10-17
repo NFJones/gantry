@@ -234,11 +234,18 @@ pub use observe::{
     OBSERVE_CLAUSES, OBSERVE_ITEMS, OBSERVE_SURFACE_MODES, OBSERVE_SURFACE_TARGETS, ObserveItemRow,
     admit_observe_surface, declare_observe_surface,
 };
-// Section 49 publishes the declared `std.env` module surface. It adds no host access or runtime
-// environment behavior.
+// Section 49 publishes the declared `std.env` module surface beside the bounded launch-value model
+// of Sections 30.2 and 30.3. It adds no host access or runtime environment behavior.
 pub use env::{
-    ENV_CLAUSES, ENV_ITEMS, ENV_SURFACE_MODES, ENV_SURFACE_TARGETS, EnvItemRow, admit_env_surface,
-    canonical_env_hierarchy, declare_env_package, declare_env_surface,
+    ArgumentSnapshot, ChildEnvironmentGrant, ChildEnvironmentProjection, DurableEnvironmentRecord,
+    ENV_CLAUSES, ENV_DEFAULT_MAX_ARGUMENTS, ENV_DEFAULT_MAX_ENTRIES, ENV_DEFAULT_MAX_NAME_BYTES,
+    ENV_DEFAULT_MAX_TOTAL_BYTES, ENV_DEFAULT_MAX_VALUE_BYTES, ENV_DURABLE_CARRIER, ENV_ITEMS,
+    ENV_SURFACE_MODES, ENV_SURFACE_TARGETS, ENV_VALUE_CLAUSES, ENV_VALUE_CONTRACT_VERSION,
+    EnvDiagnosticCode, EnvDurableCarrier, EnvError, EnvItemRow, EnvLimits, EnvProtection,
+    EnvironmentEntry, EnvironmentEntryName, EnvironmentSnapshot, EnvironmentValue, InjectionPlan,
+    admit_durable_environment, admit_env_durable_carrier, admit_env_surface,
+    admit_injection_parity, canonical_env_hierarchy, declare_env_package, declare_env_surface,
+    env_durable_carrier_is_admissible,
 };
 // `identifier` is re-exported here for the identifier-security surface, except
 // for `AliasMap`, `CollisionCondition`, and `DeclaredName`, which the package and
