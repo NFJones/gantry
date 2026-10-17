@@ -251,6 +251,10 @@
       "sha256": "5b781450d0d1605aa7bd819eec9012def7e4557f38e4844a73ae2c5e9a52773d"
     },
     {
+      "path": "crates/gantry-conformance/tests/env_logical_cwd.rs",
+      "sha256": "e3b87d5a49391214acdc1ed1a1030b8bbeea20dc837a9f14e34a4566c39c0d79"
+    },
+    {
       "path": "crates/gantry-conformance/tests/native_source_concurrency_gate.rs",
       "sha256": "5e51963f62bdf9808c9d190b3cd9e90bfe08e36b50a8c1e2cbc282930a9f8c4b"
     },
@@ -265,6 +269,14 @@
     {
       "path": "crates/gantry-host/src/generated/embedding.rs",
       "sha256": "a39207fe24cabe8c8f3f057f5c20fb80d432b72f46a9f07980a169fcd681c86a"
+    },
+    {
+      "path": "crates/gantry-ir/src/env_cwd.rs",
+      "sha256": "9cdf26b841217067474d4c0f46adf0744a2744275ddb559d67a7a1cab64fdd3a"
+    },
+    {
+      "path": "crates/gantry-ir/src/lib.rs",
+      "sha256": "843d67b377c1c826a14ae33b74a90868d99074bdf3d3981df0a7fa274a263bd2"
     },
     {
       "path": "crates/gantry-runtime/src/io_settlement.rs",
@@ -285,6 +297,10 @@
     {
       "path": "crates/gantry-runtime/src/resource_transport.rs",
       "sha256": "da118f50e2fb0cecb25ddf0e2f887f3c30f9fe846843f2ddd7f9b81afbfaeb96"
+    },
+    {
+      "path": "docs/env-logical-working-directory.md",
+      "sha256": "26118e358470d982bc931a46d12405bba6b53b8882ff05650631ee4045b7b486"
     },
     {
       "path": "protocol/catalogs/embedding-contracts-v1.json",
@@ -520,7 +536,7 @@
     },
     {
       "path": "protocol/conformance/generics-traits-analyzer-gate-v1.json",
-      "sha256": "2d9823c3898ef015052cdfd7da389b433e7e066de7ff8b8ef34f207fcf6ec507"
+      "sha256": "bc3671d4536b1cf27df10cb43fc6f8a6860525e007043885c5329338d9ac1778"
     },
     {
       "path": "protocol/conformance/generics-traits-authoring-v1.json",
