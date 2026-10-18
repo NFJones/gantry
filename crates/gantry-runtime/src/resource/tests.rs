@@ -328,7 +328,82 @@ fn adapter_dispatch_uses_account_recovery_across_the_rights_matrix() {
     }
 }
 
-/// One admitted account with a present registry-owned slot, plus its subject and owner generation.
+/// The declared physical kind these lanes open their `u64` handle slots under.
+const HANDLE_KIND: &str = "native-handle";
+/// A second declared physical kind over the same Rust representation as `HANDLE_KIND`.
+const DIRECTORY_KIND: &str = "native-directory";
+
+/// One canonical carrier site shared by every provenance variant of these lanes.
+fn carrier_site() -> CanonicalPath {
+    CanonicalPath::new("crate::carrier").unwrap_or_else(|error| panic!("path: {error}"))
+}
+
+/// One execution identity derived from fixed seed material.
+fn carrier_execution(seed: u8) -> gantry_core::identity::ProtocolIdentity {
+    gantry_core::identity::ProtocolIdentity::from_fresh_material(
+        gantry_core::portable::IdentityKind::Execution,
+        [seed; 32],
+    )
+    .unwrap_or_else(|error| panic!("execution: {error}"))
+}
+
+/// One non-root task identity of one execution derived from the machine task path key.
+fn carrier_task(
+    execution: gantry_core::identity::ProtocolIdentity,
+    seed: u8,
+) -> gantry_core::identity::ProtocolIdentity {
+    let name = format!("sibling-{seed}");
+    gantry_core::identity::ProtocolIdentity::derive(
+        gantry_core::portable::IdentityKind::Task,
+        &crate::machine::task_identity_key(execution, &[Arc::from(name.as_str())]),
+    )
+    .unwrap_or_else(|error| panic!("task: {error}"))
+}
+
+/// One subject at the shared static site and first generation for one exact runtime provenance.
+fn carrier_subject(
+    execution: gantry_core::identity::ProtocolIdentity,
+    task: gantry_core::identity::ProtocolIdentity,
+) -> ResourceSubjectBinding {
+    let path = carrier_site();
+    ResourceSubjectBinding::derive(
+        &path,
+        path.clone(),
+        StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("site: {error}")),
+        0,
+        Some(gantry_ir::OperationKind::LiveResource),
+        Arc::new(Mutex::new(crate::machine::ResourceOperationLease::open())),
+        (execution, task),
+    )
+}
+
+/// Admits one subject under one owner generation and attaches one present physical value.
+fn admit_with_slot<T: std::any::Any + Send>(
+    registry: &mut ResourceRegistry,
+    subject: &ResourceSubjectBinding,
+    owner: OwnerGeneration,
+    value: T,
+) {
+    registry
+        .admit(
+            subject.clone(),
+            gantry_ir::ResourceCarrier::ReconstructionRecord,
+            ResourceLedger::new(
+                owner,
+                ResourceState::Usable,
+                &[LivenessRoot::Resource, LivenessRoot::Owner],
+                &[],
+            )
+            .unwrap_or_else(|error| panic!("ledger: {error:?}"))
+            .durable_record(),
+        )
+        .unwrap_or_else(|error| panic!("admit: {error:?}"));
+    registry
+        .attach_host_value(subject, owner, value)
+        .unwrap_or_else(|_| panic!("attach"));
+}
+
+/// One admitted account, plus the subject and owner generation its lanes attach a slot under.
 fn carrier_fixture(seed: u8) -> (ResourceRegistry, ResourceSubjectBinding, OwnerGeneration) {
     let path = CanonicalPath::new("crate::carrier").unwrap_or_else(|error| panic!("path: {error}"));
     let execution = gantry_core::identity::ProtocolIdentity::from_fresh_material(
@@ -369,7 +444,9 @@ fn carrier_fixture(seed: u8) -> (ResourceRegistry, ResourceSubjectBinding, Owner
 fn machine_carrier_requires_an_attached_slot_and_the_current_owner() {
     let (mut registry, subject, owner) = carrier_fixture(21);
     assert_eq!(
-        registry.issue_carrier::<u64>(&subject, owner).err(),
+        registry
+            .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
+            .err(),
         Some(crate::HostResourceError::NotAttached)
     );
     registry
@@ -377,15 +454,15 @@ fn machine_carrier_requires_an_attached_slot_and_the_current_owner() {
         .unwrap_or_else(|_| panic!("attach"));
     assert!(
         registry
-            .issue_carrier::<u64>(&subject, OwnerGeneration::new(9))
+            .issue_carrier::<u64>(&subject, OwnerGeneration::new(9), HANDLE_KIND)
             .is_err()
     );
     let carrier = registry
-        .issue_carrier::<u64>(&subject, owner)
+        .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
         .unwrap_or_else(|error| panic!("issue: {error:?}"));
     assert_eq!(carrier.subject(), &subject);
     assert_eq!(carrier.owner(), owner);
-    assert_eq!(registry.authenticate_carrier(&carrier), Ok(()));
+    assert_eq!(registry.authenticate_carrier(&carrier, HANDLE_KIND), Ok(()));
 }
 
 /// A carrier is bound to the registry whose account and lease issued it.
@@ -396,11 +473,11 @@ fn machine_carrier_is_bound_to_one_registry() {
         .attach_host_value(&subject, owner, 7_u64)
         .unwrap_or_else(|_| panic!("attach"));
     let carrier = registry
-        .issue_carrier::<u64>(&subject, owner)
+        .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
         .unwrap_or_else(|error| panic!("issue: {error:?}"));
     let other = ResourceRegistry::new();
     assert_eq!(
-        other.authenticate_carrier(&carrier).err(),
+        other.authenticate_carrier(&carrier, HANDLE_KIND).err(),
         Some(crate::HostResourceError::UnknownSubject)
     );
     let mut sibling = ResourceRegistry::new();
@@ -420,14 +497,14 @@ fn machine_carrier_is_bound_to_one_registry() {
         .attach_host_value(&sibling_subject, owner, 8_u64)
         .unwrap_or_else(|_| panic!("attach"));
     assert_eq!(
-        sibling.authenticate_carrier(&carrier).err(),
+        sibling.authenticate_carrier(&carrier, HANDLE_KIND).err(),
         Some(crate::HostResourceError::ForeignSubject)
     );
     sibling
         .begin_finish(&sibling_subject, owner)
         .unwrap_or_else(|error| panic!("begin finish: {error:?}"));
     assert_eq!(
-        sibling.complete_carrier::<u64>(carrier),
+        sibling.complete_carrier::<u64>(carrier, HANDLE_KIND),
         Err(crate::HostResourceError::ForeignSubject)
     );
     assert!(registry.has_host_value(&subject));
@@ -442,26 +519,33 @@ fn machine_carrier_completes_only_after_semantic_settlement() {
         .attach_host_value(&subject, owner, 7_u64)
         .unwrap_or_else(|_| panic!("attach"));
     let carrier = registry
-        .issue_carrier::<u64>(&subject, owner)
+        .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
         .unwrap_or_else(|error| panic!("issue: {error:?}"));
     assert!(matches!(
-        registry.complete_carrier::<u64>(carrier),
+        registry.complete_carrier::<u64>(carrier, HANDLE_KIND),
         Err(crate::HostResourceError::Model(
             gantry_ir::ResourceError::IllegalLifetimeTransition
         ))
     ));
     let carrier = registry
-        .issue_carrier::<u64>(&subject, owner)
+        .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
         .unwrap_or_else(|error| panic!("issue: {error:?}"));
     registry
         .begin_finish(&subject, owner)
         .unwrap_or_else(|error| panic!("begin finish: {error:?}"));
-    assert_eq!(registry.complete_carrier::<u64>(carrier), Ok(()));
+    assert_eq!(
+        registry.complete_carrier::<u64>(carrier, HANDLE_KIND),
+        Ok(())
+    );
     registry
         .complete_finalization(&subject, owner, 11)
         .unwrap_or_else(|error| panic!("finalize: {error:?}"));
     assert!(!registry.has_host_value(&subject));
-    assert!(registry.issue_carrier::<u64>(&subject, owner).is_err());
+    assert!(
+        registry
+            .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
+            .is_err()
+    );
 }
 
 /// Cancelled admission issues no carrier, and completion refuses a different Rust type.
@@ -472,10 +556,10 @@ fn machine_carrier_refuses_cancelled_admission_and_a_different_type() {
         .attach_host_value(&subject, owner, 7_u64)
         .unwrap_or_else(|_| panic!("attach"));
     let carrier = registry
-        .issue_carrier::<u64>(&subject, owner)
+        .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
         .unwrap_or_else(|error| panic!("issue: {error:?}"));
     assert_eq!(
-        registry.complete_carrier::<u32>(carrier),
+        registry.complete_carrier::<u32>(carrier, HANDLE_KIND),
         Err(crate::HostResourceError::TypeMismatch)
     );
     let lease = Arc::clone(&subject.admission_open);
@@ -484,7 +568,250 @@ fn machine_carrier_refuses_cancelled_admission_and_a_different_type() {
         .unwrap_or_else(|error| error.into_inner())
         .cancellation_requested = true;
     assert_eq!(
-        registry.issue_carrier::<u64>(&subject, owner).err(),
+        registry
+            .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
+            .err(),
         Some(crate::HostResourceError::CancellationRequested)
+    );
+}
+
+/// Issuance refuses a Rust type the attached slot does not hold, and retains the slot.
+#[test]
+fn machine_carrier_issuance_refuses_a_type_the_slot_does_not_hold() {
+    let (mut registry, subject, owner) = carrier_fixture(25);
+    registry
+        .attach_host_value(&subject, owner, 7_u64)
+        .unwrap_or_else(|_| panic!("attach"));
+    assert_eq!(
+        registry
+            .issue_carrier::<String>(&subject, owner, HANDLE_KIND)
+            .err(),
+        Some(crate::HostResourceError::TypeMismatch)
+    );
+    assert!(registry.has_host_value(&subject));
+    let carrier = registry
+        .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
+        .unwrap_or_else(|error| panic!("issue: {error:?}"));
+    assert_eq!(carrier.value_type(), std::any::TypeId::of::<u64>());
+}
+
+/// A slot opened as one physical kind refuses authentication and settlement as another.
+#[test]
+fn machine_carrier_refuses_a_foreign_physical_kind() {
+    let (mut registry, subject, owner) = carrier_fixture(26);
+    registry
+        .attach_host_value(&subject, owner, 7_u64)
+        .unwrap_or_else(|_| panic!("attach"));
+    let carrier = registry
+        .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
+        .unwrap_or_else(|error| panic!("issue: {error:?}"));
+    assert_eq!(carrier.kind(), HANDLE_KIND);
+    assert_eq!(
+        registry.authenticate_carrier(&carrier, DIRECTORY_KIND),
+        Err(crate::HostResourceError::CarrierKindMismatch {
+            expected: HANDLE_KIND,
+            presented: DIRECTORY_KIND,
+        })
+    );
+    // The kind fence precedes every lifetime and accounting decision, so a settlement presented as
+    // another physical kind is refused while the account is still active and changes nothing.
+    let settled = registry.declared_records();
+    assert_eq!(
+        registry.complete_carrier::<u64>(carrier, DIRECTORY_KIND),
+        Err(crate::HostResourceError::CarrierKindMismatch {
+            expected: HANDLE_KIND,
+            presented: DIRECTORY_KIND,
+        })
+    );
+    assert_eq!(settled, registry.declared_records());
+    assert!(registry.has_host_value(&subject));
+    let carrier = registry
+        .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
+        .unwrap_or_else(|error| panic!("issue: {error:?}"));
+    registry
+        .begin_finish(&subject, owner)
+        .unwrap_or_else(|error| panic!("begin finish: {error:?}"));
+    assert_eq!(
+        registry.complete_carrier::<u64>(carrier, HANDLE_KIND),
+        Ok(())
+    );
+    assert!(!registry.has_host_value(&subject));
+    registry
+        .complete_finalization(&subject, owner, 11)
+        .unwrap_or_else(|error| panic!("finalize: {error:?}"));
+    // A settled account issues nothing at all, whether or not the disposed slot is queried.
+    assert!(
+        registry
+            .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
+            .is_err()
+    );
+}
+
+/// One slot issues exactly one live carrier, and the refused duplicate retains the slot.
+#[test]
+fn machine_carrier_issuance_is_exclusive_and_retains_the_slot() {
+    let (mut registry, subject, owner) = carrier_fixture(27);
+    registry
+        .attach_host_value(&subject, owner, 7_u64)
+        .unwrap_or_else(|_| panic!("attach"));
+    let carrier = registry
+        .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
+        .unwrap_or_else(|error| panic!("issue: {error:?}"));
+    assert_eq!(
+        registry
+            .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
+            .err(),
+        Some(crate::HostResourceError::CarrierAlreadyIssued)
+    );
+    // The refused duplicate spends nothing: the sole carrier still authenticates, the slot is
+    // still present, and settling through that carrier does not dispose the slot under a duplicate.
+    assert_eq!(registry.authenticate_carrier(&carrier, HANDLE_KIND), Ok(()));
+    assert!(registry.has_host_value(&subject));
+    registry
+        .begin_finish(&subject, owner)
+        .unwrap_or_else(|error| panic!("begin finish: {error:?}"));
+    assert_eq!(
+        registry.complete_carrier::<u64>(carrier, HANDLE_KIND),
+        Ok(())
+    );
+    assert!(!registry.has_host_value(&subject));
+    assert!(
+        registry
+            .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
+            .is_err()
+    );
+}
+
+/// Equal static site, generation and owner facts across executions and tasks confer no authority.
+#[test]
+fn machine_carrier_refuses_cross_execution_and_cross_task_authority() {
+    let owner = OwnerGeneration::new(4);
+    let first_execution = carrier_execution(31);
+    let second_execution = carrier_execution(32);
+    let root_task = crate::root_task_identity(first_execution);
+    let sibling_task = carrier_task(first_execution, 33);
+    let first = carrier_subject(first_execution, root_task);
+    let same_execution_other_task = carrier_subject(first_execution, sibling_task);
+    let other_execution = carrier_subject(
+        second_execution,
+        crate::root_task_identity(second_execution),
+    );
+    // Portable identity coincides across all three bindings; only the runtime provenance differs.
+    assert_eq!(first.operation(), other_execution.operation());
+    assert_eq!(first.generation(), other_execution.generation());
+    assert_eq!(first.generation(), same_execution_other_task.generation());
+    assert_eq!(first.site(), same_execution_other_task.site());
+    assert_ne!(first, same_execution_other_task);
+    assert_ne!(first, other_execution);
+
+    let mut registry = ResourceRegistry::new();
+    admit_with_slot(&mut registry, &first, owner, 7_u64);
+    admit_with_slot(&mut registry, &same_execution_other_task, owner, 8_u64);
+    admit_with_slot(&mut registry, &other_execution, owner, 9_u64);
+    let carrier = registry
+        .issue_carrier::<u64>(&first, owner, HANDLE_KIND)
+        .unwrap_or_else(|error| panic!("issue: {error:?}"));
+    assert_eq!(carrier.execution_id(), first_execution);
+    assert_eq!(carrier.task_id(), root_task);
+
+    // A receipt naming another execution or another task of this execution is refused on
+    // provenance alone: kind, slot presence, owner currency, admission and dispatch all hold.
+    for foreign in [&same_execution_other_task, &other_execution] {
+        let receipt = CarrierAssociationReceipt::new(foreign.clone(), owner, HANDLE_KIND);
+        let facts = registry.confirm_association(&carrier, &receipt);
+        assert!(!facts.provenance());
+        assert!(!facts.is_associated());
+        assert!(facts.kind());
+        assert!(facts.slot_present());
+        assert!(facts.owner_current());
+        assert!(facts.lease_admitted());
+        assert!(!facts.cancellation_requested());
+        assert!(facts.dispatch_eligible());
+    }
+    // The carrier declaration built from the carrier itself is the only one that holds together.
+    let own = CarrierAssociationReceipt::from_carrier(&carrier);
+    assert_eq!(own.subject(), &first);
+    assert!(registry.confirm_association(&carrier, &own).is_associated());
+    assert_eq!(registry.authenticate_carrier(&carrier, HANDLE_KIND), Ok(()));
+
+    // Settling the first provenance disposes only its own slot and leaves the coincident
+    // portable identities of the other two accounts untouched.
+    let sibling_carrier = registry
+        .issue_carrier::<u64>(&other_execution, owner, HANDLE_KIND)
+        .unwrap_or_else(|error| panic!("issue: {error:?}"));
+    registry
+        .begin_finish(&first, owner)
+        .unwrap_or_else(|error| panic!("begin finish: {error:?}"));
+    assert_eq!(
+        registry.complete_carrier::<u64>(carrier, HANDLE_KIND),
+        Ok(())
+    );
+    assert!(!registry.has_host_value(&first));
+    assert!(registry.has_host_value(&same_execution_other_task));
+    assert!(registry.has_host_value(&other_execution));
+    assert_eq!(
+        registry.authenticate_carrier(&sibling_carrier, HANDLE_KIND),
+        Ok(())
+    );
+}
+
+/// Association is answerable before accounting and changes no declared ledger fact.
+#[test]
+fn association_before_accounting_refuses_without_changing_the_ledger() {
+    let (mut registry, subject, owner) = carrier_fixture(28);
+    let before = registry.declared_records();
+    // Without a present slot no carrier exists, so no association is writable either.
+    assert_eq!(
+        registry
+            .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
+            .err(),
+        Some(crate::HostResourceError::NotAttached)
+    );
+    assert_eq!(before, registry.declared_records());
+    registry
+        .attach_host_value(&subject, owner, 7_u64)
+        .unwrap_or_else(|_| panic!("attach"));
+    let carrier = registry
+        .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
+        .unwrap_or_else(|error| panic!("issue: {error:?}"));
+    let settled = registry.declared_records();
+
+    let own = CarrierAssociationReceipt::from_carrier(&carrier);
+    assert!(registry.confirm_association(&carrier, &own).is_associated());
+    // A kind the carrier was not issued for is reported as a failed fact, not adopted.
+    let foreign_kind = CarrierAssociationReceipt::new(subject.clone(), owner, DIRECTORY_KIND);
+    let refused = registry.confirm_association(&carrier, &foreign_kind);
+    assert!(!refused.kind());
+    assert!(!refused.is_associated());
+    assert!(refused.provenance());
+    // A superseded owner generation and a requested cancellation are facts too.
+    let stale =
+        CarrierAssociationReceipt::new(subject.clone(), OwnerGeneration::new(9), HANDLE_KIND);
+    assert!(
+        !registry
+            .confirm_association(&carrier, &stale)
+            .owner_current()
+    );
+    Arc::clone(&subject.admission_open)
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .cancellation_requested = true;
+    let cancelled = registry.confirm_association(&carrier, &own);
+    assert!(cancelled.cancellation_requested());
+    assert!(!cancelled.is_associated());
+    Arc::clone(&subject.admission_open)
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .cancellation_requested = false;
+
+    // Every answered fact above left the declared ledger byte identical and the slot present.
+    assert_eq!(settled, registry.declared_records());
+    assert!(registry.has_host_value(&subject));
+    registry
+        .begin_finish(&subject, owner)
+        .unwrap_or_else(|error| panic!("begin finish: {error:?}"));
+    assert_eq!(
+        registry.complete_carrier::<u64>(carrier, HANDLE_KIND),
+        Ok(())
     );
 }
