@@ -247,7 +247,7 @@ fn qualification_validator_rejects_stale_or_unqualified_records() {
     assert!(validate(&root, &history).is_err());
 
     let mut commits = record.clone();
-    commits.drift_review.specification_commits_reviewed = 1;
+    commits.drift_review.specification_commits_reviewed += 1;
     assert!(validate(&root, &commits).is_err());
 
     let mut missing_gap = record;
