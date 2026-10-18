@@ -2,32 +2,32 @@
   "format": "gantry.specification-currency-qualification/v1",
   "issue": "be47045e-93fb-473b-af7a-2d459aae091c",
   "status": "verified",
-  "specification_sha256": "037eaac4a62a1dd6eaa00711536a75da3554548ec8fc232637b1a7d16134749e",
+  "specification_sha256": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14",
   "superseded_specification_sha256": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60",
   "candidate": {
     "base_commit": "243c9f4af8a8525d52e1e04956a6039819b2cede",
     "currency_repair_parent_commit": "243c9f4af8a8525d52e1e04956a6039819b2cede",
-    "reviewed_through_commit": "a1db3724b616991898b88773193eb30eca02b013",
+    "reviewed_through_commit": "0987c539826afefba4cbbdbeb63e6f6f51a68494",
     "since_commit": "243c9f4af8a8525d52e1e04956a6039819b2cede",
-    "tree_sha": "d679c5dbf5453893fb89027f7a20feff8ff0960d",
+    "tree_sha": "123d42713c3264b668097c8dbdec1ae86bf0dd4a",
     "identity_note": "Content identity is the candidate input digest set plus the candidate tree hash. The record is committed after the candidate, so it names the reviewed-through commit and its tree rather than its own.",
     "toolchain": "1.97.1 minimal with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
     "inputs": [
       {
         "path": "SPEC.md",
-        "sha256": "037eaac4a62a1dd6eaa00711536a75da3554548ec8fc232637b1a7d16134749e"
+        "sha256": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14"
       },
       {
         "path": "protocol/requirements/reviewed-v1.json",
-        "sha256": "04964ebec252dd9419ff630668a4d9900d74136b417acdce60903a4b958f662b"
+        "sha256": "a54fa500244e78e4c34d127761ae8d94451fa2b85ed23f079f65c803033712bf"
       },
       {
         "path": "protocol/requirements/section14-v1.json",
-        "sha256": "779d5a505692f3c4b9f14b499cc853652d5dc9ca1a56d358bab67dd8e5ecaa47"
+        "sha256": "bb044e44018e0ab39667bb1a8da1364e9ad6b50dbc2a2bd6aef2650c1685b30a"
       },
       {
         "path": "protocol/requirements/generated/requirements-v1.json",
-        "sha256": "4c6ce4ea3f48712604272dc92e079c0eb1bb0a4afa810d691a553a21ccb39075"
+        "sha256": "2bbf26e0aecf8c39745e2a05ee8ad17423e06743aabbab801850666182895bee"
       },
       {
         "path": "Cargo.lock",
@@ -40,7 +40,7 @@
     ]
   },
   "drift_review": {
-    "specification_commits_reviewed": 1,
+    "specification_commits_reviewed": 2,
     "requirements_before": {
       "count": 635,
       "clauses": 919
@@ -148,7 +148,7 @@
       "section 14 excerpt coverage",
       "publication identity"
     ],
-    "outcome": "Reviewed the accumulated drift from the superseded revision: four console clauses were added (operation signatures, requirement groups, authority admission, and the control and output boundary), three existing section 46 bodies were amended (the scope, the encoding and shutdown settlement, and the terminal observations), and no requirement was removed. Every new clause is covered with analyzer evidence, so analyzer covered grows from 576 to 580, and every profile row stays covered-with-evidence or not-applicable-with-none with no planned row."
+    "outcome": "Reviewed the accumulated drift from the superseded revision: four console clauses were added (operation signatures, requirement groups, authority admission, and the control and output boundary), three existing section 46 bodies were amended (the scope, the encoding and shutdown settlement, and the terminal observations), and the added clause bodies were then narrowed to declare exactly the semantic signature shape, receiver kind, result shape, and exact operation identity, to publish the ordered missing, inconsistent, forged admission precedence, and to publish the single flush-outcome settlement. No requirement was removed. Every new clause is covered with analyzer evidence, so analyzer covered grows from 576 to 580, and every profile row stays covered-with-evidence or not-applicable-with-none with no planned row."
   },
   "section14_review": {
     "excerpt_count_before": 51,
@@ -160,7 +160,7 @@
     "outcome": "Every retained Section 14 excerpt is still covered with executable evidence; the revision adds no excerpt and removes none."
   },
   "qualification": {
-    "scope": "Bounded console declaration candidate: the four new Section 46 clauses, the pure signature, requirement-group, access-admission, and output-boundary model in gantry-ir, the console authority conformance lane, the published capability note, and the derived requirement and publication recut.",
+    "scope": "Bounded console declaration candidate: the four new Section 46 clauses, the pure signature, requirement-group, access-admission, bounded-request, and output-boundary model in gantry-ir, the console authority conformance lane, the published capability note, and the derived requirement and publication recut.",
     "lanes": [
       {
         "lane": "analyzer_gate",
@@ -349,8 +349,12 @@
         "result": "mismatch_count 0"
       },
       {
+        "command": "cargo run --locked -p xtask -- generate requirements",
+        "result": "regenerated the requirement inventory"
+      },
+      {
         "command": "cargo test -p gantry-conformance --test console_authority",
-        "result": "15 passed, 0 failed"
+        "result": "17 passed, 0 failed"
       },
       {
         "command": "cargo test -p gantry-conformance --test console_foundation",
@@ -361,32 +365,8 @@
         "result": "4 passed, 0 failed"
       },
       {
-        "command": "cargo test -p gantry-conformance --test async_execution_conformance",
-        "result": "2 passed, 0 failed"
-      },
-      {
-        "command": "cargo test -p gantry-conformance --test async_execution_gate",
-        "result": "3 passed, 0 failed"
-      },
-      {
-        "command": "cargo test -p gantry-conformance --test generics_conformance_gate",
-        "result": "2 passed, 0 failed"
-      },
-      {
-        "command": "cargo test -p gantry-conformance --test analyzer_gate",
-        "result": "3 passed, 0 failed"
-      },
-      {
-        "command": "cargo test -p gantry-conformance --test foundation_gate",
-        "result": "2 passed, 0 failed"
-      },
-      {
-        "command": "cargo test -p gantry-conformance --test native_source_concurrency_gate",
-        "result": "3 passed, 0 failed"
-      },
-      {
-        "command": "cargo test -p gantry-conformance --test async_publication --test publication_set --test conformance_publication --test publication_index",
-        "result": "8 passed, 0 failed"
+        "command": "cargo test -p gantry-conformance --test analyzer_gate --test async_execution_conformance --test async_execution_gate --test generics_conformance_gate --test native_source_concurrency_gate",
+        "result": "13 passed, 0 failed"
       },
       {
         "command": "cargo test -p gantry-conformance --test specification_currency_qualification",
@@ -405,17 +385,17 @@
     }
   },
   "gaps": [
-    "No runtime console implementation is added in this slice: the signatures, requirement groups, authority admission, and output boundary are declarations and conformance only.",
-    "The complete canonical typed signature is declared, but the package-qualified declaration path is not declared anywhere in the repository, so the four-part capability requirement identity remains incomplete by that one part.",
+    "No runtime console implementation is added in this slice: the signatures, requirement groups, authority admission, bounded request consumption, and output boundary are declarations and conformance only.",
+    "Two parts of the four-part capability requirement identity remain undeclared: the semantic signature shape, receiver kind, result shape, and exact operation identity are declared, while the complete canonical typed signature of CanonicalSignature in crates/gantry-ir/src/signature.rs and the package-qualified declaration path are not declared anywhere in the repository.",
     "Two inherited environment failures remain outside this slice: general_purpose_preregistration cannot read the gitignored docs/reference/general-purpose-refactor-issue-plan.md, and the xtask bin governance test cannot write the read-only cargo registry cache."
   ],
   "successors": [
     {
-      "path": "protocol/conformance/specification-currency-qualification-v1.json",
+      "path": "protocol/conformance/manifest-v1.json",
       "sha256": ""
     },
     {
-      "path": "protocol/conformance/manifest-v1.json",
+      "path": "protocol/conformance/specification-currency-qualification-v1.json",
       "sha256": ""
     },
     {
@@ -429,10 +409,6 @@
     {
       "path": "protocol/publication/verification-v1.json",
       "sha256": ""
-    },
-    {
-      "path": "crates/gantry-conformance/tests/specification_currency_qualification.rs",
-      "sha256": "31442cee9ea9e2691c80298fb42ca271258cc84c1a5a4b98face0e463dcdad2c"
     }
   ]
 }
