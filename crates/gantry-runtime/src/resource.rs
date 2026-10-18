@@ -1199,10 +1199,11 @@ impl ResourceRegistry {
     ///
     /// The recorded provenance is the presented binding own issuing execution and task, never a fact
     /// inferred from portable identity. Dropping a carrier without completing it leaves this fence
-    /// set, so a dropped carrier never becomes a second live carrier. The account and its slot are
-    /// still reclaimed through the carrier-independent, owner-fenced disposal routes: explicit
-    /// disposal through [`Self::dispose_host_value`] once the account left the active lifetime, the
-    /// coordinator settled sweep, or registry teardown.
+    /// set, so a dropped carrier never becomes a second live carrier. The physical value can still be
+    /// reclaimed through the carrier-independent, owner-fenced disposal routes: explicit disposal
+    /// through [`Self::dispose_host_value`] once the account left the active lifetime, the coordinator
+    /// settled sweep, or registry teardown. Those routes reclaim the physical value only and retain
+    /// the account, so a reclaimed slot stays a no-reattach fence rather than fresh authority.
     pub fn issue_carrier<T: std::any::Any + Send>(
         &mut self,
         subject: &ResourceSubjectBinding,
