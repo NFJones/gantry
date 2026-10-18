@@ -2,32 +2,32 @@
   "format": "gantry.specification-currency-qualification/v1",
   "issue": "be47045e-93fb-473b-af7a-2d459aae091c",
   "status": "verified",
-  "specification_sha256": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9",
-  "superseded_specification_sha256": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60",
+  "specification_sha256": "2f2e7429e286d21c8efa6b4aea4ca0cc61a4d8dd52ac74cce209647d0496b80b",
+  "superseded_specification_sha256": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9",
   "candidate": {
-    "base_commit": "243c9f4af8a8525d52e1e04956a6039819b2cede",
-    "currency_repair_parent_commit": "243c9f4af8a8525d52e1e04956a6039819b2cede",
-    "reviewed_through_commit": "369865e417b16a666f12c13ec626b2a78d65f9bf",
-    "since_commit": "243c9f4af8a8525d52e1e04956a6039819b2cede",
-    "tree_sha": "07ae1c943a1896e2f605aa45bad54d6bfa1aa280",
+    "base_commit": "966f6ffbfe2162341d0bbabe2098b909dcbba6f0",
+    "currency_repair_parent_commit": "966f6ffbfe2162341d0bbabe2098b909dcbba6f0",
+    "reviewed_through_commit": "41a1707ca4186b0af2039405d90e4a9ecd118c7d",
+    "since_commit": "966f6ffbfe2162341d0bbabe2098b909dcbba6f0",
+    "tree_sha": "397b26d3c0dc6dbf66cada79046d80dcebd4f299",
     "identity_note": "Content identity is the candidate input digest set plus the candidate tree hash. The record is committed after the candidate, so it names the reviewed-through commit and its tree rather than its own.",
     "toolchain": "1.97.1 minimal with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
     "inputs": [
       {
         "path": "SPEC.md",
-        "sha256": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9"
+        "sha256": "2f2e7429e286d21c8efa6b4aea4ca0cc61a4d8dd52ac74cce209647d0496b80b"
       },
       {
         "path": "protocol/requirements/reviewed-v1.json",
-        "sha256": "1af6b859c8c0918e696fd7287936021684010e485060e5d4879b4eb88017b68b"
+        "sha256": "df4a3acd40dc6b1cb957036b5bb21f84cd2b4dcf6f5d6d5bab04a6d1ac2c3389"
       },
       {
         "path": "protocol/requirements/section14-v1.json",
-        "sha256": "27ce5396dc87f0d15b0d5ca90ddb8b129d01c469d88451d0565ffef98d0e44c3"
+        "sha256": "18ffe745196920d808b50371e6a2faa4a25312c31e62df08ebfe9ea7ca3c9b60"
       },
       {
         "path": "protocol/requirements/generated/requirements-v1.json",
-        "sha256": "e21ff5924f8bc8aa90ec64fb681c6fa6cbb3dde49e3cf8dabf46a5f5994c10b4"
+        "sha256": "03f2af007980565a7eea432d5412e682d2d42cae90970320c6b5bd330e433c46"
       },
       {
         "path": "Cargo.lock",
@@ -40,39 +40,32 @@
     ]
   },
   "drift_review": {
-    "specification_commits_reviewed": 3,
+    "specification_commits_reviewed": 1,
     "requirements_before": {
-      "count": 635,
-      "clauses": 919
-    },
-    "requirements_after": {
       "count": 639,
       "clauses": 923
     },
+    "requirements_after": {
+      "count": 642,
+      "clauses": 926
+    },
     "added_requirements": [
       {
-        "id": "GNT-46.6-console-operation-signatures",
+        "id": "GNT-51.0-time-foundation-scope",
         "clauses": 1,
         "profile_reviews": [
           "analyzer:covered"
         ]
       },
       {
-        "id": "GNT-46.7-console-requirement-groups",
+        "id": "GNT-51.1-time-modules-and-item-rows",
         "clauses": 1,
         "profile_reviews": [
           "analyzer:covered"
         ]
       },
       {
-        "id": "GNT-46.8-console-authority-admission",
-        "clauses": 1,
-        "profile_reviews": [
-          "analyzer:covered"
-        ]
-      },
-      {
-        "id": "GNT-46.9-console-control-and-output-boundary",
+        "id": "GNT-51.2-time-declaration-non-claims",
         "clauses": 1,
         "profile_reviews": [
           "analyzer:covered"
@@ -80,20 +73,18 @@
       }
     ],
     "changed_requirement_bodies": [
-      "GNT-46.0-console-foundation-scope",
-      "GNT-46.4-console-encoding-and-shutdown-settlement",
-      "GNT-46.5-console-terminal-observations"
+      "GNT-2.1"
     ],
     "removed_requirements": [],
     "profile_applicability": [
       {
         "profile": "analyzer",
-        "before_covered": 576,
+        "before_covered": 580,
         "before_not_applicable": 190,
-        "after_covered": 580,
+        "after_covered": 583,
         "after_not_applicable": 190,
         "after_planned": 0,
-        "outcome": "all reviewed clauses are covered with evidence or not applicable with none"
+        "outcome": "the three new clauses are covered by the time foundation lane and no reviewed clause is planned, open, or unresolved"
       },
       {
         "profile": "concurrent-evaluator",
@@ -102,7 +93,7 @@
         "after_covered": 330,
         "after_not_applicable": 9,
         "after_planned": 0,
-        "outcome": "all reviewed clauses are covered with evidence or not applicable with none"
+        "outcome": "unchanged because the new clauses declare analyzer applicability only"
       },
       {
         "profile": "durable-runtime",
@@ -111,7 +102,7 @@
         "after_covered": 363,
         "after_not_applicable": 16,
         "after_planned": 0,
-        "outcome": "all reviewed clauses are covered with evidence or not applicable with none"
+        "outcome": "unchanged because the slice delivers no durable timer or rule-data behavior"
       },
       {
         "profile": "embedding",
@@ -120,7 +111,7 @@
         "after_covered": 307,
         "after_not_applicable": 51,
         "after_planned": 0,
-        "outcome": "all reviewed clauses are covered with evidence or not applicable with none"
+        "outcome": "unchanged because the slice publishes no host adapter or embedding operation"
       },
       {
         "profile": "evaluator",
@@ -129,7 +120,7 @@
         "after_covered": 323,
         "after_not_applicable": 16,
         "after_planned": 0,
-        "outcome": "all reviewed clauses are covered with evidence or not applicable with none"
+        "outcome": "unchanged because the slice implements no clock, timer, or scheduler"
       },
       {
         "profile": "frontend",
@@ -138,17 +129,16 @@
         "after_covered": 59,
         "after_not_applicable": 16,
         "after_planned": 0,
-        "outcome": "all reviewed clauses are covered with evidence or not applicable with none"
+        "outcome": "unchanged because the slice adds no source syntax or grammar"
       }
     ],
     "reviewed_categories": [
-      "declaration semantics",
-      "requirement drift and body identity",
-      "profile applicability",
-      "section 14 excerpt coverage",
-      "publication identity"
+      "time-declaration-surface",
+      "standard-library-architecture",
+      "generated-protocol-and-publication",
+      "qualification-recut"
     ],
-    "outcome": "Reviewed the accumulated drift from the superseded revision: four console clauses were added (operation signatures, requirement groups, authority admission, and the control and output boundary), three existing section 46 bodies were amended (the scope, the encoding and shutdown settlement, and the terminal observations), and the added clause bodies were then narrowed to declare exactly the semantic signature shape, receiver kind, result shape, and exact operation identity, to publish the ordered missing, inconsistent, forged admission precedence, and to publish the single flush-outcome settlement. No requirement was removed. Every new clause is covered with analyzer evidence, so analyzer covered grows from 576 to 580, and every profile row stays covered-with-evidence or not-applicable-with-none with no planned row."
+    "outcome": "The only authored specification change is Section 51 plus the one-line identifier registry update in GNT-2.1; every other reviewed body is unchanged and every open state is closed."
   },
   "section14_review": {
     "excerpt_count_before": 51,
@@ -160,18 +150,18 @@
     "outcome": "Every retained Section 14 excerpt is still covered with executable evidence; the revision adds no excerpt and removes none."
   },
   "qualification": {
-    "scope": "Bounded console declaration candidate: the four new Section 46 clauses, the pure signature, requirement-group, access-admission, bounded-request, and output-boundary model in gantry-ir, the console authority conformance lane, the published capability note, and the derived requirement and publication recut.",
+    "scope": "Bounded std.time declaration candidate: Section 51 scope, closed six-row module declaration, declare and admit surfaces, aggregate and catalog rows, refusal coverage, documentation, and the derived requirement and publication recut. It implements no clock, timer, scheduler, or timezone upgrade.",
     "lanes": [
       {
+        "lane": "time_foundation",
+        "result": "pass"
+      },
+      {
+        "lane": "stdlib_architecture",
+        "result": "pass"
+      },
+      {
         "lane": "analyzer_gate",
-        "result": "pass"
-      },
-      {
-        "lane": "async_admission",
-        "result": "pass"
-      },
-      {
-        "lane": "async_cancellation",
         "result": "pass"
       },
       {
@@ -187,83 +177,11 @@
         "result": "pass"
       },
       {
-        "lane": "async_execution_refinement",
-        "result": "pass"
-      },
-      {
-        "lane": "async_publication",
-        "result": "pass"
-      },
-      {
-        "lane": "automatic_durable_root",
-        "result": "pass"
-      },
-      {
-        "lane": "automatic_root_start",
-        "result": "pass"
-      },
-      {
-        "lane": "combined_gate",
-        "result": "pass"
-      },
-      {
-        "lane": "concurrent_executor",
-        "result": "pass"
-      },
-      {
-        "lane": "concurrent_gate",
-        "result": "pass"
-      },
-      {
-        "lane": "concurrent_handle_ownership",
-        "result": "pass"
-      },
-      {
-        "lane": "concurrent_lifecycle",
-        "result": "pass"
-      },
-      {
-        "lane": "concurrent_task_state",
-        "result": "pass"
-      },
-      {
-        "lane": "conformance_publication",
-        "result": "pass"
-      },
-      {
-        "lane": "console_authority",
-        "result": "pass"
-      },
-      {
-        "lane": "console_capability",
-        "result": "pass"
-      },
-      {
-        "lane": "console_foundation",
-        "result": "pass"
-      },
-      {
-        "lane": "durable_coordination",
-        "result": "pass"
-      },
-      {
-        "lane": "durable_events",
-        "result": "pass"
-      },
-      {
-        "lane": "durable_gate",
-        "result": "pass"
-      },
-      {
-        "lane": "durable_recovery",
-        "result": "pass"
-      },
-      {
-        "lane": "durable_start",
-        "result": "pass"
-      },
-      {
         "lane": "foundation_gate",
+        "result": "pass"
+      },
+      {
+        "lane": "native_source_concurrency_gate",
         "result": "pass"
       },
       {
@@ -275,23 +193,7 @@
         "result": "pass"
       },
       {
-        "lane": "generics_conformance_gate",
-        "result": "pass"
-      },
-      {
-        "lane": "native_source_concurrency_gate",
-        "result": "pass"
-      },
-      {
-        "lane": "owned_activities",
-        "result": "pass"
-      },
-      {
-        "lane": "publication_index",
-        "result": "pass"
-      },
-      {
-        "lane": "publication_set",
+        "lane": "combined_gate",
         "result": "pass"
       },
       {
@@ -299,31 +201,11 @@
         "result": "pass"
       },
       {
-        "lane": "revent_ownership",
-        "result": "pass"
-      },
-      {
-        "lane": "source_spawn",
-        "result": "pass"
-      },
-      {
-        "lane": "source_substrate_gate",
+        "lane": "conformance_publication",
         "result": "pass"
       },
       {
         "lane": "specification_currency_qualification",
-        "result": "pass"
-      },
-      {
-        "lane": "task_driver",
-        "result": "pass"
-      },
-      {
-        "lane": "task_supervision",
-        "result": "pass"
-      },
-      {
-        "lane": "tokio_executor",
         "result": "pass"
       }
     ],
@@ -350,47 +232,39 @@
       },
       {
         "command": "cargo run --locked -p xtask -- generate requirements",
-        "result": "regenerated the requirement inventory"
+        "result": "regenerated the requirement inventory to 642 records and 926 clauses"
       },
       {
-        "command": "cargo test -p gantry-conformance --test console_authority",
-        "result": "19 passed, 0 failed"
+        "command": "cargo run --locked -p xtask -- generate protocol",
+        "result": "regenerated the corpus, manifest, publication artifacts, index, and verification report"
       },
       {
-        "command": "cargo test -p gantry-conformance --test console_foundation",
-        "result": "8 passed, 0 failed"
+        "command": "cargo test --locked -p gantry-conformance --test time_foundation",
+        "result": "7 passed, 0 failed"
       },
       {
-        "command": "cargo test -p gantry-conformance --test console_capability",
-        "result": "4 passed, 0 failed"
+        "command": "cargo test --locked -p gantry-conformance --test stdlib_architecture",
+        "result": "38 passed, 0 failed"
       },
       {
-        "command": "cargo test --locked -p gantry-conformance",
-        "result": "every lane passes except the inherited general_purpose_preregistration environment failure"
-      },
-      {
-        "command": "cargo test --locked -p gantry-conformance --test async_publication",
-        "result": "2 passed, 0 failed"
-      },
-      {
-        "command": "cargo test -p gantry-conformance --test specification_currency_qualification",
+        "command": "cargo test --locked -p gantry-conformance --test specification_currency_qualification",
         "result": "3 passed, 0 failed"
       },
       {
         "command": "cargo test --locked --workspace --all-targets --all-features --no-fail-fast",
-        "result": "184 targets passed; only the two inherited environment failures remain"
+        "result": "all targets pass except the two inherited environment failures"
       }
     ],
     "publication": {
       "member_count": 7,
-      "identity_at_currency_repair_parent": "9f4d501f3ee637c350e84fc9cf3cfd5298b06a208034900d74f0c5000eb1f30e",
+      "identity_at_currency_repair_parent": "46c7f8f146592ceaba766a393617c5913afc73832a4e7aeb5b9b3f34814c452e",
       "identity_note": "The seven-artifact publication set and the verification report were regenerated from the reviewed requirement inventory at the candidate; the recorded parent identity is the verification identity committed at the currency-repair parent, not a substituted digest.",
       "verification": "protocol/publication/verification-v1.json regenerated by the governed protocol generator on the candidate"
     }
   },
   "gaps": [
-    "No runtime console implementation is added in this slice: the signatures, requirement groups, authority admission, bounded request consumption, and output boundary are declarations and conformance only.",
-    "Two parts of the four-part capability requirement identity remain undeclared: the semantic signature shape, receiver kind, result shape, and exact operation identity are declared, while the complete canonical typed signature of CanonicalSignature in crates/gantry-ir/src/signature.rs and the package-qualified declaration path are not declared anywhere in the repository.",
+    "No runtime std.time implementation is added: no clock, timer, scheduler, timezone upgrade, wall observation, host-preference snapshot, rule-data installation or upgrade, or target locale-data catalog is implemented or executed.",
+    "Typed civil ambiguity, pinned rule-data identities, and durable timer reconstruction are not delivered. The next slice owns the injected monotonic clock and one-shot timer under the existing ownership, wait, cancel, and fault contracts, with domain- and generation-bound deadlines, readiness recheck, stale-wake fencing, and exactly one completion or cancel winner.",
     "Two inherited environment failures remain outside this slice: general_purpose_preregistration cannot read the gitignored docs/reference/general-purpose-refactor-issue-plan.md, and the xtask bin governance test cannot write the read-only cargo registry cache."
   ],
   "successors": [
