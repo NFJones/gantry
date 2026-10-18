@@ -17540,25 +17540,25 @@ of the injected set names — is refused under the frozen diagnostic `console-au
 naming the group, the requester, and the grantor, and is never repaired, widened, merged with an
 issued grant, or treated as the injection that issued it.
 
-Every call of a declared signature is admitted under one ordered precedence that names exactly one
-refusal. The required requirement group of the called signature is consulted first: a call whose
-required group carries no injected grant is refused under the frozen diagnostic
-`console-authority-missing`, naming that required group. A presented grant that names another group
-than the required one is refused next, under the frozen diagnostic
-`console-requirement-group-inconsistent`, naming the presented group and the required group, and
-only a presented grant that names the required group can be refused last under
-`console-authority-forged`. The `output-flush` group is the required group of
-`std.console::output::write@1` and `std.console::output::flush@1`, the `control` group is the
-required group of `std.console::control::set_mode@1`, and the `input` and `observation` groups are
-the required groups of `std.console::input::read@1` and `std.console::terminal::inspect@1`, so no
-call is admitted under a grant of another group and no missing required group is reported as an
-inconsistent, forged, or ambient refusal.
+Every call of a declared signature is admitted under one ordered precedence naming exactly one
+refusal. The presented access is classified before any grant comparison: an ambient numeric
+descriptor presented as access is refused under `console-authority-ambient-descriptor`, so an
+absent required group is never reported as an ambient refusal. A presented `Injected` grant is
+then scoped missing, inconsistent, forged: a required group carrying no injected grant is
+refused under `console-authority-missing`, naming that group; a grant naming another group is
+refused next under `console-requirement-group-inconsistent`, naming the presented and the
+required group; and only a grant naming the required group is refused last under
+`console-authority-forged`. `std.console::output::write@1` and `std.console::output::flush@1`
+require the `output-flush` group, `std.console::control::set_mode@1` requires the `control`
+group, and `std.console::input::read@1` and `std.console::terminal::inspect@1` require the
+`input` and `observation` groups, so no call is admitted under a grant of another group and no
+missing required group is reported as an inconsistent, forged, or ambient refusal.
 
 A write call of `GNT-46.2-console-bounded-operations` consumes exactly one admitted request of
 `GNT-45.1-bounded-one-call-io-contract`, and that request declares exactly the octets the call
 presents: a request of another operation kind, or a request whose declared quantity is not the
 presented octet count, is refused under the Section 45 refusal `io-outcome-request-mismatch`, owned
-by `GNT-45.1-bounded-one-call-io-contract`, before any octet is delivered, while a zero quantity
+by `GNT-45.3-io-progress-derivation`, before any octet is delivered, while a zero quantity
 and a quantity above the Section 45 octet bound are never an admitted request at all. This section
 therefore mints no console diagnostic for a request refusal and publishes no second octet bound.
 

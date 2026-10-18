@@ -1223,15 +1223,18 @@ impl std::error::Error for ConsoleAuthorityError {}
 /// A call admits its presented access first and the one admitted `std.io` request it consumes
 /// second, so a refusal names exactly one vocabulary: the console authority vocabulary of
 /// `GNT-46.8-console-authority-admission` and the output boundary of
-/// `GNT-46.9-console-control-and-output-boundary`, or the request vocabulary of
-/// `GNT-45.1-bounded-one-call-io-contract`. A request refusal stays the Section 45 refusal it is:
-/// this section mints no console diagnostic for it, restates no Section 45 condition, and adds no
-/// second refusal code.
+/// `GNT-46.9-console-control-and-output-boundary`, or the request vocabulary of one of the two
+/// clauses that own it: `GNT-45.1-bounded-one-call-io-contract`, which owns `io-request-bound`,
+/// `io-request-kind`, and `io-progress-inapplicable`, and `GNT-45.3-io-progress-derivation`, which
+/// owns `io-observation-inconsistent` and `io-outcome-request-mismatch`. A request refusal stays
+/// the Section 45 refusal it is: this section mints no console diagnostic for it, restates no
+/// Section 45 condition, and adds no second refusal code.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ConsoleCallError {
     /// The presented access, requirement group, or output target was refused by this section.
     Authority(ConsoleAuthorityError),
-    /// The presented `std.io` request was refused by `GNT-45.1-bounded-one-call-io-contract`.
+    /// The presented `std.io` request was refused by `GNT-45.1-bounded-one-call-io-contract` or
+    /// `GNT-45.3-io-progress-derivation`.
     Request(IoError),
 }
 
@@ -1625,10 +1628,11 @@ pub fn admit_console_write(
 /// zero quantity and a quantity above [`crate::io::IO_REQUEST_OCTET_BOUND`] never reach this
 /// decision: [`IoRequest::write`] refuses both under `io-request-bound` before the call exists.
 /// What this decision settles is whether the admitted request is the one the presented octets
-/// declare. A request of another operation kind is refused under `io-outcome-request-mismatch`
-/// naming the operation, and a request whose declared quantity is not the presented octet count is
-/// refused under the same code naming the `provided` fact, so a console write never delivers
-/// octets its admitted request did not declare and never admits a request it does not deliver.
+/// declare. A request of another operation kind is refused under `io-outcome-request-mismatch`,
+/// owned by `GNT-45.3-io-progress-derivation`, naming the operation, and a request whose declared
+/// quantity is not the presented octet count is refused under the same code naming the `provided`
+/// fact, so a console write never delivers octets its admitted request did not declare and never
+/// admits a request it does not deliver.
 fn admit_console_write_request(request: &IoRequest, octets: &[u8]) -> Result<(), IoError> {
     if request.operation() != IoOperation::Write {
         return Err(IoError::RequestMismatch {

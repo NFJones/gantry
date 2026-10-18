@@ -407,7 +407,7 @@
       "wire": "non_idempotent"
     }
   ],
-  "specification_revision": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14",
+  "specification_revision": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9",
   "task_control_site_kinds": [
     {
       "requirements": [

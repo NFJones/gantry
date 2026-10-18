@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14",
+  "specification_sha256": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9",
   "regions": [
     {
       "kind": "excluded",
@@ -43951,7 +43951,9 @@
                 "crates/gantry-conformance/tests/console_authority.rs#ambient_numeric_descriptor_access_is_refused",
                 "crates/gantry-conformance/tests/console_authority.rs#flush_failure_cannot_rewrite_a_fixed_task_outcome",
                 "crates/gantry-conformance/tests/console_authority.rs#console_write_consumes_one_admitted_bounded_request",
-                "crates/gantry-conformance/tests/console_authority.rs#console_call_admission_precedence_is_ordered"
+                "crates/gantry-conformance/tests/console_authority.rs#console_call_admission_precedence_is_ordered",
+                "crates/gantry-conformance/tests/console_authority.rs#ambient_descriptor_refusal_precedes_the_required_group_check",
+                "crates/gantry-conformance/tests/console_authority.rs#missing_required_group_is_not_reported_as_an_ambient_refusal"
               ]
             }
           ]

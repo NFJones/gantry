@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14",
-  "byte_length": 1422809,
+  "specification_sha256": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9",
+  "byte_length": 1422863,
   "line_count": 18250,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9780,
       "end_line": 18250,
-      "sha256": "f87ff9a1ae54e95580aa3886f98567083a14d037ec54dbc2cdbd470be61cd510",
+      "sha256": "e7acc5cee36ef12d3aae89c0f0a7b3a1a6d3b886c46ac74b54368e44485a3b77",
       "rationale": null
     }
   ],
@@ -45159,11 +45159,11 @@
       "id": "GNT-46.8-console-authority-admission",
       "span_start_line": 17520,
       "span_end_line": 17584,
-      "span_sha256": "b73f30a3e74fb369764fc700fb46037fc4ae558d44cb60dec19e3f244c438221",
+      "span_sha256": "95b35743bd2cbfbe1fe3b4b1494709b2d7b53511686afb01124e36ba5d42925f",
       "anchor_line": 17520,
       "body_start_line": 17521,
       "body_end_line": 17583,
-      "body_sha256": "5899929e8cea135d948feb2fe56af95522405fe5ceaa5f4a1784f2855089c593",
+      "body_sha256": "27901eaad153bbb99643ff5e61c7e262978669710dcb948b728ac611c7723fa7",
       "profiles": [
         "analyzer"
       ],
@@ -45193,7 +45193,9 @@
                 "crates/gantry-conformance/tests/console_authority.rs#ambient_numeric_descriptor_access_is_refused",
                 "crates/gantry-conformance/tests/console_authority.rs#flush_failure_cannot_rewrite_a_fixed_task_outcome",
                 "crates/gantry-conformance/tests/console_authority.rs#console_write_consumes_one_admitted_bounded_request",
-                "crates/gantry-conformance/tests/console_authority.rs#console_call_admission_precedence_is_ordered"
+                "crates/gantry-conformance/tests/console_authority.rs#console_call_admission_precedence_is_ordered",
+                "crates/gantry-conformance/tests/console_authority.rs#ambient_descriptor_refusal_precedes_the_required_group_check",
+                "crates/gantry-conformance/tests/console_authority.rs#missing_required_group_is_not_reported_as_an_ambient_refusal"
               ],
               "rationale": null
             }

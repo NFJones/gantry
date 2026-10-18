@@ -686,6 +686,22 @@ fn console_write_consumes_one_admitted_bounded_request() {
         Err(error) => panic!("the declared bound is itself admissible: {error:?}"),
     };
     assert_eq!(bounded.quantity(), IO_REQUEST_OCTET_BOUND);
+    // The bound is itself a write the console admits when the request declares exactly the
+    // presented octets, so the bound-equal case is exercised through the console write and not
+    // only through request admission.
+    let bound_len = usize::try_from(IO_REQUEST_OCTET_BOUND)
+        .unwrap_or_else(|error| panic!("the declared bound is a buffer length: {error}"));
+    let bound_octets = vec![0_u8; bound_len];
+    let bound_admitted = admit_console_write(
+        &injection,
+        &grant,
+        &bounded,
+        ConsoleOutputTarget::RedirectedNonControlling,
+        &bound_octets,
+    )
+    .unwrap_or_else(|error| panic!("the bound-equal write must be admitted: {error}"));
+    assert_eq!(bound_admitted.accepted_prefix(), bound_len);
+
     // The happy path consumes exactly the admitted request that declares the presented octets.
     let octets = b"123456789";
     let admitted = admit_console_write(
@@ -819,4 +835,40 @@ fn console_call_admission_precedence_is_ordered() {
         ConsoleAuthorityDiagnosticCode::AuthorityMissing
     );
     assert_eq!(ordered.group(), Some(ConsoleRequirementGroup::Control));
+}
+
+#[test]
+fn ambient_descriptor_refusal_precedes_the_required_group_check() {
+    // The access is classified before any grant is compared, so a descriptor presented as access
+    // is an ambient refusal even when the required group of the called signature carries no
+    // grant at all.
+    let none = ConsoleAccessInjection::from_launch(GRANTOR, Vec::new());
+    assert!(none.grants().is_empty());
+    let ambient = ConsoleAccessIdentity::AmbientDescriptor(1)
+        .admit(&none, ConsoleRequirementGroup::OutputFlush)
+        .err()
+        .unwrap_or_else(|| panic!("an ambient descriptor is refused before any grant comparison"));
+    assert_eq!(
+        ambient.code(),
+        ConsoleAuthorityDiagnosticCode::AmbientDescriptor
+    );
+    assert_eq!(ambient.descriptor(), Some(1));
+    assert_eq!(ambient.group(), None);
+}
+
+#[test]
+fn missing_required_group_is_not_reported_as_an_ambient_refusal() {
+    // The same grant-less injection leaves an injected output-flush grant missing, and the
+    // missing group is named as missing rather than absorbed into an ambient refusal.
+    let none = ConsoleAccessInjection::from_launch(GRANTOR, Vec::new());
+    let missing = ConsoleAccessIdentity::Injected(output_grant())
+        .admit(&none, ConsoleRequirementGroup::OutputFlush)
+        .err()
+        .unwrap_or_else(|| panic!("an unissued required group must be refused"));
+    assert_eq!(
+        missing.code(),
+        ConsoleAuthorityDiagnosticCode::AuthorityMissing
+    );
+    assert_eq!(missing.group(), Some(ConsoleRequirementGroup::OutputFlush));
+    assert_eq!(missing.descriptor(), None);
 }

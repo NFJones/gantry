@@ -14,7 +14,7 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "2bbf26e0aecf8c39745e2a05ee8ad17423e06743aabbab801850666182895bee"
+      "sha256": "e21ff5924f8bc8aa90ec64fb681c6fa6cbb3dde49e3cf8dabf46a5f5994c10b4"
     },
     {
       "path": "protocol/schemas/source-substrate-v1.schema.json",
@@ -34,7 +34,7 @@
       "id": "diagnostic-presentation",
       "kind": "golden",
       "path": "crates/gantry-conformance/tests/diagnostic_presentation.rs",
-      "revision": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14",
+      "revision": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9",
       "state": "verified",
       "visibility": "public-facade"
     },
@@ -42,7 +42,7 @@
       "id": "requirement-ledger",
       "kind": "requirement",
       "path": "crates/gantry-conformance/tests/requirements_ledger.rs",
-      "revision": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14",
+      "revision": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9",
       "state": "verified",
       "visibility": "public-facade"
     },
@@ -50,7 +50,7 @@
       "id": "source-provider",
       "kind": "public-api",
       "path": "crates/gantry-conformance/tests/source_provider.rs",
-      "revision": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14",
+      "revision": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9",
       "state": "verified",
       "visibility": "public-facade"
     },
@@ -58,7 +58,7 @@
       "id": "source-substrate",
       "kind": "fixture",
       "path": "crates/gantry-conformance/tests/source_substrate.rs",
-      "revision": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14",
+      "revision": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9",
       "state": "verified",
       "visibility": "public-facade"
     }
@@ -84,7 +84,7 @@
   ],
   "specification": {
     "path": "SPEC.md",
-    "sha256": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14"
+    "sha256": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9"
   },
   "status": "verified",
   "validation_commands": [
