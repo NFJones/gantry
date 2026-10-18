@@ -284,19 +284,19 @@
     },
     {
       "path": "crates/gantry-runtime/src/lib.rs",
-      "sha256": "bdc971d9510b7bf018e59aa2b9e58d7b84b498ff38517a57b2dd0b04722aa077"
+      "sha256": "80062276313bda5667010bd9f9e99c0a6c071ae1ed1a8d95982a202885d10142"
     },
     {
       "path": "crates/gantry-runtime/src/resource.rs",
-      "sha256": "a7f2f2b980c9d5a560e4c998aa6d1c987252bf97f70e3e4a47692a328201fd45"
+      "sha256": "d9a0d341b583d5d09ff3b46ffee0441e76db58c6aa500345e1f910e754c15f49"
     },
     {
       "path": "crates/gantry-runtime/src/resource/tests.rs",
-      "sha256": "69210278ee3e15011475cf635aac08da218e71b339a6c9d19623135b9087c0e5"
+      "sha256": "dd3ee7351a5c5696bb360debe22ccc18580e7009e061268d5d6d15e3717d3ca3"
     },
     {
       "path": "crates/gantry-runtime/src/resource_transport.rs",
-      "sha256": "da118f50e2fb0cecb25ddf0e2f887f3c30f9fe846843f2ddd7f9b81afbfaeb96"
+      "sha256": "1ce89c50774c4b402c6341487f92d5365b46667edff696be2378e2d67b61d7db"
     },
     {
       "path": "docs/env-logical-working-directory.md",
