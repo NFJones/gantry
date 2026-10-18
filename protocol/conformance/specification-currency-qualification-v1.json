@@ -259,6 +259,10 @@
       "sha256": "5e51963f62bdf9808c9d190b3cd9e90bfe08e36b50a8c1e2cbc282930a9f8c4b"
     },
     {
+      "path": "crates/gantry-conformance/tests/specification_currency_qualification.rs",
+      "sha256": "66a2d512677532223b4a18d19d3f8ed5fd2aa71c0ad4a5655effba622c1354e0"
+    },
+    {
       "path": "crates/gantry-core/src/generated/portable.rs",
       "sha256": "b1d90fcf94fbf430b8eade9f0b4e92c207468897f2e67654b604a75f322eb84c"
     },
