@@ -288,11 +288,11 @@
     },
     {
       "path": "crates/gantry-runtime/src/resource.rs",
-      "sha256": "d9a0d341b583d5d09ff3b46ffee0441e76db58c6aa500345e1f910e754c15f49"
+      "sha256": "84422469e62d73d24d7ffcbddad712d7bfd64ade76ef95f658ed2721fdbe2d24"
     },
     {
       "path": "crates/gantry-runtime/src/resource/tests.rs",
-      "sha256": "dd3ee7351a5c5696bb360debe22ccc18580e7009e061268d5d6d15e3717d3ca3"
+      "sha256": "0a01977b61d5f4fda3990a5ff0cdd16bfcc29a846fbf20c813110c1bacded5b5"
     },
     {
       "path": "crates/gantry-runtime/src/resource_transport.rs",
