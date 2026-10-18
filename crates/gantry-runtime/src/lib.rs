@@ -160,9 +160,10 @@ pub use recovery::{
     recover_authoritative_prefix, recover_authoritative_prefix_with_retained_program,
 };
 pub use resource::{
-    AdapterBindingRefusal, AdmittedResource, CohortEmergencyCleanup, CohortEmergencySettlement,
-    MachineResourceCarrier, PostFailureSettlementRefusal, RecoveredResourceRecord,
-    ResourceRecordCodecError, ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding,
+    AdapterBindingRefusal, AdmittedResource, CarrierAssociationFacts, CarrierAssociationReceipt,
+    CohortEmergencyCleanup, CohortEmergencySettlement, MachineResourceCarrier,
+    PostFailureSettlementRefusal, RecoveredResourceRecord, ResourceRecordCodecError,
+    ResourceRegistry, ResourceRegistryRefusal, ResourceSubjectBinding,
     decode_resource_reconstruction_record, encode_resource_reconstruction_record,
 };
 #[cfg(feature = "durable")]

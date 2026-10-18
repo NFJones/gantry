@@ -631,6 +631,8 @@ pub struct ResourceRegistry {
     adapter_faults: PoisonLedger,
     adapter_identity_limit: Option<u64>,
     adapter_identities: std::collections::BTreeSet<Arc<str>>,
+    /// Accounts whose one live carrier is already issued, so issuance stays exclusive per slot.
+    carrier_issued: std::collections::BTreeSet<ResourceRegistryKey>,
 }
 
 /// Runtime storage identity, ordered by portable subject then issuing execution and task.
@@ -962,18 +964,28 @@ pub enum ResourceOriginRecoveryError {
 /// encodings, and this type implements none. Dropping a carrier neither completes nor releases
 /// anything, because completion is the registry route below.
 ///
-/// A carrier authenticates four facts together: the issuing subject and provenance of the account,
-/// the owner generation that currently holds it, the unforgeable identity of the exact physical slot
-/// this registry attached, and the presence of that slot. The slot identity is allocated once per
-/// slot, so admitting the same cloned subject into two registries gives them different identities
-/// and a carrier issued by one is refused by the other. A superseded owner and a disposed slot are
-/// refused the same way, so holding a carrier is never authority for any operation and never a
-/// substitute for the exact requirement facts of the owning operation.
+/// A carrier authenticates one association of six facts: the issuing subject, its issuing execution
+/// and task, the adapter-declared physical kind together with the exact Rust type the slot was
+/// attached for, the owner generation that currently holds it, the unforgeable identity of the exact
+/// physical slot this registry attached, and the presence of that slot. The slot identity is
+/// allocated once per slot, so admitting the same cloned subject into two registries gives them
+/// different identities and a carrier issued by one is refused by the other. Static operation,
+/// generation and site counters can coincide across executions and tasks, so the issuing execution
+/// and task are carried and compared as their own fence rather than inferred from portable identity.
+/// A superseded owner, a slot attached for another Rust type or declared as another physical kind,
+/// and a disposed slot are refused the same way, so holding a carrier is never authority for any
+/// operation and never a substitute for the exact requirement facts of the owning operation.
+/// Exactly one carrier is live per registry account at a time, and only completion consumes it.
 #[derive(Debug)]
 pub struct MachineResourceCarrier {
     subject: ResourceSubjectBinding,
     owner: OwnerGeneration,
     value_type: std::any::TypeId,
+    kind: &'static str,
+    provenance: (
+        gantry_core::identity::ProtocolIdentity,
+        gantry_core::identity::ProtocolIdentity,
+    ),
     slot_identity: std::sync::Arc<()>,
 }
 
@@ -989,19 +1001,201 @@ impl MachineResourceCarrier {
     pub const fn owner(&self) -> OwnerGeneration {
         self.owner
     }
+
+    /// Returns the exact Rust type recorded when this carrier was issued.
+    ///
+    /// The type is one half of the physical association and exposes no value: a consumer compares it
+    /// with the type it intends to complete, and the registry refuses any disagreement before it
+    /// changes accounting or disposes anything.
+    #[must_use]
+    pub const fn value_type(&self) -> std::any::TypeId {
+        self.value_type
+    }
+
+    /// Returns the adapter-declared physical kind recorded when this carrier was issued.
+    ///
+    /// The kind is one half of the physical association; the exact recorded Rust type is the other.
+    /// A consumer must present an equal kind before any accounting or physical mutation, so a slot
+    /// opened as one physical kind cannot be authenticated or settled as another that happens to
+    /// share the same Rust representation.
+    #[must_use]
+    pub const fn kind(&self) -> &'static str {
+        self.kind
+    }
+
+    /// Returns the issuing execution this carrier was issued under.
+    ///
+    /// The execution is carried separately from the portable operation and generation, which can
+    /// coincide across executions that run the same static site with the same counters.
+    #[must_use]
+    pub const fn execution_id(&self) -> gantry_core::identity::ProtocolIdentity {
+        self.provenance.0
+    }
+
+    /// Returns the issuing task this carrier was issued under.
+    ///
+    /// The task is carried separately from the portable resource generation, which can coincide
+    /// across tasks that run the same static site of one execution.
+    #[must_use]
+    pub const fn task_id(&self) -> gantry_core::identity::ProtocolIdentity {
+        self.provenance.1
+    }
+}
+
+/// One transport-owned declaration of the association a consumer presents for a carrier.
+///
+/// The receipt restates only facts a consumer is allowed to declare: the subject it believes the
+/// carrier belongs to, the owner generation it believes is current, and the physical kind it
+/// declares for the slot. It carries no authority, no host value and no accounting record, and
+/// presenting it grants nothing: [`ResourceRegistry::confirm_association`] answers declarative
+/// boolean facts about the carrier, this registry and the receipt, and changes no fact at all.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CarrierAssociationReceipt {
+    subject: ResourceSubjectBinding,
+    owner: OwnerGeneration,
+    kind: &'static str,
+}
+
+impl CarrierAssociationReceipt {
+    /// Pairs one presented subject, owner generation and physical kind as a declaration.
+    #[must_use]
+    pub const fn new(
+        subject: ResourceSubjectBinding,
+        owner: OwnerGeneration,
+        kind: &'static str,
+    ) -> Self {
+        Self {
+            subject,
+            owner,
+            kind,
+        }
+    }
+
+    /// Declares exactly the association an issued carrier already names.
+    ///
+    /// A consumer holding a carrier normally declares that carrier's own subject, owner and kind and
+    /// asks the registry for an independent verdict on them. A consumer that instead believes a
+    /// different subject, owner or kind declares that belief, and the registry reports which facts
+    /// fail rather than adopting the declaration.
+    #[must_use]
+    pub fn from_carrier(carrier: &MachineResourceCarrier) -> Self {
+        Self {
+            subject: carrier.subject().clone(),
+            owner: carrier.owner(),
+            kind: carrier.kind(),
+        }
+    }
+
+    /// Returns the subject this declaration names.
+    #[must_use]
+    pub const fn subject(&self) -> &ResourceSubjectBinding {
+        &self.subject
+    }
+
+    /// Returns the owner generation this declaration names.
+    #[must_use]
+    pub const fn owner(&self) -> OwnerGeneration {
+        self.owner
+    }
+
+    /// Returns the physical kind this declaration names.
+    #[must_use]
+    pub const fn kind(&self) -> &'static str {
+        self.kind
+    }
+}
+
+/// The independent facts [`ResourceRegistry::confirm_association`] reports for one declaration.
+///
+/// Each field answers one question about the carrier, the registry account it names and the
+/// declaring receipt. The value is a report and never a credential: holding one grants no
+/// authority, exposes no host value and changes no accounting, physical, charge, cancellation or
+/// dispatch fact, so no consumer can read an answered fact as an acquired permission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CarrierAssociationFacts {
+    kind: bool,
+    provenance: bool,
+    slot_present: bool,
+    owner_current: bool,
+    lease_admitted: bool,
+    cancellation_requested: bool,
+    dispatch_eligible: bool,
+}
+
+impl CarrierAssociationFacts {
+    /// Reports whether the declared physical kind is the kind recorded at issuance.
+    #[must_use]
+    pub const fn kind(&self) -> bool {
+        self.kind
+    }
+
+    /// Reports whether carrier, declaration and admitted account share one execution and task.
+    #[must_use]
+    pub const fn provenance(&self) -> bool {
+        self.provenance
+    }
+
+    /// Reports whether this registry still holds the exact present slot the carrier names.
+    #[must_use]
+    pub const fn slot_present(&self) -> bool {
+        self.slot_present
+    }
+
+    /// Reports whether the declared owner generation is the ledger's current owner.
+    #[must_use]
+    pub const fn owner_current(&self) -> bool {
+        self.owner_current
+    }
+
+    /// Reports whether the machine admission lease was readable and still admitted work.
+    #[must_use]
+    pub const fn lease_admitted(&self) -> bool {
+        self.lease_admitted
+    }
+
+    /// Reports whether cancellation was requested, including an unreadable lease.
+    #[must_use]
+    pub const fn cancellation_requested(&self) -> bool {
+        self.cancellation_requested
+    }
+
+    /// Reports whether the account may dispatch adapter work under its declared recovery class.
+    #[must_use]
+    pub const fn dispatch_eligible(&self) -> bool {
+        self.dispatch_eligible
+    }
+
+    /// Reports whether every fact holds together as one declared physical association.
+    #[must_use]
+    pub const fn is_associated(&self) -> bool {
+        self.kind
+            && self.provenance
+            && self.slot_present
+            && self.owner_current
+            && self.lease_admitted
+            && !self.cancellation_requested
+            && self.dispatch_eligible
+    }
 }
 
 impl ResourceRegistry {
-    /// Issues one carrier for the exact account and owner whose physical slot this registry owns.
+    /// Issues the one live carrier of the exact account and owner whose slot this registry owns.
     ///
     /// Issue requires an admitted account with matching runtime provenance, a current owner
-    /// generation, an active and open accounting state, a present registry-owned slot, and a
-    /// readable admission lease that has not requested cancellation. Any other state is refused
-    /// before a carrier exists, and refusal changes no accounting or physical fact.
+    /// generation, an active and open accounting state, a present registry-owned slot, a readable
+    /// admission lease that has not requested cancellation, and no carrier already issued for that
+    /// account. Exactly one carrier is live per account: the only consuming route is
+    /// [`Self::complete_carrier`], so repeated issuance cannot hand out two simultaneous carriers for
+    /// one slot and settling one cannot dispose the slot under the other. The registry records the
+    /// adapter-declared physical kind and the exact Rust type beside the subject, owner generation
+    /// and slot identity, so authentication and completion refuse a consumer that presents any other
+    /// kind or type before touching accounting. Every other state is refused before a carrier
+    /// exists, and refusal changes no accounting or physical fact.
     pub fn issue_carrier<T: std::any::Any + Send>(
-        &self,
+        &mut self,
         subject: &ResourceSubjectBinding,
         owner: OwnerGeneration,
+        kind: &'static str,
     ) -> Result<MachineResourceCarrier, crate::HostResourceError> {
         use crate::HostResourceError;
         let key = self.selection_key(subject);
@@ -1022,12 +1216,15 @@ impl ResourceRegistry {
                 ResourceError::IllegalLifetimeTransition,
             ));
         }
-        if !self
+        let slot = self
             .physical
             .get(&key)
-            .is_some_and(crate::resource_transport::HostValueSlot::is_present)
-        {
+            .ok_or(HostResourceError::NotAttached)?;
+        if !slot.is_issuable() {
             return Err(HostResourceError::NotAttached);
+        }
+        if slot.value_type() != std::any::TypeId::of::<T>() {
+            return Err(HostResourceError::TypeMismatch);
         }
         let lease = Arc::clone(&account.subject().admission_open);
         let admission = lease
@@ -1037,39 +1234,62 @@ impl ResourceRegistry {
             return Err(HostResourceError::CancellationRequested);
         }
         drop(admission);
+        if self.carrier_issued.contains(&key) {
+            return Err(HostResourceError::CarrierAlreadyIssued);
+        }
         let slot_identity = self
             .physical
             .get(&key)
             .ok_or(HostResourceError::NotAttached)?
             .identity();
-        Ok(MachineResourceCarrier {
+        let carrier = MachineResourceCarrier {
             subject: account.subject().clone(),
             owner,
             value_type: std::any::TypeId::of::<T>(),
+            kind,
+            provenance: account.subject().runtime_owner,
             slot_identity,
-        })
+        };
+        self.carrier_issued.insert(key);
+        Ok(carrier)
     }
 
-    /// Authenticates one carrier against this account, owner, lease, and slot.
+    /// Authenticates one carrier and one presented physical kind against this account and slot.
     ///
-    /// A carrier issued by another registry, a carrier whose owner generation was superseded, a
-    /// carrier whose account was replaced, and a carrier whose slot is absent are each refused.
+    /// The presented kind is compared with the kind recorded at issuance, then the recorded Rust
+    /// type is compared with the type the slot actually holds, then the carrier's issuing execution
+    /// and task are compared with the account's provenance, and only then are the owner generation,
+    /// the unforgeable slot identity, and physical presence checked. Every refusal happens before
+    /// any accounting or physical fact changes. A carrier issued by another registry, a carrier
+    /// presented as another physical kind or another Rust type, a carrier whose owner generation was
+    /// superseded, a carrier whose account was replaced, and a carrier whose slot is absent are each
+    /// refused.
     pub fn authenticate_carrier(
         &self,
         carrier: &MachineResourceCarrier,
+        kind: &'static str,
     ) -> Result<(), crate::HostResourceError> {
         use crate::HostResourceError;
+        if carrier.kind != kind {
+            return Err(HostResourceError::CarrierKindMismatch {
+                expected: carrier.kind,
+                presented: kind,
+            });
+        }
         let account = self
             .account(carrier.subject())
             .ok_or(HostResourceError::UnknownSubject)?;
-        if account.subject().runtime_owner != carrier.subject().runtime_owner {
-            return Err(HostResourceError::ForeignSubject);
-        }
         let key = self.selection_key(carrier.subject());
         let slot = self
             .physical
             .get(&key)
             .ok_or(HostResourceError::NotAttached)?;
+        if slot.value_type() != carrier.value_type {
+            return Err(HostResourceError::TypeMismatch);
+        }
+        if account.subject().runtime_owner != carrier.provenance {
+            return Err(HostResourceError::ForeignSubject);
+        }
         if !std::sync::Arc::ptr_eq(&slot.identity(), &carrier.slot_identity) {
             return Err(HostResourceError::ForeignSubject);
         }
@@ -1084,24 +1304,87 @@ impl ResourceRegistry {
 
     /// Completes one authenticated carrier once its account reached semantic settlement.
     ///
-    /// Completion requires the exact Rust type the carrier was issued for, this registry own
-    /// account, lease and slot, and an account lifetime that is no longer active, which the
-    /// registry own begin-finish and complete-finalization routes establish. The physical value is
-    /// then extracted and disposed through the contained private disposal job, so completion
-    /// happens once and a second attempt finds no attached slot.
+    /// Completion requires the presented physical kind, the exact Rust type the carrier was issued
+    /// for, this registry own account, lease and slot, and an account lifetime that is no longer
+    /// active, which the registry own begin-finish and complete-finalization routes establish. The
+    /// kind and type fences precede every accounting and physical decision, so a consumer that
+    /// authenticated one kind cannot settle another. Taking the carrier consumes it whatever the
+    /// verdict, so this call releases the account's exclusive issuance fence while a refused
+    /// completion leaves exactly the accounting and physical facts it found and a fresh carrier is
+    /// required for another attempt. On success the physical value is extracted and disposed through
+    /// the contained private disposal job, so completion happens once and a second attempt finds no
+    /// attached slot.
     pub fn complete_carrier<T: std::any::Any + Send>(
         &mut self,
         carrier: MachineResourceCarrier,
+        kind: &'static str,
     ) -> Result<(), crate::HostResourceError> {
         use crate::HostResourceError;
+        let key = self.selection_key(carrier.subject());
+        self.carrier_issued.remove(&key);
+        if carrier.kind != kind {
+            return Err(HostResourceError::CarrierKindMismatch {
+                expected: carrier.kind,
+                presented: kind,
+            });
+        }
         if carrier.value_type != std::any::TypeId::of::<T>() {
             return Err(HostResourceError::TypeMismatch);
         }
-        self.authenticate_carrier(&carrier)?;
+        self.authenticate_carrier(&carrier, kind)?;
         let job = self.extract_host_disposal(carrier.subject(), carrier.owner())?;
         match job {
             Some(job) => job.run(),
             None => Err(HostResourceError::Disposed),
+        }
+    }
+
+    /// Reports the association facts of one carrier and one declared receipt, acquiring nothing.
+    ///
+    /// Every fact is computed while this registry is borrowed immutably, so the answer is taken
+    /// under the same exclusive registry access that guards admission and settlement, and nothing is
+    /// remembered afterwards. The call performs no accounting transition, records no containment,
+    /// charges no quota, dispatches no adapter code and exposes no host value: it answers declared
+    /// boolean questions only, and no consumer may read an answer as an acquired permission. This is
+    /// therefore the association check a consumer may run before accounting begins, and a refused
+    /// association leaves every ledger fact byte identical.
+    #[must_use]
+    pub fn confirm_association(
+        &self,
+        carrier: &MachineResourceCarrier,
+        receipt: &CarrierAssociationReceipt,
+    ) -> CarrierAssociationFacts {
+        let key = self.selection_key(carrier.subject());
+        let account = self.accounts.get(&key);
+        let kind = receipt.kind == carrier.kind;
+        let provenance = account.is_some_and(|account| {
+            account.subject().runtime_owner == carrier.provenance
+                && receipt.subject.runtime_owner == carrier.provenance
+        });
+        let slot_present = self.physical.get(&key).is_some_and(|slot| {
+            std::sync::Arc::ptr_eq(&slot.identity(), &carrier.slot_identity) && slot.is_present()
+        });
+        let owner_current = receipt.owner == carrier.owner
+            && account
+                .is_some_and(|account| account.require_current_owner(carrier.owner()).is_ok());
+        let admission = account.and_then(|account| account.subject().admission_open.lock().ok());
+        let lease_admitted = admission
+            .as_ref()
+            .is_some_and(|admission| admission.pending);
+        let cancellation_requested = admission
+            .as_ref()
+            .is_none_or(|admission| admission.cancellation_requested);
+        drop(admission);
+        let dispatch_eligible =
+            account.is_some_and(|account| account.require_adapter_dispatch().is_ok());
+        CarrierAssociationFacts {
+            kind,
+            provenance,
+            slot_present,
+            owner_current,
+            lease_admitted,
+            cancellation_requested,
+            dispatch_eligible,
         }
     }
 }
@@ -1120,6 +1403,7 @@ impl ResourceRegistry {
             adapter_faults: PoisonLedger::new(),
             adapter_identity_limit: None,
             adapter_identities: std::collections::BTreeSet::new(),
+            carrier_issued: std::collections::BTreeSet::new(),
         }
     }
 
@@ -1140,6 +1424,7 @@ impl ResourceRegistry {
             adapter_faults: PoisonLedger::new(),
             adapter_identity_limit: None,
             adapter_identities: std::collections::BTreeSet::new(),
+            carrier_issued: std::collections::BTreeSet::new(),
         }
     }
 
@@ -1729,6 +2014,7 @@ impl ResourceRegistry {
             adapter_faults: PoisonLedger::new(),
             adapter_identity_limit: None,
             adapter_identities: std::collections::BTreeSet::new(),
+            carrier_issued: std::collections::BTreeSet::new(),
         })
     }
 

@@ -48,6 +48,15 @@ pub enum HostResourceError {
     LoanSettled,
     /// The requested Rust transport type differs from the attached physical value.
     TypeMismatch,
+    /// The presented physical kind differs from the kind the carrier was issued for.
+    CarrierKindMismatch {
+        /// Adapter-declared kind the issuing registry recorded for this slot.
+        expected: &'static str,
+        /// Adapter-declared kind the consuming operation presents.
+        presented: &'static str,
+    },
+    /// This registry account already issued its one live carrier for the physical slot.
+    CarrierAlreadyIssued,
     /// No accounting account exists for the requested subject.
     UnknownSubject,
     /// A portable identity matches, but the issuing execution or task does not.
@@ -766,6 +775,7 @@ impl<T> Drop for HostReceiverLoan<'_, T> {
 /// Registry-held physical ownership, kept separate from serializable accounting facts.
 pub(crate) struct HostValueSlot {
     value: Option<Box<dyn std::any::Any + Send>>,
+    value_type: std::any::TypeId,
     poison: AdapterPoison,
     disposal: std::sync::Arc<std::sync::Mutex<DisposalState>>,
     identity: std::sync::Arc<()>,
@@ -836,10 +846,29 @@ impl HostValueSlot {
     pub(crate) fn new<T: std::any::Any + Send>(value: T) -> Self {
         Self {
             identity: std::sync::Arc::new(()),
+            value_type: std::any::TypeId::of::<T>(),
             value: Some(Box::new(value)),
             poison: AdapterPoison::default(),
             disposal: std::sync::Arc::new(std::sync::Mutex::new(DisposalState::Ready)),
         }
+    }
+
+    /// Returns the exact Rust type recorded for the attached physical value.
+    ///
+    /// The type is recorded once, when the value is attached, and never changes with ownership, so
+    /// a carrier issued for one type cannot authenticate or complete against a slot attached for
+    /// another without disclosing either value.
+    pub(crate) fn value_type(&self) -> std::any::TypeId {
+        self.value_type
+    }
+
+    /// Reports whether a fresh carrier may name this slot: present and not mid-disposal.
+    ///
+    /// A slot whose disposal job was extracted is retained as present for cleanup reporting, but
+    /// its physical ownership already moved out, so issuing another carrier for it would hand out
+    /// authority over a value this registry no longer holds.
+    pub(crate) fn is_issuable(&self) -> bool {
+        self.value.is_some() && !matches!(self.disposal_state(), DisposalState::Pending)
     }
 
     /// Returns the unforgeable process-local identity of this slot.
