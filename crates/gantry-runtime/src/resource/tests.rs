@@ -377,12 +377,11 @@ fn carrier_subject(
     )
 }
 
-/// Admits one subject under one owner generation and attaches one present physical value.
-fn admit_with_slot<T: std::any::Any + Send>(
+/// Admits one subject under one owner generation without attaching a physical value.
+fn admit_without_slot(
     registry: &mut ResourceRegistry,
     subject: &ResourceSubjectBinding,
     owner: OwnerGeneration,
-    value: T,
 ) {
     registry
         .admit(
@@ -398,6 +397,16 @@ fn admit_with_slot<T: std::any::Any + Send>(
             .durable_record(),
         )
         .unwrap_or_else(|error| panic!("admit: {error:?}"));
+}
+
+/// Admits one subject under one owner generation and attaches one present physical value.
+fn admit_with_slot<T: std::any::Any + Send>(
+    registry: &mut ResourceRegistry,
+    subject: &ResourceSubjectBinding,
+    owner: OwnerGeneration,
+    value: T,
+) {
+    admit_without_slot(registry, subject, owner);
     registry
         .attach_host_value(subject, owner, value)
         .unwrap_or_else(|_| panic!("attach"));
@@ -814,4 +823,133 @@ fn association_before_accounting_refuses_without_changing_the_ledger() {
         registry.complete_carrier::<u64>(carrier, HANDLE_KIND),
         Ok(())
     );
+}
+
+/// A foreign completion attempt consumes nothing and cannot release the local issuance fence.
+#[test]
+fn machine_carrier_fence_survives_a_foreign_completion_attempt() {
+    let (mut registry, subject, owner) = carrier_fixture(34);
+    registry
+        .attach_host_value(&subject, owner, 7_u64)
+        .unwrap_or_else(|_| panic!("attach"));
+    let mut sibling = ResourceRegistry::new();
+    admit_with_slot(&mut sibling, &subject, owner, 8_u64);
+    let own = registry
+        .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
+        .unwrap_or_else(|error| panic!("issue: {error:?}"));
+    let foreign = sibling
+        .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
+        .unwrap_or_else(|error| panic!("sibling issue: {error:?}"));
+
+    // Completing another registry carrier for the same cloned subject is refused on the slot
+    // identity fence, so the local fence and the local slot both survive the attempt.
+    assert_eq!(
+        registry.complete_carrier::<u64>(foreign, HANDLE_KIND),
+        Err(crate::HostResourceError::ForeignSubject)
+    );
+    assert_eq!(
+        registry
+            .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
+            .err(),
+        Some(crate::HostResourceError::CarrierAlreadyIssued)
+    );
+    assert!(registry.has_host_value(&subject));
+    assert_eq!(registry.authenticate_carrier(&own, HANDLE_KIND), Ok(()));
+    assert!(sibling.has_host_value(&subject));
+}
+
+/// A declaration naming another operation of the same execution is refused on provenance.
+#[test]
+fn association_refuses_a_receipt_naming_another_operation() {
+    let (mut registry, subject, owner) = carrier_fixture(35);
+    registry
+        .attach_host_value(&subject, owner, 7_u64)
+        .unwrap_or_else(|_| panic!("attach"));
+    let carrier = registry
+        .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
+        .unwrap_or_else(|error| panic!("issue: {error:?}"));
+    let other_path =
+        CanonicalPath::new("crate::carrier::other").unwrap_or_else(|error| panic!("path: {error}"));
+    let other = ResourceSubjectBinding::derive(
+        &other_path,
+        other_path.clone(),
+        StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("site: {error}")),
+        0,
+        Some(gantry_ir::OperationKind::LiveResource),
+        Arc::new(Mutex::new(crate::machine::ResourceOperationLease::open())),
+        (subject.execution_id(), subject.task_id()),
+    );
+    // The declaration shares the issuing execution and task and still names another operation.
+    assert_ne!(other.operation(), subject.operation());
+    assert_eq!(other.execution_id(), subject.execution_id());
+    assert_eq!(other.task_id(), subject.task_id());
+
+    let receipt = CarrierAssociationReceipt::new(other, owner, HANDLE_KIND);
+    let facts = registry.confirm_association(&carrier, &receipt);
+    assert!(!facts.provenance());
+    assert!(!facts.is_associated());
+    assert!(facts.kind());
+    assert!(facts.slot_present());
+    assert!(facts.owner_current());
+}
+
+/// Association reports an absent slot, a closed lease and ineligible dispatch as failed facts.
+#[test]
+fn association_reports_absent_slot_closed_lease_and_ineligible_dispatch() {
+    use gantry_ir::{AuthorityRight, CanonicalImplementationIdentity, RightsSet, TypeExpression};
+
+    let (mut registry, subject, owner) = carrier_fixture(36);
+    registry
+        .attach_host_value(&subject, owner, 7_u64)
+        .unwrap_or_else(|_| panic!("attach"));
+    let carrier = registry
+        .issue_carrier::<u64>(&subject, owner, HANDLE_KIND)
+        .unwrap_or_else(|error| panic!("issue: {error:?}"));
+    let own = CarrierAssociationReceipt::from_carrier(&carrier);
+
+    // A registry holding the same cloned account but no slot reports no present slot.
+    let mut slotless = ResourceRegistry::new();
+    admit_without_slot(&mut slotless, &subject, owner);
+    let absent = slotless.confirm_association(&carrier, &own);
+    assert!(!absent.slot_present());
+    assert!(!absent.is_associated());
+    assert!(absent.provenance());
+    assert!(absent.kind());
+    assert!(absent.owner_current());
+    assert!(absent.lease_admitted());
+    assert!(!absent.cancellation_requested());
+    assert!(absent.dispatch_eligible());
+
+    // A machine admission lease that stopped admitting work is reported as not admitted.
+    Arc::clone(&subject.admission_open)
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .pending = false;
+    let closed = registry.confirm_association(&carrier, &own);
+    assert!(!closed.lease_admitted());
+    assert!(!closed.cancellation_requested());
+    assert!(!closed.is_associated());
+    Arc::clone(&subject.admission_open)
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .pending = true;
+
+    // A bound adapter without authenticated recovery metadata is not dispatch eligible.
+    let receiver = TypeExpression::from_canonical_string("crate::AssociationAdapter", 4)
+        .unwrap_or_else(|error| panic!("receiver: {error:?}"));
+    let adapter = AdapterInstance::bind(
+        &CanonicalImplementationIdentity::inherent(&receiver),
+        RightsSet::from_rights(&[AuthorityRight::Observe]),
+        owner,
+        0,
+    );
+    registry
+        .bind_adapter_instance(&subject, owner, adapter)
+        .unwrap_or_else(|error| panic!("bind adapter: {error:?}"));
+    let ineligible = registry.confirm_association(&carrier, &own);
+    assert!(!ineligible.dispatch_eligible());
+    assert!(!ineligible.is_associated());
+    assert!(ineligible.slot_present());
+    assert!(ineligible.provenance());
+    assert!(ineligible.lease_admitted());
 }

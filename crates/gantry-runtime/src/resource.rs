@@ -1129,7 +1129,12 @@ impl CarrierAssociationFacts {
         self.kind
     }
 
-    /// Reports whether carrier, declaration and admitted account share one execution and task.
+    /// Reports whether the declaration names the carrier own subject and one issuing provenance.
+    ///
+    /// The fact holds only when the declared subject is the carrier's subject, when that subject
+    /// carries the provenance the carrier recorded, and when the admitted account was issued under
+    /// that same execution and task. A declaration naming another operation or generation of the
+    /// same execution is refused here rather than accepted on coinciding provenance.
     #[must_use]
     pub const fn provenance(&self) -> bool {
         self.provenance
@@ -1191,6 +1196,11 @@ impl ResourceRegistry {
     /// and slot identity, so authentication and completion refuse a consumer that presents any other
     /// kind or type before touching accounting. Every other state is refused before a carrier
     /// exists, and refusal changes no accounting or physical fact.
+    ///
+    /// The recorded provenance is the presented binding own issuing execution and task, never a fact
+    /// inferred from portable identity. Dropping a carrier without completing it leaves this fence
+    /// set: the slot is then reclaimed only by the carrier-independent settled sweep of the
+    /// coordinator or by registry teardown, so a dropped carrier never becomes a second live carrier.
     pub fn issue_carrier<T: std::any::Any + Send>(
         &mut self,
         subject: &ResourceSubjectBinding,
@@ -1247,7 +1257,7 @@ impl ResourceRegistry {
             owner,
             value_type: std::any::TypeId::of::<T>(),
             kind,
-            provenance: account.subject().runtime_owner,
+            provenance: subject.runtime_owner,
             slot_identity,
         };
         self.carrier_issued.insert(key);
@@ -1257,13 +1267,17 @@ impl ResourceRegistry {
     /// Authenticates one carrier and one presented physical kind against this account and slot.
     ///
     /// The presented kind is compared with the kind recorded at issuance, then the recorded Rust
-    /// type is compared with the type the slot actually holds, then the carrier's issuing execution
-    /// and task are compared with the account's provenance, and only then are the owner generation,
+    /// type is compared with the type the slot actually holds, then the carrier's recorded issuing
+    /// execution and task are compared with both the carried binding and the account, and only then
+    /// are the owner generation,
     /// the unforgeable slot identity, and physical presence checked. Every refusal happens before
     /// any accounting or physical fact changes. A carrier issued by another registry, a carrier
     /// presented as another physical kind or another Rust type, a carrier whose owner generation was
     /// superseded, a carrier whose account was replaced, and a carrier whose slot is absent are each
-    /// refused.
+    /// refused. Accounts are keyed by portable operation and generation together with the issuing
+    /// execution and task, so a binding from another execution or task selects no account here and is
+    /// refused as unknown before these fences; the comparison restates provenance at the consumption
+    /// boundary instead of inferring it from portable identity.
     pub fn authenticate_carrier(
         &self,
         carrier: &MachineResourceCarrier,
@@ -1287,7 +1301,9 @@ impl ResourceRegistry {
         if slot.value_type() != carrier.value_type {
             return Err(HostResourceError::TypeMismatch);
         }
-        if account.subject().runtime_owner != carrier.provenance {
+        if account.subject().runtime_owner != carrier.provenance
+            || carrier.subject().runtime_owner != carrier.provenance
+        {
             return Err(HostResourceError::ForeignSubject);
         }
         if !std::sync::Arc::ptr_eq(&slot.identity(), &carrier.slot_identity) {
@@ -1309,9 +1325,11 @@ impl ResourceRegistry {
     /// active, which the registry own begin-finish and complete-finalization routes establish. The
     /// kind and type fences precede every accounting and physical decision, so a consumer that
     /// authenticated one kind cannot settle another. Taking the carrier consumes it whatever the
-    /// verdict, so this call releases the account's exclusive issuance fence while a refused
-    /// completion leaves exactly the accounting and physical facts it found and a fresh carrier is
-    /// required for another attempt. On success the physical value is extracted and disposed through
+    /// verdict, so completing this registry own carrier releases the account's exclusive issuance
+    /// fence while a refused completion leaves exactly the accounting and physical facts it found and
+    /// a fresh carrier is required for another attempt. A carrier belonging to another registry,
+    /// even one naming the same cloned subject, releases nothing here. On success the physical value
+    /// is extracted and disposed through
     /// the contained private disposal job, so completion happens once and a second attempt finds no
     /// attached slot.
     pub fn complete_carrier<T: std::any::Any + Send>(
@@ -1321,7 +1339,17 @@ impl ResourceRegistry {
     ) -> Result<(), crate::HostResourceError> {
         use crate::HostResourceError;
         let key = self.selection_key(carrier.subject());
-        self.carrier_issued.remove(&key);
+        // Only this registry own slot can consume this registry exclusive issuance fence. A sibling
+        // registry may hold a carrier for the same cloned subject, and releasing the fence for that
+        // carrier would let this registry issue a second live carrier for a slot it still owns, so
+        // the fence is cleared only when the presented slot identity is the one held here.
+        if self
+            .physical
+            .get(&key)
+            .is_some_and(|slot| std::sync::Arc::ptr_eq(&slot.identity(), &carrier.slot_identity))
+        {
+            self.carrier_issued.remove(&key);
+        }
         if carrier.kind != kind {
             return Err(HostResourceError::CarrierKindMismatch {
                 expected: carrier.kind,
@@ -1358,8 +1386,9 @@ impl ResourceRegistry {
         let account = self.accounts.get(&key);
         let kind = receipt.kind == carrier.kind;
         let provenance = account.is_some_and(|account| {
-            account.subject().runtime_owner == carrier.provenance
-                && receipt.subject.runtime_owner == carrier.provenance
+            carrier.provenance == account.subject().runtime_owner
+                && carrier.subject().runtime_owner == carrier.provenance
+                && &receipt.subject == carrier.subject()
         });
         let slot_present = self.physical.get(&key).is_some_and(|slot| {
             std::sync::Arc::ptr_eq(&slot.identity(), &carrier.slot_identity) && slot.is_present()
