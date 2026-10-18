@@ -82,11 +82,11 @@
     },
     {
       "path": "protocol/conformance/generics-traits-adoption-v1.json",
-      "sha256": "60988725e6973ad93591df83b6602f843f1201c9defb60ee2222c6e596c4e629"
+      "sha256": "2b4fdc9cd62a4648b91bedb9246a35af34ae1226e95080fdb2ff1088418ade0d"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "59889007b473904c4c0704f4d6ed5bea65db7db921b1ddc9272c3c6340fbac6f"
+      "sha256": "04964ebec252dd9419ff630668a4d9900d74136b417acdce60903a4b958f662b"
     }
   ],
   "environment_gaps": [
@@ -140,40 +140,40 @@
   ],
   "profile_review_summary": [
     {
-      "profile": "analyzer",
-      "covered_count": 576,
+      "covered_count": 580,
       "not_applicable_count": 190,
-      "planned_count": 0
+      "planned_count": 0,
+      "profile": "analyzer"
     },
     {
-      "profile": "concurrent-evaluator",
       "covered_count": 330,
       "not_applicable_count": 9,
-      "planned_count": 0
+      "planned_count": 0,
+      "profile": "concurrent-evaluator"
     },
     {
-      "profile": "durable-runtime",
       "covered_count": 363,
       "not_applicable_count": 16,
-      "planned_count": 0
+      "planned_count": 0,
+      "profile": "durable-runtime"
     },
     {
-      "profile": "embedding",
       "covered_count": 307,
       "not_applicable_count": 51,
-      "planned_count": 0
+      "planned_count": 0,
+      "profile": "embedding"
     },
     {
-      "profile": "evaluator",
       "covered_count": 323,
       "not_applicable_count": 16,
-      "planned_count": 0
+      "planned_count": 0,
+      "profile": "evaluator"
     },
     {
-      "profile": "frontend",
       "covered_count": 59,
       "not_applicable_count": 16,
-      "planned_count": 0
+      "planned_count": 0,
+      "profile": "frontend"
     }
   ],
   "profiles": [
@@ -190,5 +190,5 @@
   "scale_evidence": [
     "crates/gantry-conformance/tests/generics_conformance.rs#generic_scale_envelopes_are_charged_and_deduplicated"
   ],
-  "specification_sha256": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60"
+  "specification_sha256": "037eaac4a62a1dd6eaa00711536a75da3554548ec8fc232637b1a7d16134749e"
 }

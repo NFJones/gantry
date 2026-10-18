@@ -18,13 +18,17 @@ use crate::stdlib::{
 use gantry_core::mode::SemanticMode;
 
 /// The Section 46 clauses implemented by this pure model, in declaration order.
-pub const CONSOLE_CLAUSES: [&str; 6] = [
+pub const CONSOLE_CLAUSES: [&str; 10] = [
     "GNT-46.0-console-foundation-scope",
     "GNT-46.1-console-modules-and-item-rows",
     "GNT-46.2-console-bounded-operations",
     "GNT-46.3-console-operation-recovery-and-accepted-input",
     "GNT-46.4-console-encoding-and-shutdown-settlement",
     "GNT-46.5-console-terminal-observations",
+    "GNT-46.6-console-operation-signatures",
+    "GNT-46.7-console-requirement-groups",
+    "GNT-46.8-console-authority-admission",
+    "GNT-46.9-console-control-and-output-boundary",
 ];
 
 /// One declared console operation of `GNT-46.2-console-bounded-operations`.
@@ -470,6 +474,10 @@ pub const CONSOLE_ITEMS: [ConsoleItemRow; 4] = [
         clauses: &[
             "GNT-46.0-console-foundation-scope",
             "GNT-46.1-console-modules-and-item-rows",
+            "GNT-46.6-console-operation-signatures",
+            "GNT-46.7-console-requirement-groups",
+            "GNT-46.8-console-authority-admission",
+            "GNT-46.9-console-control-and-output-boundary",
         ],
     },
     ConsoleItemRow {
@@ -482,6 +490,9 @@ pub const CONSOLE_ITEMS: [ConsoleItemRow; 4] = [
             "GNT-46.2-console-bounded-operations",
             "GNT-46.3-console-operation-recovery-and-accepted-input",
             "GNT-46.4-console-encoding-and-shutdown-settlement",
+            "GNT-46.6-console-operation-signatures",
+            "GNT-46.7-console-requirement-groups",
+            "GNT-46.8-console-authority-admission",
         ],
     },
     ConsoleItemRow {
@@ -494,6 +505,10 @@ pub const CONSOLE_ITEMS: [ConsoleItemRow; 4] = [
             "GNT-46.2-console-bounded-operations",
             "GNT-46.3-console-operation-recovery-and-accepted-input",
             "GNT-46.4-console-encoding-and-shutdown-settlement",
+            "GNT-46.6-console-operation-signatures",
+            "GNT-46.7-console-requirement-groups",
+            "GNT-46.8-console-authority-admission",
+            "GNT-46.9-console-control-and-output-boundary",
         ],
     },
     ConsoleItemRow {
@@ -504,6 +519,8 @@ pub const CONSOLE_ITEMS: [ConsoleItemRow; 4] = [
             "GNT-46.0-console-foundation-scope",
             "GNT-46.1-console-modules-and-item-rows",
             "GNT-46.5-console-terminal-observations",
+            "GNT-46.6-console-operation-signatures",
+            "GNT-46.7-console-requirement-groups",
         ],
     },
 ];
@@ -634,6 +651,1034 @@ fn validate_console_surface_package(
                 StdlibDiagnosticCode::UnsupportedApplicability,
                 format!("`{}` does not declare its row's applicability", row.name),
             ));
+        }
+    }
+    Ok(())
+}
+
+/// The declared version of every console operation identity
+/// (`GNT-46.6-console-operation-signatures`).
+pub const CONSOLE_SIGNATURE_VERSION: u32 = 1;
+
+/// One declared receiver kind of a console signature
+/// (`GNT-46.6-console-operation-signatures`).
+///
+/// A receiver kind is a declared property of a signature shape: it is not a host handle, a
+/// descriptor, a capability, or a loan the console owns.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ConsoleReceiver {
+    /// The Input receiver loan a console read takes.
+    InputLoan,
+    /// The Output receiver loan a console write or flush takes.
+    OutputLoan,
+    /// The observation receiver a terminal inspect takes.
+    Observation,
+    /// The control receiver a mode change takes.
+    Control,
+}
+
+impl ConsoleReceiver {
+    /// Every declared receiver kind, in canonical order.
+    pub const ALL: [Self; 4] = [
+        Self::InputLoan,
+        Self::OutputLoan,
+        Self::Observation,
+        Self::Control,
+    ];
+
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::InputLoan => "input-receiver-loan",
+            Self::OutputLoan => "output-receiver-loan",
+            Self::Observation => "observation-receiver",
+            Self::Control => "control-receiver",
+        }
+    }
+
+    /// Strictly decodes one exact portable spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|receiver| receiver.wire_name() == value)
+    }
+}
+
+/// One declared result shape of a console signature
+/// (`GNT-46.6-console-operation-signatures`).
+///
+/// A result shape is a declared spelling of the value a signature publishes: it is not a runtime
+/// carrier, a boundary encoding, or a second payload vocabulary.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ConsoleResultShape {
+    /// A chunk of octets or a refusal.
+    ChunkOrError,
+    /// An accepted-prefix receipt or a refusal.
+    AcceptedPrefixReceiptOrError,
+    /// Unit or a refusal.
+    UnitOrError,
+    /// A terminal report or a refusal.
+    TerminalReportOrError,
+}
+
+impl ConsoleResultShape {
+    /// Every declared result shape, in canonical order.
+    pub const ALL: [Self; 4] = [
+        Self::ChunkOrError,
+        Self::AcceptedPrefixReceiptOrError,
+        Self::UnitOrError,
+        Self::TerminalReportOrError,
+    ];
+
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::ChunkOrError => "chunk-or-error",
+            Self::AcceptedPrefixReceiptOrError => "accepted-prefix-receipt-or-error",
+            Self::UnitOrError => "unit-or-error",
+            Self::TerminalReportOrError => "terminal-report-or-error",
+        }
+    }
+
+    /// Strictly decodes one exact portable spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|shape| shape.wire_name() == value)
+    }
+}
+
+/// One declared console operation signature
+/// (`GNT-46.6-console-operation-signatures`).
+///
+/// The first three declared shapes bind to one operation of the
+/// `GNT-46.2-console-bounded-operations` vocabulary; `inspect` and `set_mode` are declared
+/// signatures of their module rows and are never members of that vocabulary.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ConsoleSignature {
+    /// `input::read(Input receiver loan, bounded request) -> chunk/error`.
+    InputRead,
+    /// `output::write(Output receiver loan, initialized octets) -> accepted-prefix receipt/error`.
+    OutputWrite,
+    /// `output::flush(Output receiver loan) -> Unit/error`.
+    OutputFlush,
+    /// `terminal::inspect(observation receiver) -> terminal report/error`.
+    TerminalInspect,
+    /// `control::set_mode(control receiver, typed echo/canonical-input flags) -> Unit/error`.
+    ControlSetMode,
+}
+
+impl ConsoleSignature {
+    /// Every declared signature, in canonical declaration order.
+    pub const ALL: [Self; 5] = [
+        Self::InputRead,
+        Self::OutputWrite,
+        Self::OutputFlush,
+        Self::TerminalInspect,
+        Self::ControlSetMode,
+    ];
+
+    /// Returns the exact declared operation spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::InputRead => "read",
+            Self::OutputWrite => "write",
+            Self::OutputFlush => "flush",
+            Self::TerminalInspect => "inspect",
+            Self::ControlSetMode => "set_mode",
+        }
+    }
+
+    /// Returns the same exact operation spelling as [`Self::wire_name`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        self.wire_name()
+    }
+
+    /// Strictly decodes one exact declared operation spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|signature| signature.wire_name() == value)
+    }
+
+    /// Returns the declared module that publishes this signature.
+    #[must_use]
+    pub const fn module_name(self) -> &'static str {
+        match self {
+            Self::InputRead => "std.console::input",
+            Self::OutputWrite | Self::OutputFlush => "std.console::output",
+            Self::TerminalInspect => "std.console::terminal",
+            Self::ControlSetMode => "std.console::control",
+        }
+    }
+
+    /// Returns the declared exact operation identity of this signature.
+    ///
+    /// The declared spelling is `<module>::<operation>@<version>` with version
+    /// [`CONSOLE_SIGNATURE_VERSION`].
+    #[must_use]
+    pub const fn identity(self) -> &'static str {
+        match self {
+            Self::InputRead => "std.console::input::read@1",
+            Self::OutputWrite => "std.console::output::write@1",
+            Self::OutputFlush => "std.console::output::flush@1",
+            Self::TerminalInspect => "std.console::terminal::inspect@1",
+            Self::ControlSetMode => "std.console::control::set_mode@1",
+        }
+    }
+
+    /// Returns the declared receiver kind of this signature.
+    #[must_use]
+    pub const fn receiver(self) -> ConsoleReceiver {
+        match self {
+            Self::InputRead => ConsoleReceiver::InputLoan,
+            Self::OutputWrite | Self::OutputFlush => ConsoleReceiver::OutputLoan,
+            Self::TerminalInspect => ConsoleReceiver::Observation,
+            Self::ControlSetMode => ConsoleReceiver::Control,
+        }
+    }
+
+    /// Returns the declared result shape of this signature.
+    #[must_use]
+    pub const fn result(self) -> ConsoleResultShape {
+        match self {
+            Self::InputRead => ConsoleResultShape::ChunkOrError,
+            Self::OutputWrite => ConsoleResultShape::AcceptedPrefixReceiptOrError,
+            Self::OutputFlush | Self::ControlSetMode => ConsoleResultShape::UnitOrError,
+            Self::TerminalInspect => ConsoleResultShape::TerminalReportOrError,
+        }
+    }
+
+    /// Returns the declared recovery class of this signature.
+    ///
+    /// A read and a write are `non_idempotent`, a flush and a mode change are `idempotent`, and an
+    /// inspect is `read_only`. The `read_only` class belongs to the inspect signature only; no
+    /// operation of the `ConsoleOperation` vocabulary is `read_only`, and
+    /// `GNT-46.3-console-operation-recovery-and-accepted-input` continues to state exactly that.
+    #[must_use]
+    pub const fn declared_recovery_class(self) -> RecoveryClass {
+        match self {
+            Self::InputRead | Self::OutputWrite => RecoveryClass::NonIdempotent,
+            Self::OutputFlush | Self::ControlSetMode => RecoveryClass::Idempotent,
+            Self::TerminalInspect => RecoveryClass::ReadOnly,
+        }
+    }
+
+    /// Returns the declared operation of the `ConsoleOperation` vocabulary this signature binds.
+    ///
+    /// An inspect and a set-mode bind no operation of that vocabulary and publish `None`.
+    #[must_use]
+    pub const fn console_operation(self) -> Option<ConsoleOperation> {
+        match self {
+            Self::InputRead => Some(ConsoleOperation::Read),
+            Self::OutputWrite => Some(ConsoleOperation::Write),
+            Self::OutputFlush => Some(ConsoleOperation::Flush),
+            Self::TerminalInspect | Self::ControlSetMode => None,
+        }
+    }
+
+    /// Returns whether this signature declares the two typed control flags.
+    #[must_use]
+    pub const fn declares_control_flags(self) -> bool {
+        matches!(self, Self::ControlSetMode)
+    }
+
+    /// Returns whether this signature consumes one admitted `std.io` request.
+    #[must_use]
+    pub const fn consumes_request(self) -> bool {
+        matches!(self, Self::InputRead | Self::OutputWrite)
+    }
+}
+
+/// The declared signatures the `input` requirement group governs.
+const INPUT_GROUP_SIGNATURES: &[ConsoleSignature] = &[ConsoleSignature::InputRead];
+
+/// The declared signatures the `output-flush` requirement group governs.
+const OUTPUT_GROUP_SIGNATURES: &[ConsoleSignature] =
+    &[ConsoleSignature::OutputWrite, ConsoleSignature::OutputFlush];
+
+/// The declared signatures the `observation` requirement group governs.
+const OBSERVATION_GROUP_SIGNATURES: &[ConsoleSignature] = &[ConsoleSignature::TerminalInspect];
+
+/// The declared signatures the `control` requirement group governs.
+const CONTROL_GROUP_SIGNATURES: &[ConsoleSignature] = &[ConsoleSignature::ControlSetMode];
+
+/// One declared console requirement group
+/// (`GNT-46.7-console-requirement-groups`).
+///
+/// The four groups are four separately granted groups. No group implies another, so an admitted
+/// requirement of one group never satisfies a requirement of another and a grant of one group is
+/// never read as a grant of another.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ConsoleRequirementGroup {
+    /// The group governing `std.console::input::read@1`.
+    Input,
+    /// The group governing `std.console::output::write@1` and `std.console::output::flush@1`.
+    OutputFlush,
+    /// The group governing `std.console::terminal::inspect@1`.
+    Observation,
+    /// The group governing `std.console::control::set_mode@1`.
+    Control,
+}
+
+impl ConsoleRequirementGroup {
+    /// Every declared group, in canonical order.
+    pub const ALL: [Self; 4] = [
+        Self::Input,
+        Self::OutputFlush,
+        Self::Observation,
+        Self::Control,
+    ];
+
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Input => "input",
+            Self::OutputFlush => "output-flush",
+            Self::Observation => "observation",
+            Self::Control => "control",
+        }
+    }
+
+    /// Returns the same exact portable spelling as [`Self::wire_name`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        self.wire_name()
+    }
+
+    /// Strictly decodes one exact portable spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|group| group.wire_name() == value)
+    }
+
+    /// Returns the declared signatures this group governs, in canonical declaration order.
+    #[must_use]
+    pub const fn signatures(self) -> &'static [ConsoleSignature] {
+        match self {
+            Self::Input => INPUT_GROUP_SIGNATURES,
+            Self::OutputFlush => OUTPUT_GROUP_SIGNATURES,
+            Self::Observation => OBSERVATION_GROUP_SIGNATURES,
+            Self::Control => CONTROL_GROUP_SIGNATURES,
+        }
+    }
+
+    /// Returns whether this group implies authority over another declared group.
+    ///
+    /// The answer is `false` for every ordered pair of declared groups, including a group and
+    /// itself: the four groups are separately granted and no ordering of them is an authority
+    /// chain.
+    #[must_use]
+    pub const fn implies_authority_over(self, _other: Self) -> bool {
+        false
+    }
+}
+
+/// One declared console authority refusal condition
+/// (`GNT-46.6-console-operation-signatures` through
+/// `GNT-46.9-console-control-and-output-boundary`).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ConsoleAuthorityDiagnosticCode {
+    /// A presented signature surface is not the declared surface.
+    SignatureUndeclared,
+    /// A presented requirement group does not carry the declared identities.
+    RequirementGroupInconsistent,
+    /// A declared signature was called without an injected grant of its group.
+    AuthorityMissing,
+    /// A presented grant was not issued for that requester and group.
+    AuthorityForged,
+    /// An access was presented as an ambient numeric descriptor.
+    AmbientDescriptor,
+    /// Control-bearing output reached an attached terminal without control authority.
+    ControlBearingOutputRefused,
+    /// An output was presented to a sink kind this section does not declare.
+    SafeOutputUnsupported,
+}
+
+impl ConsoleAuthorityDiagnosticCode {
+    /// Every declared code, in exact declaration order.
+    pub const ALL: [Self; 7] = [
+        Self::SignatureUndeclared,
+        Self::RequirementGroupInconsistent,
+        Self::AuthorityMissing,
+        Self::AuthorityForged,
+        Self::AmbientDescriptor,
+        Self::ControlBearingOutputRefused,
+        Self::SafeOutputUnsupported,
+    ];
+
+    /// Returns the registered diagnostic spelling.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SignatureUndeclared => "console-signature-undeclared",
+            Self::RequirementGroupInconsistent => "console-requirement-group-inconsistent",
+            Self::AuthorityMissing => "console-authority-missing",
+            Self::AuthorityForged => "console-authority-forged",
+            Self::AmbientDescriptor => "console-authority-ambient-descriptor",
+            Self::ControlBearingOutputRefused => "console-control-bearing-output-refused",
+            Self::SafeOutputUnsupported => "console-safe-output-unsupported",
+        }
+    }
+}
+
+/// One typed refusal from the console signature, group, and authority model.
+///
+/// Every variant names exactly one declared diagnostic and carries no capability, handle,
+/// descriptor number as authority, sanitized octet, or rewritten outcome.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ConsoleAuthorityError {
+    /// A presented signature surface is not exactly the five declared signatures.
+    SignatureUndeclared {
+        /// The observed operation identity, or `none` when the surface is incomplete.
+        observed: String,
+        /// The declared operation identity at that position, or `none` when the surface is extra.
+        declared: String,
+    },
+    /// A presented requirement group does not carry the declared identities.
+    RequirementGroupInconsistent {
+        /// The observed identity.
+        observed: String,
+        /// The declared identity.
+        declared: String,
+    },
+    /// A declared signature was called without an injected grant of its group.
+    AuthorityMissing {
+        /// The group whose grant is absent.
+        group: ConsoleRequirementGroup,
+    },
+    /// A presented grant was not issued by the injection for that requester and group.
+    AuthorityForged {
+        /// The group the presented grant names.
+        group: ConsoleRequirementGroup,
+        /// The requester the presented grant names.
+        requester: &'static str,
+        /// The grantor the presented grant names.
+        grantor: &'static str,
+    },
+    /// An access was presented as an ambient numeric descriptor.
+    AmbientDescriptor {
+        /// The presented descriptor, exactly as presented.
+        descriptor: i32,
+    },
+    /// Control-bearing output reached an attached terminal without control authority.
+    ControlBearingOutputRefused {
+        /// The presented octets, unchanged: no octet is stripped, replaced, or sanitized.
+        preserved_octets: Vec<u8>,
+    },
+    /// An output was presented to a sink kind this section does not declare.
+    SafeOutputUnsupported {
+        /// The presented sink spelling.
+        sink: &'static str,
+    },
+}
+
+impl ConsoleAuthorityError {
+    /// Returns the registered diagnostic code of this refusal.
+    #[must_use]
+    pub const fn code(&self) -> ConsoleAuthorityDiagnosticCode {
+        match self {
+            Self::SignatureUndeclared { .. } => ConsoleAuthorityDiagnosticCode::SignatureUndeclared,
+            Self::RequirementGroupInconsistent { .. } => {
+                ConsoleAuthorityDiagnosticCode::RequirementGroupInconsistent
+            }
+            Self::AuthorityMissing { .. } => ConsoleAuthorityDiagnosticCode::AuthorityMissing,
+            Self::AuthorityForged { .. } => ConsoleAuthorityDiagnosticCode::AuthorityForged,
+            Self::AmbientDescriptor { .. } => ConsoleAuthorityDiagnosticCode::AmbientDescriptor,
+            Self::ControlBearingOutputRefused { .. } => {
+                ConsoleAuthorityDiagnosticCode::ControlBearingOutputRefused
+            }
+            Self::SafeOutputUnsupported { .. } => {
+                ConsoleAuthorityDiagnosticCode::SafeOutputUnsupported
+            }
+        }
+    }
+
+    /// Returns the requirement group this refusal names, when it names one.
+    #[must_use]
+    pub const fn group(&self) -> Option<ConsoleRequirementGroup> {
+        match self {
+            Self::AuthorityMissing { group } | Self::AuthorityForged { group, .. } => Some(*group),
+            Self::SignatureUndeclared { .. }
+            | Self::RequirementGroupInconsistent { .. }
+            | Self::AmbientDescriptor { .. }
+            | Self::ControlBearingOutputRefused { .. }
+            | Self::SafeOutputUnsupported { .. } => None,
+        }
+    }
+
+    /// Returns the observed identity this refusal names, when it names one.
+    #[must_use]
+    pub fn observed(&self) -> Option<&str> {
+        match self {
+            Self::SignatureUndeclared { observed, .. }
+            | Self::RequirementGroupInconsistent { observed, .. } => Some(observed.as_str()),
+            Self::AuthorityMissing { .. }
+            | Self::AuthorityForged { .. }
+            | Self::AmbientDescriptor { .. }
+            | Self::ControlBearingOutputRefused { .. }
+            | Self::SafeOutputUnsupported { .. } => None,
+        }
+    }
+
+    /// Returns the declared identity this refusal names, when it names one.
+    #[must_use]
+    pub fn declared(&self) -> Option<&str> {
+        match self {
+            Self::SignatureUndeclared { declared, .. }
+            | Self::RequirementGroupInconsistent { declared, .. } => Some(declared.as_str()),
+            Self::AuthorityMissing { .. }
+            | Self::AuthorityForged { .. }
+            | Self::AmbientDescriptor { .. }
+            | Self::ControlBearingOutputRefused { .. }
+            | Self::SafeOutputUnsupported { .. } => None,
+        }
+    }
+
+    /// Returns the presented descriptor of an ambient-descriptor refusal.
+    #[must_use]
+    pub const fn descriptor(&self) -> Option<i32> {
+        match self {
+            Self::AmbientDescriptor { descriptor } => Some(*descriptor),
+            Self::SignatureUndeclared { .. }
+            | Self::RequirementGroupInconsistent { .. }
+            | Self::AuthorityMissing { .. }
+            | Self::AuthorityForged { .. }
+            | Self::ControlBearingOutputRefused { .. }
+            | Self::SafeOutputUnsupported { .. } => None,
+        }
+    }
+
+    /// Returns the preserved octets of a control-bearing refusal, unchanged.
+    #[must_use]
+    pub fn preserved_octets(&self) -> Option<&[u8]> {
+        match self {
+            Self::ControlBearingOutputRefused { preserved_octets } => Some(preserved_octets),
+            Self::SignatureUndeclared { .. }
+            | Self::RequirementGroupInconsistent { .. }
+            | Self::AuthorityMissing { .. }
+            | Self::AuthorityForged { .. }
+            | Self::AmbientDescriptor { .. }
+            | Self::SafeOutputUnsupported { .. } => None,
+        }
+    }
+}
+
+impl fmt::Display for ConsoleAuthorityError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::SignatureUndeclared { observed, declared } => write!(
+                formatter,
+                "the observed console signature {observed} is not the declared signature {declared}"
+            ),
+            Self::RequirementGroupInconsistent { observed, declared } => write!(
+                formatter,
+                "the observed console requirement identity {observed} is not the declared {declared}"
+            ),
+            Self::AuthorityMissing { group } => write!(
+                formatter,
+                "no console access is injected for the {} requirement group",
+                group.wire_name()
+            ),
+            Self::AuthorityForged {
+                group,
+                requester,
+                grantor,
+            } => write!(
+                formatter,
+                "the presented {} grant for {requester} was not issued by {grantor}",
+                group.wire_name()
+            ),
+            Self::AmbientDescriptor { descriptor } => write!(
+                formatter,
+                "the ambient descriptor {descriptor} is not a console access identity"
+            ),
+            Self::ControlBearingOutputRefused { preserved_octets } => write!(
+                formatter,
+                "control-bearing output of {} octets was refused byte-preservingly",
+                preserved_octets.len()
+            ),
+            Self::SafeOutputUnsupported { sink } => write!(
+                formatter,
+                "the console output sink {sink} is not a declared target"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ConsoleAuthorityError {}
+
+/// One console access grant for one requirement group
+/// (`GNT-46.8-console-authority-admission`).
+///
+/// A grant names exactly its group, its requester, and its grantor. It is not a descriptor, a
+/// numeric handle, or a capability instance, and it carries no right beyond the group it names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConsoleGrant {
+    group: ConsoleRequirementGroup,
+    requester: &'static str,
+    grantor: &'static str,
+}
+
+impl ConsoleGrant {
+    /// Returns one grant naming its group, its requester, and its grantor.
+    #[must_use]
+    pub const fn new(
+        group: ConsoleRequirementGroup,
+        requester: &'static str,
+        grantor: &'static str,
+    ) -> Self {
+        Self {
+            group,
+            requester,
+            grantor,
+        }
+    }
+
+    /// Returns the requirement group this grant names.
+    #[must_use]
+    pub const fn group(self) -> ConsoleRequirementGroup {
+        self.group
+    }
+
+    /// Returns the requester this grant names.
+    #[must_use]
+    pub const fn requester(self) -> &'static str {
+        self.requester
+    }
+
+    /// Returns the grantor this grant names.
+    #[must_use]
+    pub const fn grantor(self) -> &'static str {
+        self.grantor
+    }
+}
+
+/// The launch-injected access set of one run
+/// (`GNT-46.8-console-authority-admission`).
+///
+/// The injection is the issued set the console compares a presented grant against. It carries no
+/// descriptor, numeric handle, terminal instance, or capability generation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConsoleAccessInjection {
+    grantor: &'static str,
+    grants: Vec<ConsoleGrant>,
+}
+
+impl ConsoleAccessInjection {
+    /// Returns the access set one launch injects.
+    ///
+    /// This is the only constructor: access is injected by the launch and is never reconstructed
+    /// from an ambient numeric descriptor, a standard descriptor number, a process handle, or a
+    /// device path.
+    #[must_use]
+    pub fn from_launch(grantor: &'static str, grants: Vec<ConsoleGrant>) -> Self {
+        Self { grantor, grants }
+    }
+
+    /// Returns the grantor of this injection.
+    #[must_use]
+    pub const fn grantor(&self) -> &'static str {
+        self.grantor
+    }
+
+    /// Returns the issued grants, in injected order.
+    #[must_use]
+    pub fn grants(&self) -> &[ConsoleGrant] {
+        &self.grants
+    }
+
+    /// Returns whether this injection issues any grant of one requirement group.
+    #[must_use]
+    pub fn grants_group(&self, group: ConsoleRequirementGroup) -> bool {
+        self.grants.iter().any(|grant| grant.group == group)
+    }
+
+    /// Returns the issued control grant of one requester, when the injection issues one.
+    #[must_use]
+    pub fn control_grant_for(&self, requester: &str) -> Option<ConsoleGrant> {
+        self.grants.iter().copied().find(|grant| {
+            grant.group == ConsoleRequirementGroup::Control && grant.requester == requester
+        })
+    }
+
+    /// Admits one presented grant as exactly an issued grant of this injection.
+    ///
+    /// A presented grant that the injection did not issue for that requester and that group -- a
+    /// grant of another grantor, another requester, or another group, or a grant that no group of
+    /// the injected set names -- is refused as forged, and is never repaired, widened, or merged
+    /// with an issued grant.
+    pub fn admit(&self, presented: &ConsoleGrant) -> Result<(), ConsoleAuthorityError> {
+        if self.grants.iter().any(|grant| grant == presented) {
+            return Ok(());
+        }
+        Err(ConsoleAuthorityError::AuthorityForged {
+            group: presented.group,
+            requester: presented.requester,
+            grantor: presented.grantor,
+        })
+    }
+
+    /// Admits the grant of one declared call.
+    ///
+    /// A group this injection issues no grant of is refused as missing before the call consumes an
+    /// input cursor, delivers an octet, or publishes a progress observation; a presented grant that
+    /// was not issued is refused as forged.
+    pub fn admit_call(&self, presented: &ConsoleGrant) -> Result<(), ConsoleAuthorityError> {
+        if !self.grants_group(presented.group) {
+            return Err(ConsoleAuthorityError::AuthorityMissing {
+                group: presented.group,
+            });
+        }
+        self.admit(presented)
+    }
+}
+
+/// One console access identity as presented to a declared signature
+/// (`GNT-46.8-console-authority-admission`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConsoleAccessIdentity {
+    /// An access identity issued by the launch injection.
+    Injected(ConsoleGrant),
+    /// An ambient numeric descriptor presented as access, which is never an access identity.
+    AmbientDescriptor(i32),
+}
+
+impl ConsoleAccessIdentity {
+    /// Admits the presented identity, returning the issued grant or exactly one refusal.
+    pub fn admit(
+        self,
+        injection: &ConsoleAccessInjection,
+    ) -> Result<ConsoleGrant, ConsoleAuthorityError> {
+        match self {
+            Self::Injected(grant) => {
+                injection.admit_call(&grant)?;
+                Ok(grant)
+            }
+            Self::AmbientDescriptor(descriptor) => {
+                Err(ConsoleAuthorityError::AmbientDescriptor { descriptor })
+            }
+        }
+    }
+}
+
+/// The two declared typed control flags of the `control::set_mode` signature
+/// (`GNT-46.6-console-operation-signatures`).
+///
+/// The pair is typed and closed: it carries no raw mode word, numeric mask, ranking, and no
+/// platform device convention.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConsoleControlFlags {
+    echo: bool,
+    canonical_input: bool,
+}
+
+impl ConsoleControlFlags {
+    /// The exact declared flag names, in canonical order.
+    pub const DECLARED_FLAGS: [&'static str; 2] = ["echo", "canonical-input"];
+
+    /// Returns the two typed flag values one mode change presents.
+    #[must_use]
+    pub const fn new(echo: bool, canonical_input: bool) -> Self {
+        Self {
+            echo,
+            canonical_input,
+        }
+    }
+
+    /// Returns the declared `echo` flag value.
+    #[must_use]
+    pub const fn echo(self) -> bool {
+        self.echo
+    }
+
+    /// Returns the declared `canonical-input` flag value.
+    #[must_use]
+    pub const fn canonical_input(self) -> bool {
+        self.canonical_input
+    }
+}
+
+/// The declared control octet: the escape octet
+/// (`GNT-46.9-console-control-and-output-boundary`).
+pub const CONSOLE_CONTROL_OCTET: u8 = 0x1b;
+
+/// Returns whether the presented octets are control-bearing.
+///
+/// The decision is over the presented octets alone: it declares no control-sequence grammar, no
+/// escape parsing, and no statement about what a terminal would do with the octets.
+#[must_use]
+pub fn console_octets_carry_control(octets: &[u8]) -> bool {
+    octets.contains(&CONSOLE_CONTROL_OCTET)
+}
+
+/// One declared console output target
+/// (`GNT-46.9-console-control-and-output-boundary`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConsoleOutputTarget {
+    /// A redirected or otherwise non-controlling sink: the first declared output target.
+    RedirectedNonControlling,
+    /// An attached terminal.
+    AttachedTerminal,
+    /// A sink kind this section does not declare.
+    Unsupported(&'static str),
+}
+
+impl ConsoleOutputTarget {
+    /// Returns whether this target is one of the two declared targets.
+    #[must_use]
+    pub const fn is_declared(self) -> bool {
+        matches!(
+            self,
+            Self::RedirectedNonControlling | Self::AttachedTerminal
+        )
+    }
+}
+
+/// The accepted-prefix receipt of one admitted console write.
+///
+/// The receipt counts accepted octets and publishes no character, scalar, or display-column count.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConsoleWriteReceipt {
+    accepted_prefix: usize,
+}
+
+impl ConsoleWriteReceipt {
+    /// Returns the count of accepted octets.
+    #[must_use]
+    pub const fn accepted_prefix(self) -> usize {
+        self.accepted_prefix
+    }
+}
+
+/// Admits one declared `output::write` call over its grant, target, and octets.
+///
+/// A presented grant of another group is refused as inconsistent before any octet is delivered;
+/// an unsupported sink is refused even for octets that carry no control octet; and
+/// control-bearing octets reach an attached terminal only under an injected grant of the control
+/// group, otherwise the refusal publishes the presented octets unchanged.
+pub fn admit_console_write(
+    injection: &ConsoleAccessInjection,
+    presented: &ConsoleGrant,
+    target: ConsoleOutputTarget,
+    octets: &[u8],
+) -> Result<ConsoleWriteReceipt, ConsoleAuthorityError> {
+    injection.admit_call(presented)?;
+    if presented.group != ConsoleRequirementGroup::OutputFlush {
+        return Err(ConsoleAuthorityError::RequirementGroupInconsistent {
+            observed: presented.group.wire_name().to_owned(),
+            declared: ConsoleRequirementGroup::OutputFlush.wire_name().to_owned(),
+        });
+    }
+    match target {
+        ConsoleOutputTarget::Unsupported(sink) => {
+            Err(ConsoleAuthorityError::SafeOutputUnsupported { sink })
+        }
+        ConsoleOutputTarget::RedirectedNonControlling => Ok(ConsoleWriteReceipt {
+            accepted_prefix: octets.len(),
+        }),
+        ConsoleOutputTarget::AttachedTerminal => {
+            if !console_octets_carry_control(octets)
+                || injection.control_grant_for(presented.requester).is_some()
+            {
+                return Ok(ConsoleWriteReceipt {
+                    accepted_prefix: octets.len(),
+                });
+            }
+            Err(ConsoleAuthorityError::ControlBearingOutputRefused {
+                preserved_octets: octets.to_vec(),
+            })
+        }
+    }
+}
+
+/// One declared flush outcome of the `output::flush` signature.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConsoleFlushOutcome {
+    /// The final flush completed.
+    Flushed,
+    /// The final flush failed.
+    Failed,
+}
+
+impl ConsoleFlushOutcome {
+    /// Returns whether this outcome is a failure.
+    #[must_use]
+    pub const fn is_failure(self) -> bool {
+        matches!(self, Self::Failed)
+    }
+}
+
+/// The settlement of one grantor-owned final flush and shutdown
+/// (`GNT-46.8-console-authority-admission`).
+///
+/// The settlement publishes the flush outcome and the fixed task outcome separately: a failed
+/// flush never rewrites the fixed task outcome, and no settlement publishes a second task outcome.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConsoleShutdownSettlement {
+    flush: ConsoleFlushOutcome,
+}
+
+impl ConsoleShutdownSettlement {
+    /// Returns the settlement of one final flush.
+    #[must_use]
+    pub const fn settle(flush: ConsoleFlushOutcome) -> Self {
+        Self { flush }
+    }
+
+    /// Returns the flush outcome.
+    #[must_use]
+    pub const fn flush(self) -> ConsoleFlushOutcome {
+        self.flush
+    }
+
+    /// Returns whether the final flush failed, separately from the fixed task outcome.
+    #[must_use]
+    pub const fn flush_failed(self) -> bool {
+        self.flush.is_failure()
+    }
+
+    /// Returns whether this settlement rewrote the fixed task outcome: never.
+    #[must_use]
+    pub const fn task_outcome_rewritten(self) -> bool {
+        false
+    }
+}
+
+/// Admits one declared `control::set_mode` call over its grant and typed flags.
+///
+/// A set-mode requires an injected grant of the `control` group; the two typed flags are values
+/// and are never read as a capability or as terminal-control authority over any other call.
+pub fn admit_console_set_mode(
+    injection: &ConsoleAccessInjection,
+    presented: &ConsoleGrant,
+    _flags: ConsoleControlFlags,
+) -> Result<(), ConsoleAuthorityError> {
+    injection.admit_call(presented)?;
+    if presented.group != ConsoleRequirementGroup::Control {
+        return Err(ConsoleAuthorityError::RequirementGroupInconsistent {
+            observed: presented.group.wire_name().to_owned(),
+            declared: ConsoleRequirementGroup::Control.wire_name().to_owned(),
+        });
+    }
+    Ok(())
+}
+
+/// Declares exactly the five console operation signatures of
+/// `GNT-46.6-console-operation-signatures`.
+#[must_use]
+pub fn declare_console_signatures() -> [ConsoleSignature; 5] {
+    ConsoleSignature::ALL
+}
+
+/// Admits a presented signature surface as exactly the five declared signatures.
+///
+/// A missing, partial, extra, duplicated, reordered, or retyped surface is refused under
+/// `console-signature-undeclared`, naming the observed identity and the declared identity, rather
+/// than repaired, completed, or substituted.
+pub fn admit_console_signatures(
+    presented: &[ConsoleSignature],
+) -> Result<(), ConsoleAuthorityError> {
+    for (index, declared) in ConsoleSignature::ALL.into_iter().enumerate() {
+        match presented.get(index) {
+            Some(observed) if *observed == declared => {}
+            Some(observed) => {
+                return Err(ConsoleAuthorityError::SignatureUndeclared {
+                    observed: observed.identity().to_owned(),
+                    declared: declared.identity().to_owned(),
+                });
+            }
+            None => {
+                return Err(ConsoleAuthorityError::SignatureUndeclared {
+                    observed: "none".to_owned(),
+                    declared: declared.identity().to_owned(),
+                });
+            }
+        }
+    }
+    if let Some(extra) = presented.get(ConsoleSignature::ALL.len()) {
+        return Err(ConsoleAuthorityError::SignatureUndeclared {
+            observed: extra.identity().to_owned(),
+            declared: "none".to_owned(),
+        });
+    }
+    Ok(())
+}
+
+/// Declares exactly the four console requirement groups of
+/// `GNT-46.7-console-requirement-groups`.
+#[must_use]
+pub fn declare_console_requirement_groups() -> [ConsoleRequirementGroup; 4] {
+    ConsoleRequirementGroup::ALL
+}
+
+/// Admits a presented group surface as exactly the four declared groups.
+///
+/// The surface must carry the declared identities exactly once each and in canonical order; a
+/// violation is refused under `console-requirement-group-inconsistent` rather than widened.
+pub fn admit_console_requirement_groups(
+    presented: &[ConsoleRequirementGroup],
+) -> Result<(), ConsoleAuthorityError> {
+    console_requirement_identities_are_distinct()?;
+    for (index, declared) in ConsoleRequirementGroup::ALL.into_iter().enumerate() {
+        match presented.get(index) {
+            Some(observed) if *observed == declared => {}
+            Some(observed) => {
+                return Err(ConsoleAuthorityError::RequirementGroupInconsistent {
+                    observed: observed.wire_name().to_owned(),
+                    declared: declared.wire_name().to_owned(),
+                });
+            }
+            None => {
+                return Err(ConsoleAuthorityError::RequirementGroupInconsistent {
+                    observed: "none".to_owned(),
+                    declared: declared.wire_name().to_owned(),
+                });
+            }
+        }
+    }
+    if let Some(extra) = presented.get(ConsoleRequirementGroup::ALL.len()) {
+        return Err(ConsoleAuthorityError::RequirementGroupInconsistent {
+            observed: extra.wire_name().to_owned(),
+            declared: "none".to_owned(),
+        });
+    }
+    Ok(())
+}
+
+/// Verifies every declared operation identity belongs to exactly one declared group.
+///
+/// The five declared identities are distinct, and no identity is governed by two groups or
+/// governed by none.
+fn console_requirement_identities_are_distinct() -> Result<(), ConsoleAuthorityError> {
+    let mut seen: Vec<&str> = Vec::new();
+    for group in ConsoleRequirementGroup::ALL {
+        for signature in group.signatures() {
+            if seen.contains(&signature.identity()) {
+                return Err(ConsoleAuthorityError::RequirementGroupInconsistent {
+                    observed: signature.identity().to_owned(),
+                    declared: "one group per operation identity".to_owned(),
+                });
+            }
+            seen.push(signature.identity());
+        }
+    }
+    for declared in ConsoleSignature::ALL {
+        if !seen.contains(&declared.identity()) {
+            return Err(ConsoleAuthorityError::RequirementGroupInconsistent {
+                observed: "none".to_owned(),
+                declared: declared.identity().to_owned(),
+            });
         }
     }
     Ok(())

@@ -44,6 +44,10 @@ fn console_contract_clauses_and_scope_are_published() {
             "GNT-46.3-console-operation-recovery-and-accepted-input",
             "GNT-46.4-console-encoding-and-shutdown-settlement",
             "GNT-46.5-console-terminal-observations",
+            "GNT-46.6-console-operation-signatures",
+            "GNT-46.7-console-requirement-groups",
+            "GNT-46.8-console-authority-admission",
+            "GNT-46.9-console-control-and-output-boundary",
         ]
     );
     assert_eq!(CONSOLE_SURFACE_MODES, [SemanticMode::Application]);
@@ -80,21 +84,41 @@ fn console_module_rows_are_closed_and_canonical() {
         assert_eq!(row.class, NameClass::Module);
         assert_eq!(row.tier, StabilityTier::Stable);
         let expected: &[&str] = match row.name {
-            "std.console::input" | "std.console::output" => &[
+            "std.console::input" => &[
                 "GNT-46.0-console-foundation-scope",
                 "GNT-46.1-console-modules-and-item-rows",
                 "GNT-46.2-console-bounded-operations",
                 "GNT-46.3-console-operation-recovery-and-accepted-input",
                 "GNT-46.4-console-encoding-and-shutdown-settlement",
+                "GNT-46.6-console-operation-signatures",
+                "GNT-46.7-console-requirement-groups",
+                "GNT-46.8-console-authority-admission",
+            ],
+            "std.console::output" => &[
+                "GNT-46.0-console-foundation-scope",
+                "GNT-46.1-console-modules-and-item-rows",
+                "GNT-46.2-console-bounded-operations",
+                "GNT-46.3-console-operation-recovery-and-accepted-input",
+                "GNT-46.4-console-encoding-and-shutdown-settlement",
+                "GNT-46.6-console-operation-signatures",
+                "GNT-46.7-console-requirement-groups",
+                "GNT-46.8-console-authority-admission",
+                "GNT-46.9-console-control-and-output-boundary",
             ],
             "std.console::terminal" => &[
                 "GNT-46.0-console-foundation-scope",
                 "GNT-46.1-console-modules-and-item-rows",
                 "GNT-46.5-console-terminal-observations",
+                "GNT-46.6-console-operation-signatures",
+                "GNT-46.7-console-requirement-groups",
             ],
             _ => &[
                 "GNT-46.0-console-foundation-scope",
                 "GNT-46.1-console-modules-and-item-rows",
+                "GNT-46.6-console-operation-signatures",
+                "GNT-46.7-console-requirement-groups",
+                "GNT-46.8-console-authority-admission",
+                "GNT-46.9-console-control-and-output-boundary",
             ],
         };
         assert_eq!(row.clauses, expected);
@@ -479,7 +503,7 @@ fn console_terminal_observations_and_control_boundary_are_declared() {
         "a dimension observation cannot be presented for a console that is not attached",
         "a count outside that range is refused under the frozen console diagnostic `console-observation-inconsistent`",
         "consumes no admitted `std.io` request",
-        "that module row stays a declared name without a published contract until",
+        "that module row carries no published control contract beyond the signature, group",
     ] {
         assert!(
             specification.contains(rule),

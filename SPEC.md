@@ -17221,14 +17221,20 @@ rows that fix the family's public surface. The family's closed portable categori
 no-handle, no-capability, no-escape, and no-host-detail envelope rule are the console contract of
 `GNT-29.4-console-contract`, which this section consumes and never restates or widens. Its pure
 model is `crates/gantry-ir/src/console.rs` and its analyzer evidence is
-`crates/gantry-conformance/tests/console_foundation.rs`. The section is a declaration contract: it
+`crates/gantry-conformance/tests/console_foundation.rs` and
+`crates/gantry-conformance/tests/console_authority.rs`. The section is a declaration contract: it
 creates no terminal, descriptor, adapter, host trait, capability grant, renderer, terminal-control
 authority, runtime availability, operation or request vocabulary, streaming, buffering, schema,
 recovery, durability, boundary encoding, lowering, or machine behavior, and no clause of this
 section may be read as publishing, implying, or substituting a facility this section does not
 declare. The frozen diagnostics of this section are `console-observation-inconsistent`, owned by
-`GNT-46.5-console-terminal-observations`; each diagnostic names one owning clause and no spelling
-is shared by two refusal conditions.
+`GNT-46.5-console-terminal-observations`; `console-signature-undeclared`, owned by
+`GNT-46.6-console-operation-signatures`; `console-requirement-group-inconsistent`, owned by
+`GNT-46.7-console-requirement-groups`; `console-authority-missing`, `console-authority-forged`, and
+`console-authority-ambient-descriptor`, owned by `GNT-46.8-console-authority-admission`; and
+`console-control-bearing-output-refused` and `console-safe-output-unsupported`, owned by
+`GNT-46.9-console-control-and-output-boundary`; each diagnostic names one owning clause and no
+spelling is shared by two refusal conditions.
 
 <a id="GNT-46.1-console-modules-and-item-rows"></a>
 
@@ -17348,10 +17354,12 @@ octet source for a console operation: no console read publishes one, no console 
 releases one, no console clause is a redaction rule, release authority, or implicit declassification,
 and a value whose owner does not offer octets to a console operation stays refused by that owner
 rather than rendered here. Arranging console access belongs to the requester that arranges it and is
-not published here: whether an input stream is redirected or interactive, which descriptor carries
-output, and when access begins and ends are that requester's declaration, and this section publishes
-no descriptor, no ambient standard descriptor, no terminal handle, no background flusher, and no
-console-owned work, cursor, buffer, or partial result that outlives the access it was granted. A
+not published here: whether an input stream is redirected or interactive and which target carries
+output are the declaration of that requester, while the admission of a declared requirement group and
+the ownership of the end of access are published by `GNT-46.8-console-authority-admission`, and this
+section publishes no descriptor, no ambient standard descriptor, no terminal handle, no background
+flusher, and no console-owned work, cursor, buffer, or partial result that outlives the access it was
+granted. A
 final flush at shutdown is a flush of the declared operation vocabulary of
 `GNT-46.2-console-bounded-operations`, whose completed observation is exactly the
 `committed-progress` of `GNT-29.2-reader-writer-seek-progress` with no octet count, not a second
@@ -17398,15 +17406,177 @@ observation of the `GNT-45.3-io-progress-derivation` derivation, declares no rec
 never retried, replayed, or deduplicated. Terminal control through the `std.console::control` module
 declared by `GNT-46.1-console-modules-and-item-rows` remains separately authorized and outside this
 section: no console read, write, flush, detection, or dimension observation grants terminal-control
-authority, this section publishes no control operation, control sequence, escape spelling, or
-control capability, and that module row stays a declared name without a published contract until
-the owner that fixes terminal-control authority publishes one. This clause publishes the terminal
+authority, this clause publishes no control operation, control sequence, escape spelling, or control
+capability, and that module row carries no published control contract beyond the signature, group,
+admission, and output-boundary clauses `GNT-46.6-console-operation-signatures`,
+`GNT-46.7-console-requirement-groups`, `GNT-46.8-console-authority-admission`, and
+`GNT-46.9-console-control-and-output-boundary`, which declare shapes, groups, admission, and a
+refusal boundary only and grant no control capability. This clause publishes the terminal
 observation vocabulary, its one refusal, and the control boundary only: it publishes no descriptor,
 terminal handle, terminal capability, capability family, adapter, host trait, operation, request,
 progress observation, cancellation safe point, quota, charge, buffer, streaming or backpressure
 contract, schema, recovery, durability, boundary encoding, lowering, machine representation, or
 family behavior, no change to any other clause of this section or of Sections 20, 29, or 45, and it
 claims no performance, storage layout, or physical representation.
+
+<a id="GNT-46.6-console-operation-signatures"></a>
+
+**[GNT-46.6-console-operation-signatures] Declared console operation signatures.** This clause
+declares the five typed operation signatures of the `std.console` modules declared by
+`GNT-46.1-console-modules-and-item-rows`. The declared signatures are exactly five, in this
+canonical declaration order: `input::read`, `output::write`, `output::flush`, `terminal::inspect`,
+and `control::set_mode`, and the model publishes them through `ConsoleSignature` and its
+`ConsoleSignature::ALL`, so an undeclared module, operation, alias, or spelling is refused rather
+than inferred, substituted, or dropped. Each declared signature states exactly one receiver kind —
+an Input receiver loan, an Output receiver loan, an observation receiver, or a control receiver, in
+that canonical order — and exactly one result shape, and the model publishes those two vocabularies
+through `ConsoleReceiver` and `ConsoleResultShape`. The five declared shapes are
+`input::read(Input receiver loan, bounded request) -> chunk/error`;
+`output::write(Output receiver loan, initialized octets) -> accepted-prefix receipt/error`;
+`output::flush(Output receiver loan) -> Unit/error`;
+`terminal::inspect(observation receiver) -> terminal report/error`; and
+`control::set_mode(control receiver, typed echo/canonical-input flags) -> Unit/error`. A read
+request is one admitted request of `GNT-45.1-bounded-one-call-io-contract`, and this clause
+publishes no second request, octet, or progress vocabulary; a write accepts octets its caller
+declares initialized and publishes an accepted-prefix receipt that counts accepted octets; a flush
+declares no octet quantity and publishes `Unit` or a refusal; an inspect publishes the terminal
+report of `GNT-46.5-console-terminal-observations` or a refusal; and a set-mode declares exactly
+two typed flags, `echo` and `canonical-input`, in that canonical order, publishes `Unit` or a
+refusal, and declares no raw mode word, numeric mask, ranking, or platform device convention. The
+declared exact operation identity of each signature is `<module>::<operation>@<version>` with
+version `1` — the identities `std.console::input::read@1`, `std.console::output::write@1`,
+`std.console::output::flush@1`, `std.console::terminal::inspect@1`, and
+`std.console::control::set_mode@1` — and the model publishes them. The operation vocabulary of
+`GNT-46.2-console-bounded-operations` stays exactly the three `ConsoleOperation` spellings: `read`,
+`write`, and `flush` bind to that vocabulary, while `terminal::inspect` and `control::set_mode` are
+declared signatures of their module rows and are not `ConsoleOperation` members, and no existing
+`ConsoleOperation` variant is read as implementing either of them. `terminal::inspect` declares the
+`read_only` recovery class and `control::set_mode` declares `idempotent`; the statement of
+`GNT-46.3-console-operation-recovery-and-accepted-input` that no operation of the
+`ConsoleOperation` vocabulary is `read_only` stands unchanged, because an inspect is not a member of
+that vocabulary. The model declares exactly the five rows through `declare_console_signatures` and
+admits exactly them through `admit_console_signatures`: a missing, partial, extra, duplicated,
+reordered, or retyped signature surface is refused under the frozen diagnostic
+`console-signature-undeclared`, naming the observed identity and the declared identity, rather than
+repaired, completed, or substituted. This clause publishes the signature shapes, their receivers,
+their result shapes, their identities, and the closed declare-and-admit surface only: it publishes
+no descriptor, ambient handle, terminal handle, terminal capability, adapter, host trait,
+capability grant, terminal-control authority, encoding, conversion, replay or deduplication rule,
+escape sequence, cancellation safe point, quota, charge, buffer, schema, recovery, durability,
+boundary encoding, lowering, machine representation, or family behavior, no change to any other
+clause of this section or of Sections 20, 29, or 45, and it claims no performance, storage layout,
+or physical representation.
+
+<a id="GNT-46.7-console-requirement-groups"></a>
+
+**[GNT-46.7-console-requirement-groups] Console requirement groups and operation identities.**
+This clause publishes the four requirement groups of the declared signatures of
+`GNT-46.6-console-operation-signatures` and the exact operation identity each group governs. The
+declared groups are exactly four — `input`, `output-flush`, `observation`, and `control`, in that
+canonical order — and the model publishes them through `ConsoleRequirementGroup` and its
+`ConsoleRequirementGroup::ALL`, so an undeclared group spelling is refused rather than inferred. The
+group `input` governs exactly `std.console::input::read@1`; the group `output-flush` governs
+exactly `std.console::output::write@1` and `std.console::output::flush@1`; the group `observation`
+governs exactly `std.console::terminal::inspect@1`; and the group `control` governs exactly
+`std.console::control::set_mode@1`. Every declared signature belongs to exactly one declared group,
+every declared operation identity appears in exactly one group, and two groups never share an
+operation identity: a group presented with a foreign identity, a duplicated identity, a missing
+identity, or a signature outside the five of `GNT-46.6-console-operation-signatures` is refused
+under the frozen diagnostic `console-requirement-group-inconsistent`, naming the observed identity
+and the declared identity, rather than repaired or widened. The four groups are four separately
+granted groups, and no group implies another: a grant of one group publishes no grant of another,
+an admitted requirement of one group satisfies no requirement of another, and the model publishes
+`implies_authority_over` as `false` for every ordered pair of declared groups, including a group
+and itself, so authority over observation never follows from input, output, or flush, authority over
+control never follows from text output, and no ordering of the four groups is an authority chain.
+Each declared signature is the typed signature part of one capability requirement of
+`GNT-6.5-abstract-requirements`, and this clause mints no requirement identity, declares no
+package-qualified declaration path, admits no right spelling, and publishes no capability grant,
+adapter, host trait, or runtime availability. This clause publishes the four groups, the exact
+operation identities they govern, and the no-implication rule only: it publishes no authority
+grant, no ambient descriptor, no terminal handle, no terminal capability, no encoding, replay, or
+deduplication rule, no escape sequence, no cancellation safe point, quota, charge, or chargeable
+work, no schema, recovery, durability, boundary encoding, lowering, machine representation, or
+family behavior, no change to any other clause of this section or of Sections 6, 20, 29, or 45,
+and it claims no performance, storage layout, or physical representation.
+
+<a id="GNT-46.8-console-authority-admission"></a>
+
+**[GNT-46.8-console-authority-admission] Console access admission and shutdown ownership.** This
+clause publishes how console access is admitted and who owns the final flush and shutdown. Access
+is injected by the launch of `GNT-30.2-bounded-launch-snapshot-and-capability-closure` and fixed by
+the bounded values of `GNT-30.3-arguments-environment-and-logical-cwd`: the launch injects, for
+each requirement group of `GNT-46.7-console-requirement-groups` that it grants, one grant naming
+that group, its requester, and its grantor, and the model publishes exactly that injected set
+through `ConsoleAccessInjection` and its launch constructor alone. The console never reads,
+infers, defaults, or reconstructs an ambient numeric descriptor: no standard descriptor number, no
+file-descriptor integer, no process handle, and no platform device path is an access identity of
+this section, and an access presented as an ambient numeric descriptor is refused under the frozen
+diagnostic `console-authority-ambient-descriptor`, naming the presented descriptor, before any
+octet is consumed or delivered. A call of a declared signature whose group carries no injected
+grant is refused under the frozen diagnostic `console-authority-missing`, naming the group, before
+the call consumes an input cursor, delivers an octet, or publishes any progress observation, so a
+refused call is never an accepted call and no replay, retry, or partial result is created by the
+refusal. A grant that the injection did not issue for that requester and that group — a grant of
+another grantor, a grant of another requester, a grant of another group, or a grant that no group
+of the injected set names — is refused under the frozen diagnostic `console-authority-forged`,
+naming the group, the requester, and the grantor, and is never repaired, widened, merged with an
+issued grant, or treated as the injection that issued it. The owner that granted the access owns
+the final flush and the shutdown: that owner performs the final flush of
+`GNT-46.2-console-bounded-operations`, whose completed observation stays the `committed-progress` of
+`GNT-29.2-reader-writer-seek-progress` with no octet count, and the console owns no background
+flusher, no flusher thread, no buffered work, and no work that outlives the granted access. A flush
+failure is published as the failure of that flush and never rewrites a fixed task outcome: the
+model publishes the flush outcome and the fixed task outcome separately through
+`ConsoleShutdownSettlement`, its `flush_failed` accessor publishes the flush failure, and its
+`task_outcome_rewritten` accessor is `false` for every settlement, so a failed flush cannot turn a
+successful task into a failed one, cannot turn a failed task into a successful one, and cannot
+substitute for the task outcome. This clause publishes the injected access identity set, the
+missing, forged, and ambient refusals, and the flush and shutdown ownership only: it publishes no
+capability instance, right, generation, or lineage beyond the grant it names, no descriptor,
+terminal handle, terminal capability, terminal-control authority, adapter, host trait, capability
+family, renderer, buffered work, retry, quota, charge, cancellation safe point, schema, recovery,
+durability, boundary encoding, lowering, machine representation, or family behavior, no change to
+any other clause of this section or of Sections 15, 20, 29, 30, or 45, and it claims no
+performance, storage layout, or physical representation.
+
+<a id="GNT-46.9-console-control-and-output-boundary"></a>
+
+**[GNT-46.9-console-control-and-output-boundary] Control-bearing output and the output
+boundary.** This clause publishes the declared output boundary of the console signatures of
+`GNT-46.6-console-operation-signatures` and the exact rule under which control-bearing octets
+reach an attached terminal. The first declared output target is a redirected or otherwise
+non-controlling sink: an output admitted to such a sink publishes its octets unchanged and grants
+no terminal control, because no octet of that sink is interpreted as terminal control by this
+section. The declared control octet is the escape octet `0x1b`, and a presented octet sequence is
+`control-bearing` exactly when it contains that octet: this clause declares no control-sequence
+grammar, no escape sequence spelling, no CSI, OSC, or device-control interpretation, and no escape
+parsing, so `control-bearing` is a decision over presented octets alone and never a statement about
+what a terminal would do with them. On an attached terminal, control-bearing octets are refused
+under the frozen diagnostic `console-control-bearing-output-refused` unless the same requester
+holds an injected grant of the `control` group of `GNT-46.7-console-requirement-groups`, and the
+refusal is byte-preserving: it publishes the presented octets unchanged, accounts for every
+presented octet, delivers no octet, and neither strips, replaces, escapes, quotes, truncates,
+splits, nor otherwise sanitizes any octet. A refusal is never a silent grant of terminal-control
+authority and never carries one: the model publishes the preserved octets of the refusal and no
+control capability, and no read, write, flush, inspect, or set-mode of this section grants control
+authority to a later call. An output whose sink kind is neither the redirected sink nor the
+attached terminal declared here is refused under the frozen diagnostic
+`console-safe-output-unsupported`, naming the presented sink, even when the presented octets
+contain no control octet, so an unsupported safe output refuses rather than degrading, buffering,
+dropping, truncating, or falling back to another sink. Octet semantics are preserved end to end: a
+write counts octets it accepted, a read returns octets, no octet is decoded, encoded, normalized,
+transcoded, or split into lines by this section, and an accepted prefix is a count of octets and
+never a count of characters, scalars, or display columns. This clause publishes the output targets,
+the declared control octet, the byte-preserving refusal, the unsupported-sink refusal, and the
+octet-semantics rule only: it publishes no terminal detection or dimension observation, which
+`GNT-46.5-console-terminal-observations` owns, no descriptor, terminal handle, terminal capability,
+control capability, control sequence, adapter, host trait, capability grant, renderer, encoding or
+conversion implementation, sanitizer, redaction rule, cancellation safe point, quota, charge,
+buffer, streaming or backpressure contract beyond `GNT-45.4-io-backpressure-fact`, schema, recovery,
+durability, boundary encoding, lowering, machine representation, or family behavior, no change to
+any other clause of this section or of Sections 20, 29, or 45, and it claims no performance,
+storage layout, or physical representation.
 
 <a id="GNT-47.0-filesystem-foundation-scope"></a>
 

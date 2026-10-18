@@ -1,35 +1,35 @@
 {
- "format": "gantry.frontend-lexical-evidence/v1",
- "specification_sha256": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60",
- "issue": "GNT-FE-001",
- "entries": [
-  {
-   "requirement": "GNT-13.0",
-   "clause": "clause-001"
-  },
-  {
-   "requirement": "GNT-13.1",
-   "clause": "clause-004"
-  },
-  {
-   "requirement": "GNT-13.2",
-   "clause": "clause-001"
-  },
-  {
-   "requirement": "GNT-4.12",
-   "clause": "clause-001"
-  },
-  {
-   "requirement": "GNT-4.17-frontend-resource-limits",
-   "clause": "clause-002"
-  },
-  {
-   "requirement": "GNT-4.17-frontend-resource-limits",
-   "clause": "clause-004"
-  },
-  {
-   "requirement": "GNT-4.3",
-   "clause": "clause-001"
-  }
- ]
+  "format": "gantry.frontend-lexical-evidence/v1",
+  "specification_sha256": "037eaac4a62a1dd6eaa00711536a75da3554548ec8fc232637b1a7d16134749e",
+  "issue": "GNT-FE-001",
+  "entries": [
+    {
+      "requirement": "GNT-13.0",
+      "clause": "clause-001"
+    },
+    {
+      "requirement": "GNT-13.1",
+      "clause": "clause-004"
+    },
+    {
+      "requirement": "GNT-13.2",
+      "clause": "clause-001"
+    },
+    {
+      "requirement": "GNT-4.12",
+      "clause": "clause-001"
+    },
+    {
+      "requirement": "GNT-4.17-frontend-resource-limits",
+      "clause": "clause-002"
+    },
+    {
+      "requirement": "GNT-4.17-frontend-resource-limits",
+      "clause": "clause-004"
+    },
+    {
+      "requirement": "GNT-4.3",
+      "clause": "clause-001"
+    }
+  ]
 }

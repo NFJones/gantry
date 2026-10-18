@@ -10,43 +10,43 @@
     },
     {
       "path": "protocol/catalogs/ir-contracts-v1.json",
-      "sha256": "00c6ce316d61d56e346df73914776f573f62e6fa75d2ec94df089c4942d26649"
+      "sha256": "489ae2a4d6b67abd86e7053ab34b64e5ddc568fe24034695fd8b93d09c706e85"
     },
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "b8faac7f267b4076a1802c6db1989a876af70bef1f44e00667335b701fb80770"
+      "sha256": "c99db5c5e86cb84d6de9f9b108655a0c64c0f17a5728e079e278214d3f4ad74d"
     },
     {
       "path": "protocol/conformance/analyzer-ir-v1.json",
-      "sha256": "e5b76e3b5a522e836fa2eaab0924d37ddd816c53f75f183af533bb52af7cab7a"
+      "sha256": "786cf0a29b00ec938f31167daa80eae83b47dff9b1ed623cdb276e3e2c295fda"
     },
     {
       "path": "protocol/conformance/analyzer-lowering-v1.json",
-      "sha256": "4f5f9cb9824c2e130c4ab2abd671d0b330b32dc68e54f616cf9911026c7296ce"
+      "sha256": "2daa2371702b8fcb5b96d54e8785750b3d822f02f03f023452f891be2f1c2dfe"
     },
     {
       "path": "protocol/conformance/analyzer-package-v1.json",
-      "sha256": "5840ded4b04a39e6eabdc5b3c1f3e91ae54fb895fa03ec031b29521a2710b313"
+      "sha256": "3cb37fa96dc713e03b959b7ff68ab9c680d1f2244b414f8a29d75b09d8f7fb8d"
     },
     {
       "path": "protocol/conformance/analyzer-symbols-v1.json",
-      "sha256": "b0e9fbe4227ccc3cd8252b32f775b4a593a6e46544c43fdd3c8c27c1e80931c1"
+      "sha256": "d0bf2ce1361317b2b35c8ac294b4e44f7e5f599c617382df09fe26c5557a6eff"
     },
     {
       "path": "protocol/conformance/analyzer-types-v1.json",
-      "sha256": "26c538442ffaa0f787619ada14df8eee47d183a676f345af039314683b51298b"
+      "sha256": "6dc73dff02353aead03bb013020e06e3155a35083b3916a83b3b76f32331ac47"
     },
     {
       "path": "protocol/conformance/analyzer-validity-v1.json",
-      "sha256": "6e24a9754ad663a947505470d8a9b0125dfb7cda9ff055f70eef7e4d30375536"
+      "sha256": "3437823da2f774fa097ff2ea9311ea7ef34e8165d4e760b6eb173785cb5d590a"
     },
     {
       "path": "protocol/conformance/analyzer-workflows-v1.json",
-      "sha256": "8acd84f3227775d673c186b306d3c0925f110f29141e8323669e708345a86166"
+      "sha256": "83c709d96552dcb69ef5fc44d43a1bd541d0c72912cbcc00c21ee6f6fc5cae46"
     },
     {
       "path": "protocol/conformance/frontend-gate-v1.json",
-      "sha256": "b401e0464775b759ba2914ae53a718aa237091b5addfaeda0a0d5d9872f6f636"
+      "sha256": "56ee817fdf0069862b739dd5c854caadf63c0f3c365d2c601d4846f96b48504a"
     },
     {
       "path": "protocol/goldens/activity-observation-vectors-v1.json",
@@ -62,23 +62,23 @@
     },
     {
       "path": "protocol/goldens/ir-contracts-v1.canonical.json",
-      "sha256": "1195c944dfd1091bc1d4918b95acee1cdef9d5f6d459b30ae0fc5352cc9c2858"
+      "sha256": "cd08b6b9dbcca85bd2ab218ac081020454202cb13db442c6f876136e20d1e7e2"
     },
     {
       "path": "protocol/goldens/profiles-v1.canonical.json",
-      "sha256": "5f912398ca244c4656fda5b3dea91afa94178177a2370e3d31541f68c28ed7dd"
+      "sha256": "6d153344e2c15c1a7e97ebcb34f25035d0a70b1dba0150fc529dece1b467aabe"
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "fe2d7a8e2154154d519d067d77e1181caf4cdb34ac11f60a24399c20575f66ce"
+      "sha256": "4c6ce4ea3f48712604272dc92e079c0eb1bb0a4afa810d691a553a21ccb39075"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "59889007b473904c4c0704f4d6ed5bea65db7db921b1ddc9272c3c6340fbac6f"
+      "sha256": "04964ebec252dd9419ff630668a4d9900d74136b417acdce60903a4b958f662b"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
-      "sha256": "f6996c8b4331ccd960c3d106abb57a044e313d30445dadaceb0e3e7107b0decc"
+      "sha256": "779d5a505692f3c4b9f14b499cc853652d5dc9ca1a56d358bab67dd8e5ecaa47"
     },
     {
       "path": "protocol/schemas/activity-observation-v1.schema.json",
@@ -174,14 +174,14 @@
   ],
   "profile": "analyzer",
   "review_summary": {
-    "applicable_clause_count": 766,
-    "covered_count": 576,
+    "applicable_clause_count": 770,
+    "covered_count": 580,
     "not_applicable_count": 190
   },
   "section14_excerpt_count": 51,
   "specification": {
     "path": "SPEC.md",
-    "sha256": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60"
+    "sha256": "037eaac4a62a1dd6eaa00711536a75da3554548ec8fc232637b1a7d16134749e"
   },
   "status": "verified",
   "validation_commands": [

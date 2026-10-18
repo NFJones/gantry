@@ -215,10 +215,17 @@ pub use io::{
 // Section 46 publishes the declared `std.console` module surface. It adds no terminal, adapter,
 // capability, or runtime availability.
 pub use console::{
-    CONSOLE_CLAUSES, CONSOLE_DIMENSION_BOUND, CONSOLE_ITEMS, CONSOLE_OPERATION_FACTS,
-    CONSOLE_SURFACE_MODES, CONSOLE_SURFACE_TARGETS, ConsoleDetection, ConsoleDiagnosticCode,
-    ConsoleDimensions, ConsoleEnvelopeRule, ConsoleError, ConsoleItemRow, ConsoleOperation,
-    ConsoleOperationFacts, ConsoleTerminalReport, admit_console_surface, declare_console_surface,
+    CONSOLE_CLAUSES, CONSOLE_CONTROL_OCTET, CONSOLE_DIMENSION_BOUND, CONSOLE_ITEMS,
+    CONSOLE_OPERATION_FACTS, CONSOLE_SIGNATURE_VERSION, CONSOLE_SURFACE_MODES,
+    CONSOLE_SURFACE_TARGETS, ConsoleAccessIdentity, ConsoleAccessInjection,
+    ConsoleAuthorityDiagnosticCode, ConsoleAuthorityError, ConsoleControlFlags, ConsoleDetection,
+    ConsoleDiagnosticCode, ConsoleDimensions, ConsoleEnvelopeRule, ConsoleError,
+    ConsoleFlushOutcome, ConsoleGrant, ConsoleItemRow, ConsoleOperation, ConsoleOperationFacts,
+    ConsoleOutputTarget, ConsoleReceiver, ConsoleRequirementGroup, ConsoleResultShape,
+    ConsoleShutdownSettlement, ConsoleSignature, ConsoleTerminalReport, ConsoleWriteReceipt,
+    admit_console_requirement_groups, admit_console_set_mode, admit_console_signatures,
+    admit_console_surface, admit_console_write, console_octets_carry_control,
+    declare_console_requirement_groups, declare_console_signatures, declare_console_surface,
 };
 // Section 47 publishes the declared `std.fs` module surface. It adds no path, descriptor, resource,
 // adapter, capability, or runtime availability.

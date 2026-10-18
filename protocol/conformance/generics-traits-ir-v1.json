@@ -1,26 +1,26 @@
 {
- "format": "gantry.generics-traits-ir-evidence/v1",
- "specification_sha256": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60",
- "issue": "GNT-GEN-IR-001",
- "capabilities": [
-  {
-   "id": "canonical-generic-artifacts",
-   "evidence": "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_publish_closed_instantiations_and_multi_origin_maps"
-  },
-  {
-   "id": "closed-runtime-boundary",
-   "evidence": "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_reject_open_runtime_and_noncanonical_inputs"
-  },
-  {
-   "id": "independent-schema-validation",
-   "evidence": "crates/gantry-conformance/tests/ir_contracts.rs#canonical_artifact_vectors_match_the_public_facade"
-  }
- ],
- "exclusions": [
-  "Name resolution, inference, capability proofs, coherence, trait selection, and instantiation discovery remain analyzer work.",
-  "Execution of concrete generic applications and static trait calls remains runtime work.",
-  "Durable retention, reconstruction, tamper rejection, and recovery equivalence remain durable-runtime work.",
-  "No analyzer, evaluator, durable, embedding, publication, or release profile claim is enabled by this contract slice."
- ],
- "profiles": []
+  "format": "gantry.generics-traits-ir-evidence/v1",
+  "specification_sha256": "037eaac4a62a1dd6eaa00711536a75da3554548ec8fc232637b1a7d16134749e",
+  "issue": "GNT-GEN-IR-001",
+  "capabilities": [
+    {
+      "id": "canonical-generic-artifacts",
+      "evidence": "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_publish_closed_instantiations_and_multi_origin_maps"
+    },
+    {
+      "id": "closed-runtime-boundary",
+      "evidence": "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_reject_open_runtime_and_noncanonical_inputs"
+    },
+    {
+      "id": "independent-schema-validation",
+      "evidence": "crates/gantry-conformance/tests/ir_contracts.rs#canonical_artifact_vectors_match_the_public_facade"
+    }
+  ],
+  "exclusions": [
+    "Name resolution, inference, capability proofs, coherence, trait selection, and instantiation discovery remain analyzer work.",
+    "Execution of concrete generic applications and static trait calls remains runtime work.",
+    "Durable retention, reconstruction, tamper rejection, and recovery equivalence remain durable-runtime work.",
+    "No analyzer, evaluator, durable, embedding, publication, or release profile claim is enabled by this contract slice."
+  ],
+  "profiles": []
 }

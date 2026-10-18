@@ -130,7 +130,7 @@ fn console_capability_note_cites_only_declared_anchors() {
         specification_anchor(&root, "GNT-6.5"),
         "the cited abstract-requirement anchor must be published by the specification"
     );
-    assert_eq!(CONSOLE_CLAUSES.len(), 6);
+    assert_eq!(CONSOLE_CLAUSES.len(), 10);
     for clause in CONSOLE_CLAUSES {
         assert!(
             note.contains(clause),

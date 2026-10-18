@@ -33,18 +33,63 @@ console operation is `read_only`. `CONSOLE_OPERATION_FACTS` publishes the same f
 including that only an adapter that owns a replayable or transactional source and binds the admitted
 read identity to its exact result may retry a read.
 
+## Declared signatures, requirement groups, and authority admission
+
+`crates/gantry-ir/src/console.rs` publishes the five typed signatures of `GNT-46.6` in canonical
+declaration order — `input::read`, `output::write`, `output::flush`, `terminal::inspect`, and
+`control::set_mode` — with the receiver kinds `input-receiver-loan`, `output-receiver-loan`,
+`observation-receiver`, and `control-receiver`, the result shapes `chunk-or-error`,
+`accepted-prefix-receipt-or-error`, `unit-or-error`, and `terminal-report-or-error`, and the exact
+operation identities `std.console::input::read@1`, `std.console::output::write@1`,
+`std.console::output::flush@1`, `std.console::terminal::inspect@1`, and
+`std.console::control::set_mode@1`. `declare_console_signatures` and `admit_console_signatures`
+declare and admit exactly that closed set: a missing, partial, extra, duplicated, reordered, or
+retyped surface is refused under `console-signature-undeclared`. The `ConsoleOperation` vocabulary
+stays exactly the three spellings `read`, `write`, and `flush`; `terminal::inspect` and
+`control::set_mode` are not members of it, so no existing variant is read as implementing them, and
+`terminal::inspect` is the only `read_only` shape.
+
+`ConsoleRequirementGroup` publishes the four separately granted groups `input`, `output-flush`,
+`observation`, and `control` with the exact identities each governs, and `implies_authority_over`
+is `false` for every ordered pair of groups: no group satisfies another group requirement, and no
+ordering of the groups is an authority chain.
+
+`GNT-46.8` fixes access admission. `ConsoleAccessInjection::from_launch` is the only constructor,
+so access is injected by the launch and never reconstructed from an ambient numeric descriptor. A
+call whose group carries no injected grant is refused under `console-authority-missing` before it
+consumes an input cursor or delivers an octet; a presented grant that the injection did not issue
+is refused under `console-authority-forged`; an access presented as a numeric descriptor is
+refused under `console-authority-ambient-descriptor`. The owner that granted the access owns the
+final flush and the shutdown, and `ConsoleShutdownSettlement` publishes a flush failure separately
+from the fixed task outcome: `task_outcome_rewritten` is `false` for every settlement.
+
+`GNT-46.9` fixes the output boundary. The first declared output target is the redirected or
+otherwise non-controlling sink, which publishes its octets unchanged. On an attached terminal,
+octets containing the declared control octet `0x1b` are refused under
+`console-control-bearing-output-refused` unless the same requester holds an injected grant of the
+`control` group, and the refusal publishes the presented octets unchanged: no octet is stripped,
+replaced, or sanitized, and a refusal is never a silent control grant. An output presented to a
+sink kind the section does not declare is refused under `console-safe-output-unsupported` even when
+the octets carry no control octet.
+
 ## The shape of a console capability requirement
 
 The operation form of a public capability requirement is one four-part identity: the package-qualified declaration path,
 the complete canonical typed signature, the capability family, and the recovery class, which
 `crates/gantry-ir/src/authority.rs` composes in `AuthorityRequirementId::new` and the
-abstract-requirement contract of `GNT-6.5` owns. The console surface declares two of those parts
-today: the capability family spelling `console`, and the admissible recovery classes, which are the
-two classes its declared operations state — `idempotent` for a flush and `non_idempotent` for a
-read or a write, because no console operation is `read_only`. A console capability requirement can
-therefore never carry the excluded `read_only` class. The declaration path and the typed console
-operation signature are declared nowhere in the repository, so this note publishes no right
-spelling, mints no requirement identity, and records those two missing parts as an obligation
+abstract-requirement contract of `GNT-6.5` owns. The console surface declares three of those parts
+today: the capability family spelling `console`, the admissible recovery classes, and the complete
+canonical typed signatures of `GNT-46.6-console-operation-signatures`. The declared recovery
+classes are the two classes its declared operations state — `idempotent` for a
+flush and `non_idempotent` for a read or a write — while the two declared non-I/O signatures state
+`read_only` for `terminal::inspect` and `idempotent` for `control::set_mode`. No operation of the
+`ConsoleOperation` vocabulary is `read_only`, so a console capability requirement that names one of
+those three operations can never carry the excluded `read_only` class. The typed signature part of the
+requirement is published as an exact operation identity: `std.console::input::read@1`,
+`std.console::output::write@1`, `std.console::output::flush@1`,
+`std.console::terminal::inspect@1`, and `std.console::control::set_mode@1`. The package-qualified
+declaration path is still declared nowhere in the repository, so this note publishes no right
+spelling, mints no requirement identity, and records that single missing part as an obligation
 rather than a claim.
 
 ## Normative bounds already in force
@@ -62,6 +107,16 @@ rather than a claim.
 - `GNT-46.5-console-terminal-observations` fixes the terminal observation vocabulary and the control
   boundary: the detection facts `terminal-attached` and `terminal-not-attached`, a dimension
   observation inside `CONSOLE_DIMENSION_BOUND`, and terminal control left separately authorized.
+- `GNT-46.6-console-operation-signatures` declares the five typed signature shapes, their receivers,
+  their result shapes, their exact operation identities, and the closed declare-and-admit surface.
+- `GNT-46.7-console-requirement-groups` declares the four separately granted requirement groups
+  with exact operation identities and no authority implication between them.
+- `GNT-46.8-console-authority-admission` declares launch-injected access, the missing, forged, and
+  ambient-descriptor refusals, and grantor-owned final flush and shutdown with the flush failure
+  separate from a fixed task outcome.
+- `GNT-46.9-console-control-and-output-boundary` declares the redirected and attached-terminal
+  output targets, the escape control octet, the byte-preserving control-bearing refusal, and the
+  unsupported-safe-output refusal.
 - `GNT-29.15` is the host-contract non-claim: this section promises no runtime adapter or host
   operation, so no model fact or test here is a host guarantee.
 
@@ -77,11 +132,13 @@ no console clause is a release authority, a redaction rule, or an implicit decla
 ## What this surface does not claim
 
 - It declares no right spelling, no console capability requirement identity, and no authority-layer
-  family declaration: the declaration path and the typed console operation signature are undecided,
-  and this note records that gap instead of claiming the requirement identity.
+  family declaration: the package-qualified declaration path is undecided, and this note records
+  that single gap instead of claiming the requirement identity.
 - It grants no terminal-control capability: no console read, write, flush, detection, or dimension
-  observation carries terminal-control authority, and the `std.console::control` row stays a
-  declared name without a published contract.
+  observation carries terminal-control authority, and the `std.console::control` row
+  carries only the signature, requirement-group, admission, and refusal-boundary contracts of
+  `GNT-46.6` through `GNT-46.9`. A declared grant, a typed flag value, and an admitted write are
+  never a control capability.
 - It provides no adapter, no deterministic or raw adapter, no cross-target mapping, no launcher or
   protected-rendering arrangement, no terminal handle, and no descriptor, and it claims no runtime
   availability, quota, charge, or cancellation facility.
