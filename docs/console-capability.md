@@ -35,7 +35,7 @@ read identity to its exact result may retry a read.
 
 ## Declared signatures, requirement groups, and authority admission
 
-`crates/gantry-ir/src/console.rs` publishes the five typed signatures of `GNT-46.6` in canonical
+`crates/gantry-ir/src/console.rs` publishes the five semantic signature shapes of `GNT-46.6` in canonical
 declaration order — `input::read`, `output::write`, `output::flush`, `terminal::inspect`, and
 `control::set_mode` — with the receiver kinds `input-receiver-loan`, `output-receiver-loan`,
 `observation-receiver`, and `control-receiver`, the result shapes `chunk-or-error`,
@@ -74,23 +74,31 @@ the octets carry no control octet.
 
 ## The shape of a console capability requirement
 
-The operation form of a public capability requirement is one four-part identity: the package-qualified declaration path,
-the complete canonical typed signature, the capability family, and the recovery class, which
-`crates/gantry-ir/src/authority.rs` composes in `AuthorityRequirementId::new` and the
-abstract-requirement contract of `GNT-6.5` owns. The console surface declares three of those parts
-today: the capability family spelling `console`, the admissible recovery classes, and the complete
-canonical typed signatures of `GNT-46.6-console-operation-signatures`. The declared recovery
-classes are the two classes its declared operations state — `idempotent` for a
+The operation form of a public capability requirement is one four-part identity: the
+package-qualified declaration path, the complete canonical typed signature, the capability family,
+and the recovery class, which `crates/gantry-ir/src/authority.rs` composes in
+`AuthorityRequirementId::new` and the abstract-requirement contract of `GNT-6.5` owns. The console
+surface declares the capability family spelling `console`, the admissible recovery classes of its
+declared operations, and the semantic part of each declared signature: the semantic signature
+shape, the receiver kind, the result shape, and the exact operation identity.
+
+The declared recovery classes are the two classes its declared operations state — `idempotent` for a
 flush and `non_idempotent` for a read or a write — while the two declared non-I/O signatures state
 `read_only` for `terminal::inspect` and `idempotent` for `control::set_mode`. No operation of the
 `ConsoleOperation` vocabulary is `read_only`, so a console capability requirement that names one of
-those three operations can never carry the excluded `read_only` class. The typed signature part of the
-requirement is published as an exact operation identity: `std.console::input::read@1`,
+those three operations can never carry the excluded `read_only` class.
+
+The operation identity part of the requirement is published exactly: `std.console::input::read@1`,
 `std.console::output::write@1`, `std.console::output::flush@1`,
-`std.console::terminal::inspect@1`, and `std.console::control::set_mode@1`. The package-qualified
-declaration path is still declared nowhere in the repository, so this note publishes no right
-spelling, mints no requirement identity, and records that single missing part as an obligation
-rather than a claim.
+`std.console::terminal::inspect@1`, and `std.console::control::set_mode@1`.
+
+Two parts of that four-part identity remain undeclared, and this note records both as obligations
+rather than claims. The complete canonical typed signature is undeclared: the authority layer
+composes `CanonicalSignature` of `crates/gantry-ir/src/signature.rs` into `AuthorityRequirementId`,
+and that type encodes the parameter and result types and the receiver mode of one callable, none of
+which a console clause declares. The package-qualified declaration path is undeclared as well: it
+is declared nowhere in the repository. This note therefore publishes no right spelling, mints no
+requirement identity, and claims no complete canonical typed signature.
 
 ## Normative bounds already in force
 
@@ -107,7 +115,7 @@ rather than a claim.
 - `GNT-46.5-console-terminal-observations` fixes the terminal observation vocabulary and the control
   boundary: the detection facts `terminal-attached` and `terminal-not-attached`, a dimension
   observation inside `CONSOLE_DIMENSION_BOUND`, and terminal control left separately authorized.
-- `GNT-46.6-console-operation-signatures` declares the five typed signature shapes, their receivers,
+- `GNT-46.6-console-operation-signatures` declares the five signature shapes, their receivers,
   their result shapes, their exact operation identities, and the closed declare-and-admit surface.
 - `GNT-46.7-console-requirement-groups` declares the four separately granted requirement groups
   with exact operation identities and no authority implication between them.
@@ -132,8 +140,9 @@ no console clause is a release authority, a redaction rule, or an implicit decla
 ## What this surface does not claim
 
 - It declares no right spelling, no console capability requirement identity, and no authority-layer
-  family declaration: the package-qualified declaration path is undecided, and this note records
-  that single gap instead of claiming the requirement identity.
+  family declaration: the complete canonical typed signature and the package-qualified declaration
+  path are both undeclared, and this note records those two gaps instead of claiming the requirement
+  identity.
 - It grants no terminal-control capability: no console read, write, flush, detection, or dimension
   observation carries terminal-control authority, and the `std.console::control` row
   carries only the signature, requirement-group, admission, and refusal-boundary contracts of

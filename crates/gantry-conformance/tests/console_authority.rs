@@ -12,9 +12,10 @@ use gantry::ir::generated::RecoveryClass;
 use gantry::ir::{
     CONSOLE_CLAUSES, CONSOLE_CONTROL_OCTET, CONSOLE_ITEMS, CONSOLE_SIGNATURE_VERSION,
     ConsoleAccessIdentity, ConsoleAccessInjection, ConsoleAuthorityDiagnosticCode,
-    ConsoleControlFlags, ConsoleFlushOutcome, ConsoleGrant, ConsoleOperation, ConsoleOutputTarget,
-    ConsoleReceiver, ConsoleRequirementGroup, ConsoleResultShape, ConsoleShutdownSettlement,
-    ConsoleSignature, admit_console_requirement_groups, admit_console_set_mode,
+    ConsoleAuthorityError, ConsoleCallError, ConsoleControlFlags, ConsoleFlushOutcome,
+    ConsoleGrant, ConsoleOperation, ConsoleOutputTarget, ConsoleReceiver, ConsoleRequirementGroup,
+    ConsoleResultShape, ConsoleShutdownSettlement, ConsoleSignature, IO_REQUEST_OCTET_BOUND,
+    IoDiagnosticCode, IoError, IoRequest, admit_console_requirement_groups, admit_console_set_mode,
     admit_console_signatures, admit_console_write, console_octets_carry_control,
     declare_console_requirement_groups, declare_console_signatures,
 };
@@ -45,6 +46,29 @@ fn injection_for(groups: &[ConsoleRequirementGroup]) -> ConsoleAccessInjection {
 
 fn output_grant() -> ConsoleGrant {
     ConsoleGrant::new(ConsoleRequirementGroup::OutputFlush, REQUESTER, GRANTOR)
+}
+
+/// Returns the one admitted write request declaring exactly the presented octets.
+fn octets_request(octets: &[u8]) -> IoRequest {
+    let count = match u64::try_from(octets.len()) {
+        Ok(count) => count,
+        Err(error) => panic!("the presented octet count is not a quantity: {error}"),
+    };
+    match IoRequest::write(count) {
+        Ok(request) => request,
+        Err(error) => panic!("the presented octet count must be admissible: {error:?}"),
+    }
+}
+
+/// Returns the console authority refusal of one write call that must be refused.
+fn call_refusal<T>(result: Result<T, ConsoleCallError>) -> ConsoleAuthorityError {
+    match result {
+        Ok(_) => panic!("the declared console write must be refused"),
+        Err(ConsoleCallError::Authority(error)) => error,
+        Err(ConsoleCallError::Request(error)) => {
+            panic!("the console write must be refused by this section: {error:?}")
+        }
+    }
 }
 
 #[test]
@@ -329,12 +353,12 @@ fn console_access_admission_requires_launch_injected_grants() {
     let issued = output_grant();
     assert!(
         ConsoleAccessIdentity::Injected(issued)
-            .admit(&injection)
+            .admit(&injection, ConsoleRequirementGroup::OutputFlush)
             .is_ok()
     );
     let read_grant = ConsoleGrant::new(ConsoleRequirementGroup::Input, REQUESTER, GRANTOR);
     let error = ConsoleAccessIdentity::Injected(read_grant)
-        .admit(&injection)
+        .admit(&injection, ConsoleRequirementGroup::Input)
         .err()
         .unwrap_or_else(|| panic!("expected a console refusal"));
     assert_eq!(
@@ -342,18 +366,34 @@ fn console_access_admission_requires_launch_injected_grants() {
         ConsoleAuthorityDiagnosticCode::AuthorityMissing
     );
     assert_eq!(error.group(), Some(ConsoleRequirementGroup::Input));
-    let error = admit_console_write(
+    let error = call_refusal(admit_console_write(
         &injection,
         &read_grant,
+        &octets_request(b"never delivered"),
         ConsoleOutputTarget::RedirectedNonControlling,
         b"never delivered",
-    )
-    .err()
-    .unwrap_or_else(|| panic!("expected a console refusal"));
+    ));
+    assert_eq!(
+        error.code(),
+        ConsoleAuthorityDiagnosticCode::RequirementGroupInconsistent
+    );
+    assert_eq!(error.observed(), Some("input"));
+    assert_eq!(error.declared(), Some("output-flush"));
+    // The required output-flush group is consulted first, so a write under an injection that
+    // issues no output-flush grant still reports the missing required group.
+    let input_only = injection_for(&[ConsoleRequirementGroup::Input]);
+    let error = call_refusal(admit_console_write(
+        &input_only,
+        &output_grant(),
+        &octets_request(b"never delivered"),
+        ConsoleOutputTarget::RedirectedNonControlling,
+        b"never delivered",
+    ));
     assert_eq!(
         error.code(),
         ConsoleAuthorityDiagnosticCode::AuthorityMissing
     );
+    assert_eq!(error.group(), Some(ConsoleRequirementGroup::OutputFlush));
 }
 
 #[test]
@@ -391,7 +431,7 @@ fn forged_console_grants_are_refused() {
     );
     assert_eq!(error.group(), Some(ConsoleRequirementGroup::Control));
     let error = ConsoleAccessIdentity::Injected(forged_grantor)
-        .admit(&injection)
+        .admit(&injection, ConsoleRequirementGroup::OutputFlush)
         .err()
         .unwrap_or_else(|| panic!("expected a console refusal"));
     assert_eq!(
@@ -405,7 +445,7 @@ fn ambient_numeric_descriptor_access_is_refused() {
     let injection = injection_for(&[ConsoleRequirementGroup::Input]);
     for descriptor in [0, 1, 2] {
         let error = ConsoleAccessIdentity::AmbientDescriptor(descriptor)
-            .admit(&injection)
+            .admit(&injection, ConsoleRequirementGroup::Input)
             .err()
             .unwrap_or_else(|| panic!("expected a console refusal"));
         assert_eq!(
@@ -431,14 +471,13 @@ fn control_bearing_output_on_a_terminal_is_refused_byte_preservingly() {
     let octets = b"\x1b[2Jclear\x1b[0m";
     assert_eq!(CONSOLE_CONTROL_OCTET, 0x1b);
     assert!(console_octets_carry_control(octets));
-    let error = admit_console_write(
+    let error = call_refusal(admit_console_write(
         &injection,
         &grant,
+        &octets_request(octets),
         ConsoleOutputTarget::AttachedTerminal,
         octets,
-    )
-    .err()
-    .unwrap_or_else(|| panic!("expected a console refusal"));
+    ));
     assert_eq!(
         error.code(),
         ConsoleAuthorityDiagnosticCode::ControlBearingOutputRefused
@@ -450,6 +489,7 @@ fn control_bearing_output_on_a_terminal_is_refused_byte_preservingly() {
     let redirected = admit_console_write(
         &injection,
         &grant,
+        &octets_request(octets),
         ConsoleOutputTarget::RedirectedNonControlling,
         octets,
     )
@@ -458,6 +498,7 @@ fn control_bearing_output_on_a_terminal_is_refused_byte_preservingly() {
     let safe = admit_console_write(
         &injection,
         &grant,
+        &octets_request(b"plain"),
         ConsoleOutputTarget::AttachedTerminal,
         b"plain",
     )
@@ -470,6 +511,7 @@ fn control_bearing_output_on_a_terminal_is_refused_byte_preservingly() {
     let admitted = admit_console_write(
         &with_control,
         &grant,
+        &octets_request(octets),
         ConsoleOutputTarget::AttachedTerminal,
         octets,
     )
@@ -482,14 +524,13 @@ fn control_bearing_output_on_a_terminal_is_refused_byte_preservingly() {
             ConsoleGrant::new(ConsoleRequirementGroup::Control, "another", GRANTOR),
         ],
     );
-    let error = admit_console_write(
+    let error = call_refusal(admit_console_write(
         &foreign,
         &grant,
+        &octets_request(octets),
         ConsoleOutputTarget::AttachedTerminal,
         octets,
-    )
-    .err()
-    .unwrap_or_else(|| panic!("expected a console refusal"));
+    ));
     assert_eq!(
         error.code(),
         ConsoleAuthorityDiagnosticCode::ControlBearingOutputRefused
@@ -503,14 +544,13 @@ fn unsupported_safe_output_is_refused() {
     assert!(!ConsoleOutputTarget::Unsupported("socket").is_declared());
     assert!(ConsoleOutputTarget::RedirectedNonControlling.is_declared());
     assert!(ConsoleOutputTarget::AttachedTerminal.is_declared());
-    let error = admit_console_write(
+    let error = call_refusal(admit_console_write(
         &injection,
         &output_grant(),
+        &octets_request(b"safe"),
         ConsoleOutputTarget::Unsupported("socket"),
         b"safe",
-    )
-    .err()
-    .unwrap_or_else(|| panic!("expected a console refusal"));
+    ));
     assert_eq!(
         error.code(),
         ConsoleAuthorityDiagnosticCode::SafeOutputUnsupported
@@ -625,4 +665,158 @@ fn console_item_rows_publish_the_signature_and_authority_clauses() {
             .clauses
             .contains(&"GNT-46.8-console-authority-admission")
     );
+}
+
+#[test]
+fn console_write_consumes_one_admitted_bounded_request() {
+    let injection = injection_for(&[ConsoleRequirementGroup::OutputFlush]);
+    let grant = output_grant();
+    // Zero and over-bound quantities never become an admitted request at all: Section 45 refuses
+    // them under its own bound code, so no console write is presented with one.
+    match IoRequest::write(0) {
+        Ok(_) => panic!("a zero-quantity write request must be refused"),
+        Err(error) => assert_eq!(error.code(), IoDiagnosticCode::RequestBound),
+    }
+    match IoRequest::write(IO_REQUEST_OCTET_BOUND + 1) {
+        Ok(_) => panic!("a write request above the declared bound must be refused"),
+        Err(error) => assert_eq!(error.code(), IoDiagnosticCode::RequestBound),
+    }
+    let bounded = match IoRequest::write(IO_REQUEST_OCTET_BOUND) {
+        Ok(request) => request,
+        Err(error) => panic!("the declared bound is itself admissible: {error:?}"),
+    };
+    assert_eq!(bounded.quantity(), IO_REQUEST_OCTET_BOUND);
+    // The happy path consumes exactly the admitted request that declares the presented octets.
+    let octets = b"123456789";
+    let admitted = admit_console_write(
+        &injection,
+        &grant,
+        &octets_request(octets),
+        ConsoleOutputTarget::RedirectedNonControlling,
+        octets,
+    )
+    .unwrap_or_else(|error| panic!("the declared write must be admitted: {error}"));
+    assert_eq!(admitted.accepted_prefix(), octets.len());
+    // A request whose declared quantity is not the presented octet count is refused under the
+    // Section 45 mismatch code naming the provided fact, and no octet is delivered.
+    let short = octets_request(&octets[..octets.len() - 1]);
+    let mismatch = admit_console_write(
+        &injection,
+        &grant,
+        &short,
+        ConsoleOutputTarget::RedirectedNonControlling,
+        octets,
+    )
+    .err()
+    .unwrap_or_else(|| panic!("a declared quantity that differs must be refused"));
+    assert_eq!(
+        mismatch.io_code(),
+        Some(IoDiagnosticCode::OutcomeRequestMismatch)
+    );
+    assert!(mismatch.console_code().is_none());
+    match mismatch.request() {
+        Some(IoError::RequestMismatch { fact, .. }) => assert_eq!(*fact, "provided"),
+        other => panic!("the mismatch names the provided fact: {other:?}"),
+    }
+    // A request of another operation kind is refused before any octet is read out of it.
+    let read = match IoRequest::read(2) {
+        Ok(request) => request,
+        Err(error) => panic!("a two-octet read request is admissible: {error:?}"),
+    };
+    let wrong_kind = admit_console_write(
+        &injection,
+        &grant,
+        &read,
+        ConsoleOutputTarget::RedirectedNonControlling,
+        b"ab",
+    )
+    .err()
+    .unwrap_or_else(|| panic!("a read request presented to a write must be refused"));
+    assert_eq!(
+        wrong_kind.io_code(),
+        Some(IoDiagnosticCode::OutcomeRequestMismatch)
+    );
+    match wrong_kind.request() {
+        Some(IoError::RequestMismatch { fact, .. }) => assert_eq!(*fact, "operation"),
+        other => panic!("the mismatch names the operation fact: {other:?}"),
+    }
+}
+
+#[test]
+fn console_call_admission_precedence_is_ordered() {
+    // (a) The required group carries no injected grant, so missing is reported for the required
+    // group before the presented grant is compared with anything.
+    let input_only = injection_for(&[ConsoleRequirementGroup::Input]);
+    let missing = input_only
+        .admit_call(ConsoleRequirementGroup::OutputFlush, &output_grant())
+        .err()
+        .unwrap_or_else(|| panic!("an unissued required group must be refused"));
+    assert_eq!(
+        missing.code(),
+        ConsoleAuthorityDiagnosticCode::AuthorityMissing
+    );
+    assert_eq!(missing.group(), Some(ConsoleRequirementGroup::OutputFlush));
+    let output_only = injection_for(&[ConsoleRequirementGroup::OutputFlush]);
+    let control_grant = ConsoleGrant::new(ConsoleRequirementGroup::Control, REQUESTER, GRANTOR);
+    let flags = ConsoleControlFlags::new(false, false);
+    let missing_control = admit_console_set_mode(&output_only, &control_grant, flags)
+        .err()
+        .unwrap_or_else(|| panic!("a set-mode under an output-only injection must be refused"));
+    assert_eq!(
+        missing_control.code(),
+        ConsoleAuthorityDiagnosticCode::AuthorityMissing
+    );
+    assert_eq!(
+        missing_control.group(),
+        Some(ConsoleRequirementGroup::Control)
+    );
+    // (b) The presented grant names another group while the required group is issued, so the
+    // inconsistency is reported before any forged verdict is considered.
+    let both = injection_for(&[
+        ConsoleRequirementGroup::Input,
+        ConsoleRequirementGroup::OutputFlush,
+    ]);
+    let input_grant = ConsoleGrant::new(ConsoleRequirementGroup::Input, REQUESTER, GRANTOR);
+    let inconsistent = call_refusal(admit_console_write(
+        &both,
+        &input_grant,
+        &octets_request(b"four"),
+        ConsoleOutputTarget::RedirectedNonControlling,
+        b"four",
+    ));
+    assert_eq!(
+        inconsistent.code(),
+        ConsoleAuthorityDiagnosticCode::RequirementGroupInconsistent
+    );
+    assert_eq!(inconsistent.observed(), Some("input"));
+    assert_eq!(inconsistent.declared(), Some("output-flush"));
+    // (c) The presented grant was not issued for that requester and group.
+    let forged = ConsoleGrant::new(ConsoleRequirementGroup::OutputFlush, "other-task", GRANTOR);
+    let forged_refusal = call_refusal(admit_console_write(
+        &output_only,
+        &forged,
+        &octets_request(b"four"),
+        ConsoleOutputTarget::RedirectedNonControlling,
+        b"four",
+    ));
+    assert_eq!(
+        forged_refusal.code(),
+        ConsoleAuthorityDiagnosticCode::AuthorityForged
+    );
+    assert_eq!(
+        forged_refusal.group(),
+        Some(ConsoleRequirementGroup::OutputFlush)
+    );
+    // The steps are ordered: an unissued required group is missing even when the presented grant
+    // also names another group.
+    let unissued = ConsoleAccessInjection::from_launch(GRANTOR, Vec::new());
+    let ordered = unissued
+        .admit_call(ConsoleRequirementGroup::Control, &output_grant())
+        .err()
+        .unwrap_or_else(|| panic!("an unissued required group is refused first"));
+    assert_eq!(
+        ordered.code(),
+        ConsoleAuthorityDiagnosticCode::AuthorityMissing
+    );
+    assert_eq!(ordered.group(), Some(ConsoleRequirementGroup::Control));
 }

@@ -14,7 +14,7 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "4c6ce4ea3f48712604272dc92e079c0eb1bb0a4afa810d691a553a21ccb39075"
+      "sha256": "2bbf26e0aecf8c39745e2a05ee8ad17423e06743aabbab801850666182895bee"
     },
     {
       "path": "protocol/schemas/source-substrate-v1.schema.json",
@@ -34,7 +34,7 @@
       "id": "diagnostic-presentation",
       "kind": "golden",
       "path": "crates/gantry-conformance/tests/diagnostic_presentation.rs",
-      "revision": "037eaac4a62a1dd6eaa00711536a75da3554548ec8fc232637b1a7d16134749e",
+      "revision": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14",
       "state": "verified",
       "visibility": "public-facade"
     },
@@ -42,7 +42,7 @@
       "id": "requirement-ledger",
       "kind": "requirement",
       "path": "crates/gantry-conformance/tests/requirements_ledger.rs",
-      "revision": "037eaac4a62a1dd6eaa00711536a75da3554548ec8fc232637b1a7d16134749e",
+      "revision": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14",
       "state": "verified",
       "visibility": "public-facade"
     },
@@ -50,7 +50,7 @@
       "id": "source-provider",
       "kind": "public-api",
       "path": "crates/gantry-conformance/tests/source_provider.rs",
-      "revision": "037eaac4a62a1dd6eaa00711536a75da3554548ec8fc232637b1a7d16134749e",
+      "revision": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14",
       "state": "verified",
       "visibility": "public-facade"
     },
@@ -58,7 +58,7 @@
       "id": "source-substrate",
       "kind": "fixture",
       "path": "crates/gantry-conformance/tests/source_substrate.rs",
-      "revision": "037eaac4a62a1dd6eaa00711536a75da3554548ec8fc232637b1a7d16134749e",
+      "revision": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14",
       "state": "verified",
       "visibility": "public-facade"
     }
@@ -84,7 +84,7 @@
   ],
   "specification": {
     "path": "SPEC.md",
-    "sha256": "037eaac4a62a1dd6eaa00711536a75da3554548ec8fc232637b1a7d16134749e"
+    "sha256": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14"
   },
   "status": "verified",
   "validation_commands": [

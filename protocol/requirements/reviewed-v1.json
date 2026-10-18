@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "037eaac4a62a1dd6eaa00711536a75da3554548ec8fc232637b1a7d16134749e",
+  "specification_sha256": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9780,
-      "end_line": 18208,
+      "end_line": 18250,
       "rationale": null
     }
   ],
@@ -43834,10 +43834,10 @@
     {
       "id": "GNT-46.6-console-operation-signatures",
       "span_start_line": 17422,
-      "span_end_line": 17469,
+      "span_end_line": 17481,
       "anchor_line": 17422,
       "body_start_line": 17423,
-      "body_end_line": 17468,
+      "body_end_line": 17480,
       "profiles": [
         "analyzer"
       ],
@@ -43849,7 +43849,7 @@
         {
           "key": "clause-001",
           "start_line": 17423,
-          "end_line": 17468,
+          "end_line": 17480,
           "profiles": [
             "analyzer"
           ],
@@ -43875,11 +43875,11 @@
     },
     {
       "id": "GNT-46.7-console-requirement-groups",
-      "span_start_line": 17470,
-      "span_end_line": 17502,
-      "anchor_line": 17470,
-      "body_start_line": 17471,
-      "body_end_line": 17501,
+      "span_start_line": 17482,
+      "span_end_line": 17519,
+      "anchor_line": 17482,
+      "body_start_line": 17483,
+      "body_end_line": 17518,
       "profiles": [
         "analyzer"
       ],
@@ -43890,8 +43890,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 17471,
-          "end_line": 17501,
+          "start_line": 17483,
+          "end_line": 17518,
           "profiles": [
             "analyzer"
           ],
@@ -43916,11 +43916,11 @@
     },
     {
       "id": "GNT-46.8-console-authority-admission",
-      "span_start_line": 17503,
-      "span_end_line": 17542,
-      "anchor_line": 17503,
-      "body_start_line": 17504,
-      "body_end_line": 17541,
+      "span_start_line": 17520,
+      "span_end_line": 17584,
+      "anchor_line": 17520,
+      "body_start_line": 17521,
+      "body_end_line": 17583,
       "profiles": [
         "analyzer"
       ],
@@ -43931,8 +43931,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 17504,
-          "end_line": 17541,
+          "start_line": 17521,
+          "end_line": 17583,
           "profiles": [
             "analyzer"
           ],
@@ -43949,7 +43949,9 @@
                 "crates/gantry-conformance/tests/console_authority.rs#console_access_admission_requires_launch_injected_grants",
                 "crates/gantry-conformance/tests/console_authority.rs#forged_console_grants_are_refused",
                 "crates/gantry-conformance/tests/console_authority.rs#ambient_numeric_descriptor_access_is_refused",
-                "crates/gantry-conformance/tests/console_authority.rs#flush_failure_cannot_rewrite_a_fixed_task_outcome"
+                "crates/gantry-conformance/tests/console_authority.rs#flush_failure_cannot_rewrite_a_fixed_task_outcome",
+                "crates/gantry-conformance/tests/console_authority.rs#console_write_consumes_one_admitted_bounded_request",
+                "crates/gantry-conformance/tests/console_authority.rs#console_call_admission_precedence_is_ordered"
               ]
             }
           ]
@@ -43958,11 +43960,11 @@
     },
     {
       "id": "GNT-46.9-console-control-and-output-boundary",
-      "span_start_line": 17543,
-      "span_end_line": 17580,
-      "anchor_line": 17543,
-      "body_start_line": 17544,
-      "body_end_line": 17579,
+      "span_start_line": 17585,
+      "span_end_line": 17622,
+      "anchor_line": 17585,
+      "body_start_line": 17586,
+      "body_end_line": 17621,
       "profiles": [
         "analyzer"
       ],
@@ -43973,8 +43975,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 17544,
-          "end_line": 17579,
+          "start_line": 17586,
+          "end_line": 17621,
           "profiles": [
             "analyzer"
           ],
@@ -43998,16 +44000,16 @@
     },
     {
       "id": "GNT-47.0-filesystem-foundation-scope",
-      "span_start_line": 17581,
-      "span_end_line": 17598,
-      "anchor_line": 17581,
-      "body_start_line": 17582,
-      "body_end_line": 17597,
+      "span_start_line": 17623,
+      "span_end_line": 17640,
+      "anchor_line": 17623,
+      "body_start_line": 17624,
+      "body_end_line": 17639,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 17582,
-          "end_line": 17597,
+          "start_line": 17624,
+          "end_line": 17639,
           "profiles": [
             "analyzer"
           ],
@@ -44037,16 +44039,16 @@
     },
     {
       "id": "GNT-47.1-filesystem-modules-and-item-rows",
-      "span_start_line": 17599,
-      "span_end_line": 17623,
-      "anchor_line": 17599,
-      "body_start_line": 17600,
-      "body_end_line": 17622,
+      "span_start_line": 17641,
+      "span_end_line": 17665,
+      "anchor_line": 17641,
+      "body_start_line": 17642,
+      "body_end_line": 17664,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 17600,
-          "end_line": 17622,
+          "start_line": 17642,
+          "end_line": 17664,
           "profiles": [
             "analyzer"
           ],
@@ -44078,16 +44080,16 @@
     },
     {
       "id": "GNT-47.2-filesystem-path-values",
-      "span_start_line": 17624,
-      "span_end_line": 17665,
-      "anchor_line": 17624,
-      "body_start_line": 17625,
-      "body_end_line": 17664,
+      "span_start_line": 17666,
+      "span_end_line": 17707,
+      "anchor_line": 17666,
+      "body_start_line": 17667,
+      "body_end_line": 17706,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 17625,
-          "end_line": 17664,
+          "start_line": 17667,
+          "end_line": 17706,
           "profiles": [
             "analyzer"
           ],
@@ -44117,16 +44119,16 @@
     },
     {
       "id": "GNT-47.3-filesystem-action-values",
-      "span_start_line": 17666,
-      "span_end_line": 17691,
-      "anchor_line": 17666,
-      "body_start_line": 17667,
-      "body_end_line": 17690,
+      "span_start_line": 17708,
+      "span_end_line": 17733,
+      "anchor_line": 17708,
+      "body_start_line": 17709,
+      "body_end_line": 17732,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 17667,
-          "end_line": 17690,
+          "start_line": 17709,
+          "end_line": 17732,
           "profiles": [
             "analyzer"
           ],
@@ -44156,16 +44158,16 @@
     },
     {
       "id": "GNT-47.4-filesystem-resource-operations",
-      "span_start_line": 17692,
-      "span_end_line": 17737,
-      "anchor_line": 17692,
-      "body_start_line": 17693,
-      "body_end_line": 17736,
+      "span_start_line": 17734,
+      "span_end_line": 17779,
+      "anchor_line": 17734,
+      "body_start_line": 17735,
+      "body_end_line": 17778,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 17693,
-          "end_line": 17736,
+          "start_line": 17735,
+          "end_line": 17778,
           "profiles": [
             "analyzer"
           ],
@@ -44195,16 +44197,16 @@
     },
     {
       "id": "GNT-47.5-filesystem-resource-state",
-      "span_start_line": 17738,
-      "span_end_line": 17780,
-      "anchor_line": 17738,
-      "body_start_line": 17739,
-      "body_end_line": 17779,
+      "span_start_line": 17780,
+      "span_end_line": 17822,
+      "anchor_line": 17780,
+      "body_start_line": 17781,
+      "body_end_line": 17821,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 17739,
-          "end_line": 17779,
+          "start_line": 17781,
+          "end_line": 17821,
           "profiles": [
             "analyzer"
           ],
@@ -44234,16 +44236,16 @@
     },
     {
       "id": "GNT-47.6-filesystem-traversal",
-      "span_start_line": 17781,
-      "span_end_line": 17814,
-      "anchor_line": 17781,
-      "body_start_line": 17782,
-      "body_end_line": 17813,
+      "span_start_line": 17823,
+      "span_end_line": 17856,
+      "anchor_line": 17823,
+      "body_start_line": 17824,
+      "body_end_line": 17855,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 17782,
-          "end_line": 17813,
+          "start_line": 17824,
+          "end_line": 17855,
           "profiles": [
             "analyzer"
           ],
@@ -44273,16 +44275,16 @@
     },
     {
       "id": "GNT-47.7-filesystem-action-grants",
-      "span_start_line": 17815,
-      "span_end_line": 17843,
-      "anchor_line": 17815,
-      "body_start_line": 17816,
-      "body_end_line": 17842,
+      "span_start_line": 17857,
+      "span_end_line": 17885,
+      "anchor_line": 17857,
+      "body_start_line": 17858,
+      "body_end_line": 17884,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 17816,
-          "end_line": 17842,
+          "start_line": 17858,
+          "end_line": 17884,
           "profiles": [
             "analyzer"
           ],
@@ -44312,16 +44314,16 @@
     },
     {
       "id": "GNT-47.8-filesystem-link-policy",
-      "span_start_line": 17844,
-      "span_end_line": 17872,
-      "anchor_line": 17844,
-      "body_start_line": 17845,
-      "body_end_line": 17871,
+      "span_start_line": 17886,
+      "span_end_line": 17914,
+      "anchor_line": 17886,
+      "body_start_line": 17887,
+      "body_end_line": 17913,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 17845,
-          "end_line": 17871,
+          "start_line": 17887,
+          "end_line": 17913,
           "profiles": [
             "analyzer"
           ],
@@ -44351,16 +44353,16 @@
     },
     {
       "id": "GNT-47.9-filesystem-replacement",
-      "span_start_line": 17873,
-      "span_end_line": 17909,
-      "anchor_line": 17873,
-      "body_start_line": 17874,
-      "body_end_line": 17908,
+      "span_start_line": 17915,
+      "span_end_line": 17951,
+      "anchor_line": 17915,
+      "body_start_line": 17916,
+      "body_end_line": 17950,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 17874,
-          "end_line": 17908,
+          "start_line": 17916,
+          "end_line": 17950,
           "profiles": [
             "analyzer"
           ],
@@ -44390,16 +44392,16 @@
     },
     {
       "id": "GNT-47.10-filesystem-declared-limits",
-      "span_start_line": 17910,
-      "span_end_line": 17957,
-      "anchor_line": 17910,
-      "body_start_line": 17911,
-      "body_end_line": 17956,
+      "span_start_line": 17952,
+      "span_end_line": 17999,
+      "anchor_line": 17952,
+      "body_start_line": 17953,
+      "body_end_line": 17998,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 17911,
-          "end_line": 17956,
+          "start_line": 17953,
+          "end_line": 17998,
           "profiles": [
             "analyzer"
           ],
@@ -44429,16 +44431,16 @@
     },
     {
       "id": "GNT-47.11-filesystem-case-identity",
-      "span_start_line": 17958,
-      "span_end_line": 17995,
-      "anchor_line": 17958,
-      "body_start_line": 17959,
-      "body_end_line": 17994,
+      "span_start_line": 18000,
+      "span_end_line": 18037,
+      "anchor_line": 18000,
+      "body_start_line": 18001,
+      "body_end_line": 18036,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 17959,
-          "end_line": 17994,
+          "start_line": 18001,
+          "end_line": 18036,
           "profiles": [
             "analyzer"
           ],
@@ -44468,16 +44470,16 @@
     },
     {
       "id": "GNT-47.12-filesystem-operation-refusals",
-      "span_start_line": 17996,
-      "span_end_line": 18056,
-      "anchor_line": 17996,
-      "body_start_line": 17997,
-      "body_end_line": 18055,
+      "span_start_line": 18038,
+      "span_end_line": 18098,
+      "anchor_line": 18038,
+      "body_start_line": 18039,
+      "body_end_line": 18097,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 17997,
-          "end_line": 18055,
+          "start_line": 18039,
+          "end_line": 18097,
           "profiles": [
             "analyzer"
           ],
@@ -44507,16 +44509,16 @@
     },
     {
       "id": "GNT-47.13-filesystem-partial-progress-and-settlement",
-      "span_start_line": 18057,
-      "span_end_line": 18101,
-      "anchor_line": 18057,
-      "body_start_line": 18058,
-      "body_end_line": 18100,
+      "span_start_line": 18099,
+      "span_end_line": 18143,
+      "anchor_line": 18099,
+      "body_start_line": 18100,
+      "body_end_line": 18142,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18058,
-          "end_line": 18100,
+          "start_line": 18100,
+          "end_line": 18142,
           "profiles": [
             "analyzer"
           ],
@@ -44546,16 +44548,16 @@
     },
     {
       "id": "GNT-47.14-filesystem-durable-carriers",
-      "span_start_line": 18102,
-      "span_end_line": 18133,
-      "anchor_line": 18102,
-      "body_start_line": 18103,
-      "body_end_line": 18133,
+      "span_start_line": 18144,
+      "span_end_line": 18175,
+      "anchor_line": 18144,
+      "body_start_line": 18145,
+      "body_end_line": 18175,
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18103,
-          "end_line": 18133,
+          "start_line": 18145,
+          "end_line": 18175,
           "profiles": [
             "analyzer"
           ],
@@ -44585,11 +44587,11 @@
     },
     {
       "id": "GNT-48.0-observe-foundation-scope",
-      "span_start_line": 18134,
-      "span_end_line": 18147,
-      "anchor_line": 18134,
-      "body_start_line": 18135,
-      "body_end_line": 18147,
+      "span_start_line": 18176,
+      "span_end_line": 18189,
+      "anchor_line": 18176,
+      "body_start_line": 18177,
+      "body_end_line": 18189,
       "profiles": [
         "analyzer"
       ],
@@ -44600,8 +44602,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18135,
-          "end_line": 18147,
+          "start_line": 18177,
+          "end_line": 18189,
           "profiles": [
             "analyzer"
           ],
@@ -44624,11 +44626,11 @@
     },
     {
       "id": "GNT-48.1-observe-modules-and-item-rows",
-      "span_start_line": 18148,
-      "span_end_line": 18167,
-      "anchor_line": 18148,
-      "body_start_line": 18149,
-      "body_end_line": 18166,
+      "span_start_line": 18190,
+      "span_end_line": 18209,
+      "anchor_line": 18190,
+      "body_start_line": 18191,
+      "body_end_line": 18208,
       "profiles": [
         "analyzer"
       ],
@@ -44639,8 +44641,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18149,
-          "end_line": 18166,
+          "start_line": 18191,
+          "end_line": 18208,
           "profiles": [
             "analyzer"
           ],
@@ -44666,11 +44668,11 @@
     },
     {
       "id": "GNT-49.0-environment-foundation-scope",
-      "span_start_line": 18168,
-      "span_end_line": 18180,
-      "anchor_line": 18168,
-      "body_start_line": 18169,
-      "body_end_line": 18179,
+      "span_start_line": 18210,
+      "span_end_line": 18222,
+      "anchor_line": 18210,
+      "body_start_line": 18211,
+      "body_end_line": 18221,
       "profiles": [
         "analyzer"
       ],
@@ -44681,8 +44683,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18169,
-          "end_line": 18179,
+          "start_line": 18211,
+          "end_line": 18221,
           "profiles": [
             "analyzer"
           ],
@@ -44705,11 +44707,11 @@
     },
     {
       "id": "GNT-49.1-environment-modules-and-item-rows",
-      "span_start_line": 18181,
-      "span_end_line": 18201,
-      "anchor_line": 18181,
-      "body_start_line": 18182,
-      "body_end_line": 18198,
+      "span_start_line": 18223,
+      "span_end_line": 18243,
+      "anchor_line": 18223,
+      "body_start_line": 18224,
+      "body_end_line": 18240,
       "profiles": [
         "analyzer"
       ],
@@ -44720,8 +44722,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18182,
-          "end_line": 18198,
+          "start_line": 18224,
+          "end_line": 18240,
           "profiles": [
             "analyzer"
           ],
@@ -44746,11 +44748,11 @@
     },
     {
       "id": "GNT-50.0-random-foundation-scope",
-      "span_start_line": 18202,
-      "span_end_line": 18205,
-      "anchor_line": 18202,
-      "body_start_line": 18203,
-      "body_end_line": 18204,
+      "span_start_line": 18244,
+      "span_end_line": 18247,
+      "anchor_line": 18244,
+      "body_start_line": 18245,
+      "body_end_line": 18246,
       "profiles": [
         "analyzer"
       ],
@@ -44761,8 +44763,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18203,
-          "end_line": 18204,
+          "start_line": 18245,
+          "end_line": 18246,
           "profiles": [
             "analyzer"
           ],
@@ -44786,11 +44788,11 @@
     },
     {
       "id": "GNT-50.1-random-modules-and-item-rows",
-      "span_start_line": 18206,
-      "span_end_line": 18208,
-      "anchor_line": 18206,
-      "body_start_line": 18207,
-      "body_end_line": 18208,
+      "span_start_line": 18248,
+      "span_end_line": 18250,
+      "anchor_line": 18248,
+      "body_start_line": 18249,
+      "body_end_line": 18250,
       "profiles": [
         "analyzer"
       ],
@@ -44801,8 +44803,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18207,
-          "end_line": 18208,
+          "start_line": 18249,
+          "end_line": 18250,
           "profiles": [
             "analyzer"
           ],

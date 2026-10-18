@@ -8,7 +8,7 @@
 use std::fmt;
 
 use crate::generated::RecoveryClass;
-use crate::io::IoOperation;
+use crate::io::{IoDiagnosticCode, IoError, IoOperation, IoRequest};
 use crate::operation::ProgressObservation;
 use crate::package::TargetKind;
 use crate::stdlib::{
@@ -1218,6 +1218,88 @@ impl fmt::Display for ConsoleAuthorityError {
 
 impl std::error::Error for ConsoleAuthorityError {}
 
+/// One typed refusal from one admitted console call of this section.
+///
+/// A call admits its presented access first and the one admitted `std.io` request it consumes
+/// second, so a refusal names exactly one vocabulary: the console authority vocabulary of
+/// `GNT-46.8-console-authority-admission` and the output boundary of
+/// `GNT-46.9-console-control-and-output-boundary`, or the request vocabulary of
+/// `GNT-45.1-bounded-one-call-io-contract`. A request refusal stays the Section 45 refusal it is:
+/// this section mints no console diagnostic for it, restates no Section 45 condition, and adds no
+/// second refusal code.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ConsoleCallError {
+    /// The presented access, requirement group, or output target was refused by this section.
+    Authority(ConsoleAuthorityError),
+    /// The presented `std.io` request was refused by `GNT-45.1-bounded-one-call-io-contract`.
+    Request(IoError),
+}
+
+impl ConsoleCallError {
+    /// Returns the console authority refusal, when this section owns the refusal.
+    #[must_use]
+    pub const fn authority(&self) -> Option<&ConsoleAuthorityError> {
+        match self {
+            Self::Authority(error) => Some(error),
+            Self::Request(_) => None,
+        }
+    }
+
+    /// Returns the `std.io` request refusal, when Section 45 owns the refusal.
+    #[must_use]
+    pub const fn request(&self) -> Option<&IoError> {
+        match self {
+            Self::Authority(_) => None,
+            Self::Request(error) => Some(error),
+        }
+    }
+
+    /// Returns the console diagnostic code of this refusal, when this section owns it.
+    #[must_use]
+    pub const fn console_code(&self) -> Option<ConsoleAuthorityDiagnosticCode> {
+        match self {
+            Self::Authority(error) => Some(error.code()),
+            Self::Request(_) => None,
+        }
+    }
+
+    /// Returns the Section 45 diagnostic code of this refusal, when Section 45 owns it.
+    #[must_use]
+    pub fn io_code(&self) -> Option<IoDiagnosticCode> {
+        match self {
+            Self::Authority(_) => None,
+            Self::Request(error) => Some(error.code()),
+        }
+    }
+}
+
+impl From<ConsoleAuthorityError> for ConsoleCallError {
+    fn from(error: ConsoleAuthorityError) -> Self {
+        Self::Authority(error)
+    }
+}
+
+impl From<IoError> for ConsoleCallError {
+    fn from(error: IoError) -> Self {
+        Self::Request(error)
+    }
+}
+
+impl fmt::Display for ConsoleCallError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Authority(error) => write!(formatter, "{error}"),
+            Self::Request(error) => write!(
+                formatter,
+                "the presented std.io request was refused under {}",
+                error.code().wire_name()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ConsoleCallError {}
+
 /// One console access grant for one requirement group
 /// (`GNT-46.8-console-authority-admission`).
 ///
@@ -1329,23 +1411,48 @@ impl ConsoleAccessInjection {
         })
     }
 
-    /// Admits the grant of one declared call.
+    /// Admits the presented grant of one declared call whose signature requires `required`.
     ///
-    /// A group this injection issues no grant of is refused as missing before the call consumes an
-    /// input cursor, delivers an octet, or publishes a progress observation; a presented grant that
-    /// was not issued is refused as forged.
-    pub fn admit_call(&self, presented: &ConsoleGrant) -> Result<(), ConsoleAuthorityError> {
-        if !self.grants_group(presented.group) {
-            return Err(ConsoleAuthorityError::AuthorityMissing {
-                group: presented.group,
+    /// The call names the requirement group of the signature it calls, and the presented grant
+    /// must be exactly an issued grant of that group. The refusal precedence is the one
+    /// `GNT-46.8-console-authority-admission` declares:
+    ///
+    /// 1. the required group carries no injected grant, so the call is refused under
+    ///    `console-authority-missing`, naming the required group;
+    /// 2. the presented grant names another group, so the call is refused under
+    ///    `console-requirement-group-inconsistent`, naming the presented group and the required
+    ///    group;
+    /// 3. the presented grant was not issued for that requester and that group, so the call is
+    ///    refused under `console-authority-forged`, naming the group, the requester, and the
+    ///    grantor.
+    ///
+    /// Every step refuses before the call consumes an input cursor, delivers an octet, or
+    /// publishes a progress observation, and no refusal is repaired, widened, or merged with an
+    /// issued grant.
+    pub fn admit_call(
+        &self,
+        required: ConsoleRequirementGroup,
+        presented: &ConsoleGrant,
+    ) -> Result<(), ConsoleAuthorityError> {
+        if !self.grants_group(required) {
+            return Err(ConsoleAuthorityError::AuthorityMissing { group: required });
+        }
+        if presented.group != required {
+            return Err(ConsoleAuthorityError::RequirementGroupInconsistent {
+                observed: presented.group.wire_name().to_owned(),
+                declared: required.wire_name().to_owned(),
             });
         }
         self.admit(presented)
     }
 }
 
-/// One console access identity as presented to a declared signature
+/// One console access identity as presented to one declared signature
 /// (`GNT-46.8-console-authority-admission`).
+///
+/// The identity is admitted for the one requirement group of the signature it is presented to, so
+/// an identity of another group is never absorbed into the required group and an ambient numeric
+/// descriptor is never an access identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConsoleAccessIdentity {
     /// An access identity issued by the launch injection.
@@ -1355,14 +1462,20 @@ pub enum ConsoleAccessIdentity {
 }
 
 impl ConsoleAccessIdentity {
-    /// Admits the presented identity, returning the issued grant or exactly one refusal.
+    /// Admits the presented identity as an issued grant of the required group.
+    ///
+    /// The required group is the group of the signature the identity is presented to, and it is
+    /// the group the refusal precedence of [`ConsoleAccessInjection::admit_call`] decides over. An
+    /// ambient numeric descriptor is not an access identity and is refused before any group is
+    /// consulted.
     pub fn admit(
         self,
         injection: &ConsoleAccessInjection,
+        required: ConsoleRequirementGroup,
     ) -> Result<ConsoleGrant, ConsoleAuthorityError> {
         match self {
             Self::Injected(grant) => {
-                injection.admit_call(&grant)?;
+                injection.admit_call(required, &grant)?;
                 Ok(grant)
             }
             Self::AmbientDescriptor(descriptor) => {
@@ -1447,7 +1560,8 @@ impl ConsoleOutputTarget {
 
 /// The accepted-prefix receipt of one admitted console write.
 ///
-/// The receipt counts accepted octets and publishes no character, scalar, or display-column count.
+/// The receipt counts the accepted octets of the one admitted request the call consumed and
+/// publishes no character, scalar, or display-column count.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ConsoleWriteReceipt {
     accepted_prefix: usize,
@@ -1461,28 +1575,30 @@ impl ConsoleWriteReceipt {
     }
 }
 
-/// Admits one declared `output::write` call over its grant, target, and octets.
+/// Admits one declared `output::write` call over its grant, request, target, and octets.
 ///
-/// A presented grant of another group is refused as inconsistent before any octet is delivered;
-/// an unsupported sink is refused even for octets that carry no control octet; and
-/// control-bearing octets reach an attached terminal only under an injected grant of the control
-/// group, otherwise the refusal publishes the presented octets unchanged.
+/// The declared signature is `std.console::output::write@1` of the `output-flush` requirement
+/// group, so the presented grant must be an issued grant of that group, and the call consumes
+/// exactly one admitted request of `GNT-45.1-bounded-one-call-io-contract` whose declared
+/// quantity is the presented octet count. A request Section 45 refuses is refused here under the
+/// same Section 45 code: [`IoRequest::write`] already refuses a zero quantity and a quantity
+/// above [`crate::io::IO_REQUEST_OCTET_BOUND`], and this call refuses a request of another
+/// operation kind or a request whose declared quantity is not the presented octet count. An
+/// unsupported sink is refused even for octets that carry no control octet, and control-bearing
+/// octets reach an attached terminal only under an injected grant of the control group, otherwise
+/// the refusal publishes the presented octets unchanged.
 pub fn admit_console_write(
     injection: &ConsoleAccessInjection,
     presented: &ConsoleGrant,
+    request: &IoRequest,
     target: ConsoleOutputTarget,
     octets: &[u8],
-) -> Result<ConsoleWriteReceipt, ConsoleAuthorityError> {
-    injection.admit_call(presented)?;
-    if presented.group != ConsoleRequirementGroup::OutputFlush {
-        return Err(ConsoleAuthorityError::RequirementGroupInconsistent {
-            observed: presented.group.wire_name().to_owned(),
-            declared: ConsoleRequirementGroup::OutputFlush.wire_name().to_owned(),
-        });
-    }
+) -> Result<ConsoleWriteReceipt, ConsoleCallError> {
+    injection.admit_call(ConsoleRequirementGroup::OutputFlush, presented)?;
+    admit_console_write_request(request, octets)?;
     match target {
         ConsoleOutputTarget::Unsupported(sink) => {
-            Err(ConsoleAuthorityError::SafeOutputUnsupported { sink })
+            Err(ConsoleAuthorityError::SafeOutputUnsupported { sink }.into())
         }
         ConsoleOutputTarget::RedirectedNonControlling => Ok(ConsoleWriteReceipt {
             accepted_prefix: octets.len(),
@@ -1497,9 +1613,36 @@ pub fn admit_console_write(
             }
             Err(ConsoleAuthorityError::ControlBearingOutputRefused {
                 preserved_octets: octets.to_vec(),
-            })
+            }
+            .into())
         }
     }
+}
+
+/// Admits the one `std.io` request an `output::write` call consumes.
+///
+/// The request is one request the `GNT-45.1-bounded-one-call-io-contract` already admitted, so a
+/// zero quantity and a quantity above [`crate::io::IO_REQUEST_OCTET_BOUND`] never reach this
+/// decision: [`IoRequest::write`] refuses both under `io-request-bound` before the call exists.
+/// What this decision settles is whether the admitted request is the one the presented octets
+/// declare. A request of another operation kind is refused under `io-outcome-request-mismatch`
+/// naming the operation, and a request whose declared quantity is not the presented octet count is
+/// refused under the same code naming the `provided` fact, so a console write never delivers
+/// octets its admitted request did not declare and never admits a request it does not deliver.
+fn admit_console_write_request(request: &IoRequest, octets: &[u8]) -> Result<(), IoError> {
+    if request.operation() != IoOperation::Write {
+        return Err(IoError::RequestMismatch {
+            operation: request.operation(),
+            fact: "operation",
+        });
+    }
+    if octets.len() as u128 != u128::from(request.quantity()) {
+        return Err(IoError::RequestMismatch {
+            operation: IoOperation::Write,
+            fact: "provided",
+        });
+    }
+    Ok(())
 }
 
 /// One declared flush outcome of the `output::flush` signature.
@@ -1522,8 +1665,10 @@ impl ConsoleFlushOutcome {
 /// The settlement of one grantor-owned final flush and shutdown
 /// (`GNT-46.8-console-authority-admission`).
 ///
-/// The settlement publishes the flush outcome and the fixed task outcome separately: a failed
-/// flush never rewrites the fixed task outcome, and no settlement publishes a second task outcome.
+/// The settlement publishes the flush outcome and nothing else. The task outcome is owned outside
+/// this model, so the settlement cannot rewrite it, and the settlement does not represent that
+/// outcome, report it, or substitute for it: a failed flush never rewrites the fixed task
+/// outcome, and no settlement publishes a second task outcome.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ConsoleShutdownSettlement {
     flush: ConsoleFlushOutcome,
@@ -1542,13 +1687,18 @@ impl ConsoleShutdownSettlement {
         self.flush
     }
 
-    /// Returns whether the final flush failed, separately from the fixed task outcome.
+    /// Returns whether the final flush failed.
+    ///
+    /// The task outcome is externally owned and is not represented by this settlement.
     #[must_use]
     pub const fn flush_failed(self) -> bool {
         self.flush.is_failure()
     }
 
-    /// Returns whether this settlement rewrote the fixed task outcome: never.
+    /// Returns whether this settlement rewrote the externally owned task outcome: never.
+    ///
+    /// The settlement does not carry that outcome, so this accessor publishes the non-rewrite rule
+    /// alone and no settlement report of the task outcome.
     #[must_use]
     pub const fn task_outcome_rewritten(self) -> bool {
         false
@@ -1557,21 +1707,16 @@ impl ConsoleShutdownSettlement {
 
 /// Admits one declared `control::set_mode` call over its grant and typed flags.
 ///
-/// A set-mode requires an injected grant of the `control` group; the two typed flags are values
-/// and are never read as a capability or as terminal-control authority over any other call.
+/// The declared signature is `std.console::control::set_mode@1` of the `control` requirement
+/// group, so a set-mode requires an injected grant of that group under the refusal precedence of
+/// [`ConsoleAccessInjection::admit_call`]. The two typed flags are values and are never read as a
+/// capability or as terminal-control authority over any other call.
 pub fn admit_console_set_mode(
     injection: &ConsoleAccessInjection,
     presented: &ConsoleGrant,
     _flags: ConsoleControlFlags,
 ) -> Result<(), ConsoleAuthorityError> {
-    injection.admit_call(presented)?;
-    if presented.group != ConsoleRequirementGroup::Control {
-        return Err(ConsoleAuthorityError::RequirementGroupInconsistent {
-            observed: presented.group.wire_name().to_owned(),
-            declared: ConsoleRequirementGroup::Control.wire_name().to_owned(),
-        });
-    }
-    Ok(())
+    injection.admit_call(ConsoleRequirementGroup::Control, presented)
 }
 
 /// Declares exactly the five console operation signatures of

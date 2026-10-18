@@ -17422,12 +17422,23 @@ claims no performance, storage layout, or physical representation.
 <a id="GNT-46.6-console-operation-signatures"></a>
 
 **[GNT-46.6-console-operation-signatures] Declared console operation signatures.** This clause
-declares the five typed operation signatures of the `std.console` modules declared by
+declares the five semantic operation signature shapes of the `std.console` modules declared by
 `GNT-46.1-console-modules-and-item-rows`. The declared signatures are exactly five, in this
 canonical declaration order: `input::read`, `output::write`, `output::flush`, `terminal::inspect`,
 and `control::set_mode`, and the model publishes them through `ConsoleSignature` and its
 `ConsoleSignature::ALL`, so an undeclared module, operation, alias, or spelling is refused rather
-than inferred, substituted, or dropped. Each declared signature states exactly one receiver kind —
+than inferred, substituted, or dropped.
+
+This clause declares semantic signature shapes, and the complete canonical typed signature of the
+authority layer stays undeclared: each shape states one operation, one receiver kind, one result
+shape, and one exact operation identity. `CanonicalSignature` of
+`crates/gantry-ir/src/signature.rs`, which `crates/gantry-ir/src/authority.rs` composes into an
+`AuthorityRequirementId` of `GNT-6.5-abstract-requirements`, encodes the parameter and result types
+and the receiver mode of one callable, and this clause publishes neither those types nor that mode.
+Nor does this clause declare the package-qualified declaration path of a declared signature, so the
+four-part identity of a capability requirement stays incomplete by exactly those two parts.
+
+Each declared signature states exactly one receiver kind —
 an Input receiver loan, an Output receiver loan, an observation receiver, or a control receiver, in
 that canonical order — and exactly one result shape, and the model publishes those two vocabularies
 through `ConsoleReceiver` and `ConsoleResultShape`. The five declared shapes are
@@ -17458,9 +17469,10 @@ that vocabulary. The model declares exactly the five rows through `declare_conso
 admits exactly them through `admit_console_signatures`: a missing, partial, extra, duplicated,
 reordered, or retyped signature surface is refused under the frozen diagnostic
 `console-signature-undeclared`, naming the observed identity and the declared identity, rather than
-repaired, completed, or substituted. This clause publishes the signature shapes, their receivers,
-their result shapes, their identities, and the closed declare-and-admit surface only: it publishes
-no descriptor, ambient handle, terminal handle, terminal capability, adapter, host trait,
+repaired, completed, or substituted. This clause publishes the semantic signature shapes, their
+receivers, their result shapes, their identities, and the closed declare-and-admit surface only,
+and declares no complete canonical typed signature and no package-qualified declaration path: it
+publishes no descriptor, ambient handle, terminal handle, terminal capability, adapter, host trait,
 capability grant, terminal-control authority, encoding, conversion, replay or deduplication rule,
 escape sequence, cancellation safe point, quota, charge, buffer, schema, recovery, durability,
 boundary encoding, lowering, machine representation, or family behavior, no change to any other
@@ -17489,11 +17501,16 @@ an admitted requirement of one group satisfies no requirement of another, and th
 `implies_authority_over` as `false` for every ordered pair of declared groups, including a group
 and itself, so authority over observation never follows from input, output, or flush, authority over
 control never follows from text output, and no ordering of the four groups is an authority chain.
-Each declared signature is the typed signature part of one capability requirement of
-`GNT-6.5-abstract-requirements`, and this clause mints no requirement identity, declares no
-package-qualified declaration path, admits no right spelling, and publishes no capability grant,
-adapter, host trait, or runtime availability. This clause publishes the four groups, the exact
-operation identities they govern, and the no-implication rule only: it publishes no authority
+Each declared signature publishes the semantic shape, the receiver kind, the result shape, and the
+exact operation identity that one capability requirement of `GNT-6.5-abstract-requirements` will
+name, and no declared signature publishes the complete canonical typed signature of that
+requirement: `CanonicalSignature` of `crates/gantry-ir/src/signature.rs`, which the authority layer
+composes into an `AuthorityRequirementId`, encodes the parameter and result types and the receiver
+mode of one callable, and this clause declares neither those types nor that mode. This clause mints
+no requirement identity, declares no package-qualified declaration path, admits no right spelling,
+and publishes no capability grant, adapter, host trait, or runtime availability. This clause
+publishes the four groups, the exact operation identities they
+govern, and the no-implication rule only: it publishes no authority
 grant, no ambient descriptor, no terminal handle, no terminal capability, no encoding, replay, or
 deduplication rule, no escape sequence, no cancellation safe point, quota, charge, or chargeable
 work, no schema, recovery, durability, boundary encoding, lowering, machine representation, or
@@ -17521,17 +17538,42 @@ refusal. A grant that the injection did not issue for that requester and that gr
 another grantor, a grant of another requester, a grant of another group, or a grant that no group
 of the injected set names — is refused under the frozen diagnostic `console-authority-forged`,
 naming the group, the requester, and the grantor, and is never repaired, widened, merged with an
-issued grant, or treated as the injection that issued it. The owner that granted the access owns
+issued grant, or treated as the injection that issued it.
+
+Every call of a declared signature is admitted under one ordered precedence that names exactly one
+refusal. The required requirement group of the called signature is consulted first: a call whose
+required group carries no injected grant is refused under the frozen diagnostic
+`console-authority-missing`, naming that required group. A presented grant that names another group
+than the required one is refused next, under the frozen diagnostic
+`console-requirement-group-inconsistent`, naming the presented group and the required group, and
+only a presented grant that names the required group can be refused last under
+`console-authority-forged`. The `output-flush` group is the required group of
+`std.console::output::write@1` and `std.console::output::flush@1`, the `control` group is the
+required group of `std.console::control::set_mode@1`, and the `input` and `observation` groups are
+the required groups of `std.console::input::read@1` and `std.console::terminal::inspect@1`, so no
+call is admitted under a grant of another group and no missing required group is reported as an
+inconsistent, forged, or ambient refusal.
+
+A write call of `GNT-46.2-console-bounded-operations` consumes exactly one admitted request of
+`GNT-45.1-bounded-one-call-io-contract`, and that request declares exactly the octets the call
+presents: a request of another operation kind, or a request whose declared quantity is not the
+presented octet count, is refused under the Section 45 refusal `io-outcome-request-mismatch`, owned
+by `GNT-45.1-bounded-one-call-io-contract`, before any octet is delivered, while a zero quantity
+and a quantity above the Section 45 octet bound are never an admitted request at all. This section
+therefore mints no console diagnostic for a request refusal and publishes no second octet bound.
+
+The owner that granted the access owns
 the final flush and the shutdown: that owner performs the final flush of
 `GNT-46.2-console-bounded-operations`, whose completed observation stays the `committed-progress` of
 `GNT-29.2-reader-writer-seek-progress` with no octet count, and the console owns no background
 flusher, no flusher thread, no buffered work, and no work that outlives the granted access. A flush
 failure is published as the failure of that flush and never rewrites a fixed task outcome: the
-model publishes the flush outcome and the fixed task outcome separately through
-`ConsoleShutdownSettlement`, its `flush_failed` accessor publishes the flush failure, and its
-`task_outcome_rewritten` accessor is `false` for every settlement, so a failed flush cannot turn a
-successful task into a failed one, cannot turn a failed task into a successful one, and cannot
-substitute for the task outcome. This clause publishes the injected access identity set, the
+model publishes the flush outcome through `ConsoleShutdownSettlement`, its `flush_failed` accessor
+publishes the flush failure, and its `task_outcome_rewritten` accessor is `false` for every
+settlement; the settlement cannot rewrite the externally owned task outcome and does not represent
+that outcome itself, so a failed flush cannot turn a successful task into a failed one, cannot turn
+a failed task into a successful one, and cannot substitute for the task outcome.
+This clause publishes the injected access identity set, the
 missing, forged, and ambient refusals, and the flush and shutdown ownership only: it publishes no
 capability instance, right, generation, or lineage beyond the grant it names, no descriptor,
 terminal handle, terminal capability, terminal-control authority, adapter, host trait, capability
