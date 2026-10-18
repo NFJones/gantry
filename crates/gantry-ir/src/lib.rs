@@ -63,6 +63,7 @@ mod stdlib;
 mod target;
 mod test_support;
 mod text;
+mod time;
 pub mod toolchain;
 mod type_expression;
 mod type_properties;
@@ -485,6 +486,15 @@ pub use numeric::{
     UnaryBitOperation, UnaryFloatAlgorithm, admit_num_surface, apply_in_mode,
     canonical_num_hierarchy, declare_num_surface, float_to_int, format_canonical_float,
     format_canonical_int, int_to_float, negate, parse_canonical_float, parse_canonical_int,
+};
+// The Section 51 time family is declaration-only: it publishes the six closed module-name rows
+// of the capability-backed `std.time` family with their owning clauses and application-only
+// applicability, and declares no clock, timer, scheduler, timezone upgrade, or runtime
+// availability.
+pub use time::{
+    TIME_CLAUSES, TIME_ITEMS, TIME_MODULE_CLAUSES, TIME_MODULE_MODES, TIME_MODULE_ROWS,
+    TIME_MODULE_TARGETS, admit_time_surface, canonical_time_hierarchy, declare_time_package,
+    declare_time_surface, validate_time_module_rows,
 };
 // The Section 34 standard-library architecture model is declaration-only: it records
 // the logical package hierarchy, its dependency DAG, the edition prelude, facade

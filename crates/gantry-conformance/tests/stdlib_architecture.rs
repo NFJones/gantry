@@ -21,8 +21,8 @@ use gantry::ir::{
     canonical_collections_hierarchy, canonical_crypto_hierarchy, canonical_data_hierarchy,
     canonical_env_hierarchy, canonical_num_hierarchy, canonical_pure_hierarchy,
     canonical_random_hierarchy, canonical_std_hierarchy, canonical_text_hierarchy,
-    check_layout_identity, check_stdlib_non_claims, hex_decode, hex_encode, inspect_presentation,
-    require_applicable, sha256_digest,
+    canonical_time_hierarchy, check_layout_identity, check_stdlib_non_claims, hex_decode,
+    hex_encode, inspect_presentation, require_applicable, sha256_digest,
 };
 
 const CORE: &str = "std.core";
@@ -1314,6 +1314,7 @@ fn aggregate_hierarchy_composes_every_declared_family_surface() {
         canonical_num_hierarchy(),
         canonical_random_hierarchy(),
         canonical_text_hierarchy(),
+        canonical_time_hierarchy(),
     ];
     let mut expected: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for family in families {

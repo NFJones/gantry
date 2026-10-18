@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9",
-  "byte_length": 1422863,
-  "line_count": 18250,
+  "specification_sha256": "2f2e7429e286d21c8efa6b4aea4ca0cc61a4d8dd52ac74cce209647d0496b80b",
+  "byte_length": 1428920,
+  "line_count": 18265,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8576,
-      "sha256": "16187e0e129b2376bc07911ca7a99b5496b0e6f3bdb9bdce1723cf3ba2863e96",
+      "sha256": "035bc38da62d276bd6ed3ba2399fa3c7bc2d64a0da5a6ccf7729c0409cad6c68",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9780,
-      "end_line": 18250,
-      "sha256": "e7acc5cee36ef12d3aae89c0f0a7b3a1a6d3b886c46ac74b54368e44485a3b77",
+      "end_line": 18265,
+      "sha256": "7bcfcdaa43265d8e8bf822b87b040f23e3d4408be28143117533b968c98d7ae1",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 770,
       "span_end_line": 832,
-      "span_sha256": "8f5758ff0132368294569e7930856412df2d4e292e379b711bc5a8d311e40c68",
+      "span_sha256": "f7d48a9c663fe506e3dce55d3722af6280e6e6957b3c2671f87dbfbb8cb6ee17",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 829,
-      "body_sha256": "941c04682194114843f9d94171afcf4db4069f6498a3b845f8d7644dcac711cd",
+      "body_sha256": "ecdc2b1641bbe5d819145cf6867af9f542635b9cdb59d7a75741468347667dae",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -46076,8 +46076,8 @@
     {
       "id": "GNT-50.1-random-modules-and-item-rows",
       "span_start_line": 18248,
-      "span_end_line": 18250,
-      "span_sha256": "b290d2a0679cc23e7ff4c2f6c9fd72c08ac39160385dce99932a05618c5e22df",
+      "span_end_line": 18254,
+      "span_sha256": "89eeacd1b51b931c132c543654ca058b64f954e4c9b5aea81bc34d104b588337",
       "anchor_line": 18248,
       "body_start_line": 18249,
       "body_end_line": 18250,
@@ -46108,6 +46108,133 @@
               "evidence": [
                 "crates/gantry-conformance/tests/stdlib_naming.rs#random_module_name_is_owned_by_its_own_scope_and_row_clauses",
                 "crates/gantry-conformance/tests/stdlib_naming.rs#every_declared_family_set_is_closed_and_refuses_without_mutation"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-51.0-time-foundation-scope",
+      "span_start_line": 18255,
+      "span_end_line": 18258,
+      "span_sha256": "b3eecfd74d1c73df9081c8bc6a6998ca037a328873745f0197743f3d4ed3feeb",
+      "anchor_line": 18255,
+      "body_start_line": 18256,
+      "body_end_line": 18257,
+      "body_sha256": "754fc7a3f510ca394eaa511be026b69f431238d7307944f9b0244de0b5990cd8",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18256,
+          "end_line": 18257,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/time_foundation.rs#time_scope_is_declared_without_runtime_or_authority_claims"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-51.1-time-modules-and-item-rows",
+      "span_start_line": 18259,
+      "span_end_line": 18262,
+      "span_sha256": "bf1957594a56a49ba20aa0887854ad1128f6c5296bfc00e02285aa5ea3c4eaf3",
+      "anchor_line": 18259,
+      "body_start_line": 18260,
+      "body_end_line": 18261,
+      "body_sha256": "52e5f7fa5f3de783195cda74412759a89807e0e3c721d5dd14b35b745447bf19",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18260,
+          "end_line": 18261,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/time_foundation.rs#time_module_rows_are_closed_and_canonical",
+                "crates/gantry-conformance/tests/time_foundation.rs#time_surface_declaration_requires_package_and_admits_exact_rows",
+                "crates/gantry-conformance/tests/time_foundation.rs#time_surface_rejects_missing_extra_and_duplicate_rows",
+                "crates/gantry-conformance/tests/time_foundation.rs#time_surface_rejects_wrong_class_tier_and_applicability"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-51.2-time-declaration-non-claims",
+      "span_start_line": 18263,
+      "span_end_line": 18265,
+      "span_sha256": "ccfcbb73bf165d3e5a316e3d8b2995255f0f6714af2eb36a68fbf14240907d38",
+      "anchor_line": 18263,
+      "body_start_line": 18264,
+      "body_end_line": 18265,
+      "body_sha256": "a3d25d3203d259a01b760ebdeee052d077c2e877f06802cad214ee4f6d7ed6d3",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18264,
+          "end_line": 18265,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/time_foundation.rs#time_non_claims_are_published_without_guarantees",
+                "crates/gantry-conformance/tests/time_foundation.rs#time_reader_note_preserves_declaration_and_qualification_boundaries"
               ],
               "rationale": null
             }

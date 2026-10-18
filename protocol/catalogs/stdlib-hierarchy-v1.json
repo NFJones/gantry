@@ -627,6 +627,94 @@
           ]
         }
       ]
+    },
+    {
+      "name": "std.time",
+      "class": "package",
+      "tier": "stable",
+      "modes": [
+        "application"
+      ],
+      "targets": [
+        "library",
+        "binary"
+      ],
+      "dependencies": [],
+      "interface_digest": "edc88445d0505d75e60b7cd01a476ef4ad142d12b3e5e923d143f6e53974cb49",
+      "items": [
+        {
+          "name": "std.time.civil",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.time.clocks",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.time.locale",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.time.rule_data",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.time.timers",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        },
+        {
+          "name": "std.time.values",
+          "class": "module",
+          "tier": "stable",
+          "modes": [
+            "application"
+          ],
+          "targets": [
+            "library",
+            "binary"
+          ]
+        }
+      ]
     }
   ]
 }

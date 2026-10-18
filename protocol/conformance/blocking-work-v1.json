@@ -1,6 +1,6 @@
 {
   "format": "gantry.blocking-work-evidence/v1",
-  "specification_sha256": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9",
+  "specification_sha256": "2f2e7429e286d21c8efa6b4aea4ca0cc61a4d8dd52ac74cce209647d0496b80b",
   "issue": "GNT-ASYNC-BLOCK-001",
   "requirements": [
     {

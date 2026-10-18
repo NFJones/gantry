@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9",
+  "specification_sha256": "2f2e7429e286d21c8efa6b4aea4ca0cc61a4d8dd52ac74cce209647d0496b80b",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9780,
-      "end_line": 18250,
+      "end_line": 18265,
       "rationale": null
     }
   ],
@@ -44791,7 +44791,7 @@
     {
       "id": "GNT-50.1-random-modules-and-item-rows",
       "span_start_line": 18248,
-      "span_end_line": 18250,
+      "span_end_line": 18254,
       "anchor_line": 18248,
       "body_start_line": 18249,
       "body_end_line": 18250,
@@ -44821,6 +44821,127 @@
               "evidence": [
                 "crates/gantry-conformance/tests/stdlib_naming.rs#random_module_name_is_owned_by_its_own_scope_and_row_clauses",
                 "crates/gantry-conformance/tests/stdlib_naming.rs#every_declared_family_set_is_closed_and_refuses_without_mutation"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-51.0-time-foundation-scope",
+      "span_start_line": 18255,
+      "span_end_line": 18258,
+      "anchor_line": 18255,
+      "body_start_line": 18256,
+      "body_end_line": 18257,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18256,
+          "end_line": 18257,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/time_foundation.rs#time_scope_is_declared_without_runtime_or_authority_claims"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-51.1-time-modules-and-item-rows",
+      "span_start_line": 18259,
+      "span_end_line": 18262,
+      "anchor_line": 18259,
+      "body_start_line": 18260,
+      "body_end_line": 18261,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18260,
+          "end_line": 18261,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/time_foundation.rs#time_module_rows_are_closed_and_canonical",
+                "crates/gantry-conformance/tests/time_foundation.rs#time_surface_declaration_requires_package_and_admits_exact_rows",
+                "crates/gantry-conformance/tests/time_foundation.rs#time_surface_rejects_missing_extra_and_duplicate_rows",
+                "crates/gantry-conformance/tests/time_foundation.rs#time_surface_rejects_wrong_class_tier_and_applicability"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-51.2-time-declaration-non-claims",
+      "span_start_line": 18263,
+      "span_end_line": 18265,
+      "anchor_line": 18263,
+      "body_start_line": 18264,
+      "body_end_line": 18265,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18264,
+          "end_line": 18265,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/time_foundation.rs#time_non_claims_are_published_without_guarantees",
+                "crates/gantry-conformance/tests/time_foundation.rs#time_reader_note_preserves_declaration_and_qualification_boundaries"
               ],
               "rationale": null
             }
