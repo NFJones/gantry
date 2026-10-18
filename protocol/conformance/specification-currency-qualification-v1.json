@@ -2,32 +2,32 @@
   "format": "gantry.specification-currency-qualification/v1",
   "issue": "be47045e-93fb-473b-af7a-2d459aae091c",
   "status": "verified",
-  "specification_sha256": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14",
+  "specification_sha256": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9",
   "superseded_specification_sha256": "f0204a851dfcf5e236ae13bc7844bb3861da52f31e1702a82faad28d51602b60",
   "candidate": {
     "base_commit": "243c9f4af8a8525d52e1e04956a6039819b2cede",
     "currency_repair_parent_commit": "243c9f4af8a8525d52e1e04956a6039819b2cede",
-    "reviewed_through_commit": "0987c539826afefba4cbbdbeb63e6f6f51a68494",
+    "reviewed_through_commit": "369865e417b16a666f12c13ec626b2a78d65f9bf",
     "since_commit": "243c9f4af8a8525d52e1e04956a6039819b2cede",
-    "tree_sha": "123d42713c3264b668097c8dbdec1ae86bf0dd4a",
+    "tree_sha": "07ae1c943a1896e2f605aa45bad54d6bfa1aa280",
     "identity_note": "Content identity is the candidate input digest set plus the candidate tree hash. The record is committed after the candidate, so it names the reviewed-through commit and its tree rather than its own.",
     "toolchain": "1.97.1 minimal with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
     "inputs": [
       {
         "path": "SPEC.md",
-        "sha256": "ad6d43b716236dc2e0464c42917bb211ec6a36f1b3ab2fd8f675d2334201df14"
+        "sha256": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9"
       },
       {
         "path": "protocol/requirements/reviewed-v1.json",
-        "sha256": "a54fa500244e78e4c34d127761ae8d94451fa2b85ed23f079f65c803033712bf"
+        "sha256": "1af6b859c8c0918e696fd7287936021684010e485060e5d4879b4eb88017b68b"
       },
       {
         "path": "protocol/requirements/section14-v1.json",
-        "sha256": "bb044e44018e0ab39667bb1a8da1364e9ad6b50dbc2a2bd6aef2650c1685b30a"
+        "sha256": "27ce5396dc87f0d15b0d5ca90ddb8b129d01c469d88451d0565ffef98d0e44c3"
       },
       {
         "path": "protocol/requirements/generated/requirements-v1.json",
-        "sha256": "2bbf26e0aecf8c39745e2a05ee8ad17423e06743aabbab801850666182895bee"
+        "sha256": "e21ff5924f8bc8aa90ec64fb681c6fa6cbb3dde49e3cf8dabf46a5f5994c10b4"
       },
       {
         "path": "Cargo.lock",
@@ -40,7 +40,7 @@
     ]
   },
   "drift_review": {
-    "specification_commits_reviewed": 2,
+    "specification_commits_reviewed": 3,
     "requirements_before": {
       "count": 635,
       "clauses": 919
@@ -354,7 +354,7 @@
       },
       {
         "command": "cargo test -p gantry-conformance --test console_authority",
-        "result": "17 passed, 0 failed"
+        "result": "19 passed, 0 failed"
       },
       {
         "command": "cargo test -p gantry-conformance --test console_foundation",
@@ -365,8 +365,12 @@
         "result": "4 passed, 0 failed"
       },
       {
-        "command": "cargo test -p gantry-conformance --test analyzer_gate --test async_execution_conformance --test async_execution_gate --test generics_conformance_gate --test native_source_concurrency_gate",
-        "result": "13 passed, 0 failed"
+        "command": "cargo test --locked -p gantry-conformance",
+        "result": "every lane passes except the inherited general_purpose_preregistration environment failure"
+      },
+      {
+        "command": "cargo test --locked -p gantry-conformance --test async_publication",
+        "result": "2 passed, 0 failed"
       },
       {
         "command": "cargo test -p gantry-conformance --test specification_currency_qualification",
