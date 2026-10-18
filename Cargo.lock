@@ -226,6 +226,7 @@ dependencies = [
  "gantry-host",
  "gantry-ir",
  "gantry-observe",
+ "rustix",
 ]
 
 [[package]]

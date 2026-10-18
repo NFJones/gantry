@@ -21,6 +21,7 @@ gantry-core.workspace = true
 gantry-host.workspace = true
 gantry-ir.workspace = true
 gantry-observe.workspace = true
+rustix.workspace = true
 
 [lints]
 workspace = true

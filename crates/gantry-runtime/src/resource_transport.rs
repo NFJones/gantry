@@ -170,6 +170,25 @@ impl<T> OwnedHostResource<T> {
         &self.account
     }
 
+    /// Inspects the bound host value without an admitted callback or accounting change.
+    ///
+    /// This route changes no accounting, quota, lease, charge, or physical fact. It exists for
+    /// identity checks that must precede a lifecycle transition, and it confers no loan, authority,
+    /// or mutation over the value. A pending loan, a poisoned boundary, or an already disposed value
+    /// refuses.
+    pub fn inspect<R>(&self, inspect: impl FnOnce(&T) -> R) -> Result<R, HostResourceError> {
+        if self.loan_pending {
+            return Err(HostResourceError::LoanOutstanding);
+        }
+        if self.is_poisoned() {
+            return Err(HostResourceError::TransportPoisoned);
+        }
+        let Some(value) = self.value.as_ref() else {
+            return Err(HostResourceError::Disposed);
+        };
+        Ok(inspect(value))
+    }
+
     /// Reports whether this transport boundary has been poisoned by an integration panic.
     #[must_use]
     pub fn is_poisoned(&self) -> bool {

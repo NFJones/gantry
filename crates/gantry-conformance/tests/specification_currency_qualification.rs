@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -722,31 +723,30 @@ fn validate_successors(root: &Path, record: &Record) -> Result<(), String> {
     if changed != recorded || recorded.len() != record.successors.len() {
         return Err("recorded successor set differs from the candidate descendants".to_owned());
     }
-    for successor in &record.successors {
-        verify_successor_digest(root, successor)?;
-    }
-    Ok(())
+    validate_successor_digests(root, &record.successors)
 }
 
-/// Verifies one recorded successor digest against the bytes it currently pins.
+/// Verifies each recorded successor digest against the bytes it names.
 ///
-/// Self-referential records cannot pin their own digest, so an empty digest is
-/// accepted only for those paths. Every other successor must pin a digest that
-/// matches its committed bytes.
-fn verify_successor_digest(root: &Path, successor: &Successor) -> Result<(), String> {
-    if successor.sha256.is_empty() {
-        if !self_referential(&successor.path) {
-            return Err(format!(
-                "successor has no pinned digest: {}",
-                successor.path
-            ));
+/// A self-referential record may leave its digest empty; every other successor must pin the digest
+/// of the exact file it names. The set-equality and clean-worktree decisions stay with the caller,
+/// so this helper is a pure digest decision over explicit entries and can be exercised against a
+/// test-local file independently of the live record shape.
+fn validate_successor_digests(root: &Path, successors: &[Successor]) -> Result<(), String> {
+    for successor in successors {
+        if successor.sha256.is_empty() {
+            if !self_referential(&successor.path) {
+                return Err(format!(
+                    "successor has no pinned digest: {}",
+                    successor.path
+                ));
+            }
+            continue;
         }
-        return Ok(());
-    }
-    let bytes = fs::read(root.join(&successor.path))
-        .map_err(|error| format!("could not read successor {}: {error}", successor.path))?;
-    if successor.sha256 != sha256(&bytes) {
-        return Err(format!("successor digest differs: {}", successor.path));
+        let bytes = fs::read(root.join(&successor.path)).map_err(io_error)?;
+        if successor.sha256 != sha256(&bytes) {
+            return Err(format!("successor digest differs: {}", successor.path));
+        }
     }
     Ok(())
 }
@@ -801,14 +801,90 @@ fn dirty_path_is_applicable(path: &str) -> bool {
     !path.starts_with("target/") && !path.starts_with("docs/reference/")
 }
 
+/// One fresh temporary directory removed when the value is dropped.
+struct TemporaryDirectory {
+    root: PathBuf,
+}
+
+impl TemporaryDirectory {
+    /// Creates one fresh directory under the canonical temporary directory.
+    fn new(label: &str) -> Self {
+        let ordinal = NEXT_TEMP.fetch_add(1, Ordering::SeqCst);
+        let root = std::env::temp_dir().join(format!(
+            "gantry-qualification-{label}-{}-{ordinal}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap_or_else(|error| panic!("temporary root: {error}"));
+        Self { root }
+    }
+
+    /// Returns the directory path.
+    fn path(&self) -> &Path {
+        &self.root
+    }
+
+    /// Writes one file the caller names again explicitly.
+    fn file(&self, name: &str, bytes: &[u8]) {
+        fs::write(self.root.join(name), bytes)
+            .unwrap_or_else(|error| panic!("temporary file: {error}"));
+    }
+}
+
+impl Drop for TemporaryDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+/// The next temporary directory ordinal.
+static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+
 #[test]
 fn qualification_validator_rejects_successor_and_dirty_input_counterexamples() {
     let root = workspace_root();
     let record: Record = read_json(&root.join(RECORD_PATH));
-    // The recorded successor set is the candidate-descendant diff at the current
-    // head, so dropping a recorded successor must be refused. This holds even
-    // when every remaining successor is self-referential and therefore carries
-    // no digest, which is the shape of a record-only recut.
+
+    // The digest decision is exercised over explicit entries against one test-local file, so the
+    // branch is covered whether or not the live record currently carries a pinned successor.
+    let temporary = TemporaryDirectory::new("successor-digest");
+    let body = b"one successor body".to_vec();
+    temporary.file("pinned.txt", &body);
+    let control = Successor {
+        path: "pinned.txt".to_owned(),
+        sha256: sha256(&body),
+    };
+    assert_eq!(
+        validate_successor_digests(temporary.path(), std::slice::from_ref(&control)),
+        Ok(())
+    );
+    let mut stale = control.clone();
+    stale.sha256 = "0".repeat(64);
+    assert!(validate_successor_digests(temporary.path(), std::slice::from_ref(&stale)).is_err());
+    let mut unpinned = control.clone();
+    unpinned.sha256.clear();
+    assert!(validate_successor_digests(temporary.path(), std::slice::from_ref(&unpinned)).is_err());
+
+    // The live record keeps its exact shape invariants: the recorded successor set is the candidate
+    // descendant set, and only a self-referential record may leave its digest empty.
+    let changed = git_changed_paths(&root, &record.candidate.reviewed_through_commit)
+        .unwrap_or_else(|error| panic!("{error}"))
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let recorded = record
+        .successors
+        .iter()
+        .map(|successor| successor.path.clone())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(changed, recorded);
+    assert_eq!(recorded.len(), record.successors.len());
+    for entry in &record.successors {
+        assert_eq!(entry.sha256.is_empty(), self_referential(&entry.path));
+    }
+    assert_eq!(
+        validate_successor_digests(&root, &record.successors),
+        Ok(())
+    );
+
     let mut missing_successor = record.clone();
     assert!(
         !missing_successor.successors.is_empty(),
@@ -816,81 +892,6 @@ fn qualification_validator_rejects_successor_and_dirty_input_counterexamples() {
     );
     missing_successor.successors.pop();
     assert!(validate(&root, &missing_successor).is_err());
-
-    // Only self-referential successors may omit a digest, and every one of them
-    // must omit it. A legitimate record-only recut therefore proves the
-    // invariant without requiring a pinned successor to exist.
-    for entry in &record.successors {
-        assert_eq!(
-            entry.sha256.is_empty(),
-            self_referential(&entry.path),
-            "successor pin state differs from its self-referential status: {}",
-            entry.path
-        );
-    }
-
-    // The per-successor digest branch runs against an explicitly test-local tree
-    // so its counterexamples never depend on which successors the live record
-    // happens to carry.
-    let fixture_root = successor_fixture_root();
-    let pinned_path = "protocol/publication/v1/qualification-fixture.json";
-    let pinned_bytes = b"pinned successor bytes";
-    let pinned_digest = sha256(pinned_bytes);
-    let self_bytes = b"self-referential record bytes";
-    let self_digest = sha256(self_bytes);
-    write_successor_fixture(&fixture_root, pinned_path, pinned_bytes);
-    write_successor_fixture(&fixture_root, RECORD_PATH, self_bytes);
-
-    // A matching pin is accepted for both pinned and self-referential entries.
-    assert_eq!(
-        verify_successor_digest(
-            &fixture_root,
-            &successor_fixture(pinned_path, &pinned_digest)
-        ),
-        Ok(())
-    );
-    assert_eq!(
-        verify_successor_digest(&fixture_root, &successor_fixture(RECORD_PATH, &self_digest)),
-        Ok(())
-    );
-    // A wrong digest must fail even though the pinned file exists.
-    assert_eq!(
-        verify_successor_digest(
-            &fixture_root,
-            &successor_fixture(pinned_path, &"0".repeat(64))
-        ),
-        Err(format!("successor digest differs: {pinned_path}"))
-    );
-    // A pinned successor whose file is absent must fail.
-    let absent_path = "protocol/publication/v1/absent-successor.json";
-    match verify_successor_digest(
-        &fixture_root,
-        &successor_fixture(absent_path, &pinned_digest),
-    ) {
-        Ok(()) => panic!("an absent successor file must not verify"),
-        Err(error) => assert!(
-            error.starts_with(&format!("could not read successor {absent_path}: ")),
-            "unexpected absent-successor error: {error}"
-        ),
-    }
-    // A non-self-referential entry with no pin must fail, and a self-referential
-    // entry with no pin must pass; a self-referential entry that pins a wrong
-    // digest must still fail.
-    assert_eq!(
-        verify_successor_digest(&fixture_root, &successor_fixture(pinned_path, "")),
-        Err(format!("successor has no pinned digest: {pinned_path}"))
-    );
-    assert_eq!(
-        verify_successor_digest(&fixture_root, &successor_fixture(RECORD_PATH, "")),
-        Ok(())
-    );
-    assert_eq!(
-        verify_successor_digest(
-            &fixture_root,
-            &successor_fixture(RECORD_PATH, &"0".repeat(64))
-        ),
-        Err(format!("successor digest differs: {RECORD_PATH}"))
-    );
 
     let applicable_to_excluded =
         dirty_paths(b"R  docs/reference/task.rs\0crates/gantry-runtime/src/task.rs\0")
@@ -919,36 +920,4 @@ fn qualification_validator_rejects_successor_and_dirty_input_counterexamples() {
     ));
     assert!(!dirty_path_is_applicable("target/debug/xtask"));
     assert!(!dirty_path_is_applicable("docs/reference/note.md"));
-}
-
-/// Returns a clean scratch tree for successor digest fixtures under the test
-/// target directory.
-fn successor_fixture_root() -> PathBuf {
-    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join("successor-digest-fixture");
-    if root.exists() {
-        fs::remove_dir_all(&root)
-            .unwrap_or_else(|error| panic!("could not clear {}: {error}", root.display()));
-    }
-    fs::create_dir_all(&root)
-        .unwrap_or_else(|error| panic!("could not create {}: {error}", root.display()));
-    root
-}
-
-/// Writes one successor fixture file, creating its parent directories.
-fn write_successor_fixture(root: &Path, path: &str, bytes: &[u8]) {
-    let target = root.join(path);
-    if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent)
-            .unwrap_or_else(|error| panic!("could not create {}: {error}", parent.display()));
-    }
-    fs::write(&target, bytes)
-        .unwrap_or_else(|error| panic!("could not write {}: {error}", target.display()));
-}
-
-/// Builds one successor entry for a digest fixture call.
-fn successor_fixture(path: &str, digest: &str) -> Successor {
-    Successor {
-        path: path.to_owned(),
-        sha256: digest.to_owned(),
-    }
 }

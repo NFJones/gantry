@@ -2,7 +2,7 @@
   "version": 1,
   "publication_lockfile": {
     "path": "Cargo.lock",
-    "sha256": "e26d919c14529b890d0a6695c21a651e4c357045b8062a56e6c2b44d84f99436"
+    "sha256": "6a1afae2d5a03eabad047d7bbcb4fd46466b6d713b8fb67ba65debf8b9df7328"
   },
   "fuzz_lockfile": {
     "path": "fuzz/Cargo.lock",
@@ -137,7 +137,7 @@
         "fs",
         "std"
       ],
-      "owner": "gantry-frontend and gantry-storage-sqlite",
+      "owner": "gantry-frontend, gantry-runtime and gantry-storage-sqlite",
       "purpose": "Open package roots relative to pinned descriptors and implement the SQLite adapter's stable no-follow owner sidecar, nonblocking flock, database identity, and filesystem inspection on supported Unix platforms.",
       "data_or_protocol_versions": [
         "GNT-4.6 and GNT-4.17 descriptor-relative no-symlink source access",
@@ -148,7 +148,10 @@
         "crates/gantry-conformance/tests/sqlite_storage.rs",
         "crates/gantry-storage-sqlite/src/ownership.rs",
         "crates/gantry-frontend/src/provider.rs",
-        "crates/gantry-conformance/tests/source_provider.rs"
+        "crates/gantry-conformance/tests/source_provider.rs",
+        "crates/gantry-runtime/src/fs.rs",
+        "crates/gantry-runtime/src/fs/tests.rs",
+        "crates/gantry-conformance/tests/fs_runtime_integration.rs"
       ],
       "fallback": "Keep the SourceProvider and JournalStorage contracts and replace each leaf use with small audited platform-specific descriptor, no-follow, file-identity, and advisory-lock implementations preserving the same semantics."
     },

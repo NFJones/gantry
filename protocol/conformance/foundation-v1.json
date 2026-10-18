@@ -6,7 +6,7 @@
     },
     {
       "path": "Cargo.lock",
-      "sha256": "e26d919c14529b890d0a6695c21a651e4c357045b8062a56e6c2b44d84f99436"
+      "sha256": "6a1afae2d5a03eabad047d7bbcb4fd46466b6d713b8fb67ba65debf8b9df7328"
     },
     {
       "path": "Cargo.toml",
@@ -166,7 +166,7 @@
     },
     {
       "path": "crates/gantry-runtime/Cargo.toml",
-      "sha256": "695ea9126846f507a2a41835c40f0bd4ac49ea3b35886990671288d10da1865c"
+      "sha256": "95a07dbbb146a47513557fd9178f0a19254c69f53d40495f9d07b045dcabe8a4"
     },
     {
       "path": "deny.toml",
@@ -190,7 +190,7 @@
     },
     {
       "path": "governance/dependency-ledger-v1.json",
-      "sha256": "c767c6c8fc207ac8f086a6650821f525cefff11df6d8c672e31742c31d7fcb44"
+      "sha256": "18d60810b5812ad694494c2fddfed7a4133453e2b0f875f167e4aca0e3127cd9"
     },
     {
       "path": "governance/fixtures/negative-policy-v1.json",
@@ -551,8 +551,8 @@
     "decision_count": 10,
     "fuzz_lockfile_sha256": "5922cc323286e0a166d53696a9c737f711492e76b5cf0ad473a8e4995bc500dc",
     "ledger_path": "governance/dependency-ledger-v1.json",
-    "ledger_sha256": "c767c6c8fc207ac8f086a6650821f525cefff11df6d8c672e31742c31d7fcb44",
-    "product_lockfile_sha256": "e26d919c14529b890d0a6695c21a651e4c357045b8062a56e6c2b44d84f99436",
+    "ledger_sha256": "18d60810b5812ad694494c2fddfed7a4133453e2b0f875f167e4aca0e3127cd9",
+    "product_lockfile_sha256": "6a1afae2d5a03eabad047d7bbcb4fd46466b6d713b8fb67ba65debf8b9df7328",
     "rejected_count": 1,
     "selected_count": 9
   },

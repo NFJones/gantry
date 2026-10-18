@@ -17,6 +17,7 @@ mod durable;
 #[cfg(feature = "durable")]
 mod durable_event;
 mod event;
+mod fs;
 mod hook_request;
 mod io_settlement;
 mod lifecycle;
@@ -83,6 +84,11 @@ pub use event::{
 pub use event::{
     concurrent_detach_event, concurrent_detached_failure_event, concurrent_join_event,
     concurrent_spawn_event, concurrent_task_cancellation_event, concurrent_terminal_event,
+};
+pub use fs::{
+    FsHostTarget, FsNativeClass, FsOpenReceipt, FsReadOnlyEndpoint, FsReadOnlyGrant,
+    FsReadOnlySettlement, FsRootDirectory, FsRuntimeRefusal, FsTargetMapping, FsWalkPolicy,
+    close_read_only,
 };
 pub use gantry_host::containment::{
     AdapterPoison, BoundaryFailure, PanicOrigin, catch_gantry, catch_integration,
