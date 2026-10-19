@@ -128,7 +128,9 @@ fn time_scope_is_declared_without_runtime_or_authority_claims() {
         "application semantic mode over the library and binary target kinds",
         "not Portable or Durable applicability",
         "not runtime availability",
-        "no clock, timer, scheduler, timezone database or upgrade",
+        "no periodic scheduler, timezone database or upgrade",
+        "GNT-51.3-injected-monotonic-clock",
+        "GNT-51.4-one-shot-timer",
         "GNT-33.9-monotonic-and-wall-separation",
         "GNT-33.3-civil-time-timestamp-and-offset-values",
         "GNT-33.5-pinned-rule-data-identity",
@@ -155,7 +157,9 @@ fn time_reader_note_preserves_declaration_and_qualification_boundaries() {
         "application semantic mode over the library and binary target kinds",
         "UTC never supplies a monotonic deadline",
         "Declaring a module grants no capability",
-        "does not implement typed civil ambiguity, pinned rule-data identities, or durable timer reconstruction",
+        "delivers no typed civil ambiguity, no pinned rule-data identity, and no durable timer reconstruction",
+        "GNT-51.3-injected-monotonic-clock",
+        "One-shot timer",
         "declaration coverage is not evidence that they work",
         "Passing these lanes does not qualify a specification revision",
     ] {
@@ -493,14 +497,14 @@ fn time_non_claims_are_published_without_guarantees() {
         .collect::<Vec<_>>()
         .join(" ");
     for non_claim in [
-        "does not implement a clock, timer, scheduler, or timezone upgrade",
-        "does not deliver typed civil ambiguity, pinned rule-data identities, or durable timer reconstruction",
+        "implements no periodic scheduler, no timezone database or upgrade",
+        "delivers no typed civil ambiguity, no pinned rule-data identity, and no durable timer reconstruction",
         "UTC never supplies a monotonic deadline",
-        "The next slice owns the injected monotonic clock and one-shot timer",
-        "domain- and generation-bound deadlines",
+        "GNT-51.3-injected-monotonic-clock",
+        "bound to one waiter generation fence",
         "readiness recheck",
-        "stale-wake fencing",
-        "exactly one completion or cancel winner",
+        "stale wake",
+        "exactly one source-visible winner",
         "no raw monotonic restart guarantee",
     ] {
         assert!(

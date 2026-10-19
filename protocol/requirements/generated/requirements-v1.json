@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "0ea3c63354ef06fa5cf7022076937d1fdb6c753b37f4582a880aea226ff632d4",
-  "byte_length": 1429110,
-  "line_count": 18265,
+  "specification_sha256": "4c2bd97e4c97efc72e2e3649292a75b7e98d5d57e8fcdbec86beb4af456c383c",
+  "byte_length": 1433869,
+  "line_count": 18273,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9780,
-      "end_line": 18265,
-      "sha256": "305a6c02ce3c4bd7e49340d51b8dd882d5ca4a784763a5502623005f423f029f",
+      "end_line": 18273,
+      "sha256": "5d61e8e2c36d27428e963dd45979d5a81b1c7fa6ee561aa91c911525a79a7333",
       "rationale": null
     }
   ],
@@ -46119,11 +46119,11 @@
       "id": "GNT-51.0-time-foundation-scope",
       "span_start_line": 18255,
       "span_end_line": 18258,
-      "span_sha256": "b3eecfd74d1c73df9081c8bc6a6998ca037a328873745f0197743f3d4ed3feeb",
+      "span_sha256": "55dd3aec03a10ed476f50838b3e48d565854056e23ac1e575cd45b681029f1ea",
       "anchor_line": 18255,
       "body_start_line": 18256,
       "body_end_line": 18257,
-      "body_sha256": "754fc7a3f510ca394eaa511be026b69f431238d7307944f9b0244de0b5990cd8",
+      "body_sha256": "e3e8b6d8ce5af346b8165a3b94fd72c8b751bd7531122f630418f81b83590c7a",
       "profiles": [
         "analyzer"
       ],
@@ -46203,12 +46203,12 @@
     {
       "id": "GNT-51.2-time-declaration-non-claims",
       "span_start_line": 18263,
-      "span_end_line": 18265,
-      "span_sha256": "ccfcbb73bf165d3e5a316e3d8b2995255f0f6714af2eb36a68fbf14240907d38",
+      "span_end_line": 18266,
+      "span_sha256": "4f6d50fb5af2971fc69c2aabdb4f897d94ccc96204ae679597a908f79dc3238b",
       "anchor_line": 18263,
       "body_start_line": 18264,
       "body_end_line": 18265,
-      "body_sha256": "a3d25d3203d259a01b760ebdeee052d077c2e877f06802cad214ee4f6d7ed6d3",
+      "body_sha256": "54230c238f35424167c32bbc30a49ea7f0cfe59c8b4602440d0c7ec5bd2dc8ce",
       "profiles": [
         "analyzer"
       ],
@@ -46235,6 +46235,97 @@
               "evidence": [
                 "crates/gantry-conformance/tests/time_foundation.rs#time_non_claims_are_published_without_guarantees",
                 "crates/gantry-conformance/tests/time_foundation.rs#time_reader_note_preserves_declaration_and_qualification_boundaries"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-51.3-injected-monotonic-clock",
+      "span_start_line": 18267,
+      "span_end_line": 18270,
+      "span_sha256": "804c613db0ab174f183ae9988aa0541c9b80396be0aed58e27b23db49e543a02",
+      "anchor_line": 18267,
+      "body_start_line": 18268,
+      "body_end_line": 18269,
+      "body_sha256": "3fef4da2bfba53766a6d143afdd8903b489c93d878e8b262f0236b80327124bc",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18268,
+          "end_line": 18269,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/timer_foundation.rs#timer_clauses_publish_injected_clock_and_one_shot_boundaries",
+                "crates/gantry-conformance/tests/timer_foundation.rs#clock_domains_are_bounded_and_samples_never_regress",
+                "crates/gantry-conformance/tests/timer_foundation.rs#checked_deadline_arithmetic_refuses_overflow_and_foreign_domains",
+                "crates/gantry-conformance/tests/timer_foundation.rs#wrong_domain_clock_sample_and_deadline_are_refused"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-51.4-one-shot-timer",
+      "span_start_line": 18271,
+      "span_end_line": 18273,
+      "span_sha256": "3f7f0a18b7be9a70f26c1b351d1ac593e36396521c8b013d41e6c36b5660510f",
+      "anchor_line": 18271,
+      "body_start_line": 18272,
+      "body_end_line": 18273,
+      "body_sha256": "ef4dbfee8ac6765ffa93ff5e70d56feeb1ef6f8b6e1f94b1bb4afc3ec8644822",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18272,
+          "end_line": 18273,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/timer_foundation.rs#timer_clauses_publish_injected_clock_and_one_shot_boundaries",
+                "crates/gantry-conformance/tests/timer_foundation.rs#zero_and_past_deadlines_publish_immediate_timeout_without_a_later_wake",
+                "crates/gantry-conformance/tests/timer_foundation.rs#future_deadline_registers_and_expires_once",
+                "crates/gantry-conformance/tests/timer_foundation.rs#cancellation_and_expiry_have_exactly_one_winner",
+                "crates/gantry-conformance/tests/timer_foundation.rs#stale_wake_fence_is_refused_without_mutation",
+                "crates/gantry-conformance/tests/timer_foundation.rs#wrong_domain_clock_sample_and_deadline_are_refused",
+                "crates/gantry-conformance/tests/timer_foundation.rs#unarmed_and_rearmed_timers_are_refused"
               ],
               "rationale": null
             }

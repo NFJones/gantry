@@ -64,6 +64,7 @@ mod target;
 mod test_support;
 mod text;
 mod time;
+mod timer;
 pub mod toolchain;
 mod type_expression;
 mod type_properties;
@@ -495,6 +496,14 @@ pub use time::{
     TIME_CLAUSES, TIME_ITEMS, TIME_MODULE_CLAUSES, TIME_MODULE_MODES, TIME_MODULE_ROWS,
     TIME_MODULE_TARGETS, admit_time_surface, canonical_time_hierarchy, declare_time_package,
     declare_time_surface, validate_time_module_rows,
+};
+
+// The Section 51 behavior slice publishes the injected monotonic clock and one-shot timer
+// model. It reads no ambient clock, owns no clock instance, and makes no raw restart claim.
+pub use timer::{
+    CLOCK_DOMAIN_MAX_BYTES, ClockDomainId, ClockObservation, FixedMonotonicClock, MonotonicClock,
+    MonotonicInstant, OneShotTimer, TIMER_CLAUSES, TimerArm, TimerDeadline, TimerDiagnosticCode,
+    TimerDuration, TimerError, TimerWinner,
 };
 // The Section 34 standard-library architecture model is declaration-only: it records
 // the logical package hierarchy, its dependency DAG, the edition prelude, facade

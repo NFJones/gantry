@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "0ea3c63354ef06fa5cf7022076937d1fdb6c753b37f4582a880aea226ff632d4",
+  "specification_sha256": "4c2bd97e4c97efc72e2e3649292a75b7e98d5d57e8fcdbec86beb4af456c383c",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9780,
-      "end_line": 18265,
+      "end_line": 18273,
       "rationale": null
     }
   ],
@@ -44912,7 +44912,7 @@
     {
       "id": "GNT-51.2-time-declaration-non-claims",
       "span_start_line": 18263,
-      "span_end_line": 18265,
+      "span_end_line": 18266,
       "anchor_line": 18263,
       "body_start_line": 18264,
       "body_end_line": 18265,
@@ -44942,6 +44942,93 @@
               "evidence": [
                 "crates/gantry-conformance/tests/time_foundation.rs#time_non_claims_are_published_without_guarantees",
                 "crates/gantry-conformance/tests/time_foundation.rs#time_reader_note_preserves_declaration_and_qualification_boundaries"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-51.3-injected-monotonic-clock",
+      "span_start_line": 18267,
+      "span_end_line": 18270,
+      "anchor_line": 18267,
+      "body_start_line": 18268,
+      "body_end_line": 18269,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18268,
+          "end_line": 18269,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/timer_foundation.rs#timer_clauses_publish_injected_clock_and_one_shot_boundaries",
+                "crates/gantry-conformance/tests/timer_foundation.rs#clock_domains_are_bounded_and_samples_never_regress",
+                "crates/gantry-conformance/tests/timer_foundation.rs#checked_deadline_arithmetic_refuses_overflow_and_foreign_domains",
+                "crates/gantry-conformance/tests/timer_foundation.rs#wrong_domain_clock_sample_and_deadline_are_refused"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-51.4-one-shot-timer",
+      "span_start_line": 18271,
+      "span_end_line": 18273,
+      "anchor_line": 18271,
+      "body_start_line": 18272,
+      "body_end_line": 18273,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18272,
+          "end_line": 18273,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/timer_foundation.rs#timer_clauses_publish_injected_clock_and_one_shot_boundaries",
+                "crates/gantry-conformance/tests/timer_foundation.rs#zero_and_past_deadlines_publish_immediate_timeout_without_a_later_wake",
+                "crates/gantry-conformance/tests/timer_foundation.rs#future_deadline_registers_and_expires_once",
+                "crates/gantry-conformance/tests/timer_foundation.rs#cancellation_and_expiry_have_exactly_one_winner",
+                "crates/gantry-conformance/tests/timer_foundation.rs#stale_wake_fence_is_refused_without_mutation",
+                "crates/gantry-conformance/tests/timer_foundation.rs#wrong_domain_clock_sample_and_deadline_are_refused",
+                "crates/gantry-conformance/tests/timer_foundation.rs#unarmed_and_rearmed_timers_are_refused"
               ],
               "rationale": null
             }
