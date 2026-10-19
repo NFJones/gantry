@@ -13,11 +13,11 @@
   "conformance": {
     "requirement_registry": {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "5b6ded891add616da9ab341ebcf160ee8cab1a90d469662b0373c3781e6e72a0"
+      "sha256": "ad3571bdca62d80ee38492745f57768d455b0dbb6d99c44d7917c3e32a10a762"
     },
     "manifest": {
       "path": "protocol/conformance/manifest-v1.json",
-      "sha256": "8a54bbed4dda5bf883ab66eaf5b9455bd5bd6d049b3eda9e9a7a075e422d402b"
+      "sha256": "b7d0c617bcbd9d15704c06db766f6f98446b0563d79f845a3310e9c937e821f5"
     },
     "profile_results": [
       {
@@ -65,7 +65,7 @@
     ],
     "combined_gate": {
       "path": "protocol/conformance/combined-gate-v1.json",
-      "sha256": "a1a9fd6e8ee06a35712c1812ca4c6f54631d6c87b8af20894411c37e3690f4e5",
+      "sha256": "473477816dcac6be307efb8d9a5384a6f9a035c4bb892d729d8f28da0f1fdb34",
       "gate": "GNT-COMB-001",
       "status": "verified",
       "advertises_profiles": [
@@ -79,7 +79,7 @@
     },
     "adoption_gate": {
       "path": "protocol/conformance/async-execution-adoption-v1.json",
-      "sha256": "42a84f144f05d08d029caf61c321c895255587761b52b029a19960d0f67f34d4",
+      "sha256": "5db7324258613e08bb2e1757b2af5fa2213f479ed719a1f27cd339cb81473fcb",
       "gate": "GNT-ASYNC-GATE-000"
     },
     "adoption_validator": {
@@ -126,7 +126,7 @@
   },
   "matrix": {
     "path": "release/release-matrix-v1.json",
-    "sha256": "eae4c0d5fe0878eaaf0beedcfc7bdeaf9c84bb23b6bb2280c1637f1d4cd18ed0",
+    "sha256": "563bc18863a98952c0bed7cbe1d0f9aaec573961f46c6b7554919059f4d0a0d5",
     "verifier_path": "release/verify-release-matrix.py",
     "verifier_sha256": "0d7f31fe8f607b0db86b6c2e292e06254dacaddaf2205c2f1a3af7348e9d66ee",
     "status": "qualified-passed",
