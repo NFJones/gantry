@@ -3,13 +3,13 @@
   "issue": "be47045e-93fb-473b-af7a-2d459aae091c",
   "status": "verified",
   "specification_sha256": "49c3fe100b4109ba227f9d48cd083a6f32753d7ae881afbbb67b3c40273b0cbf",
-  "superseded_specification_sha256": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9",
+  "superseded_specification_sha256": "0ea3c63354ef06fa5cf7022076937d1fdb6c753b37f4582a880aea226ff632d4",
   "candidate": {
-    "base_commit": "966f6ffbfe2162341d0bbabe2098b909dcbba6f0",
-    "currency_repair_parent_commit": "966f6ffbfe2162341d0bbabe2098b909dcbba6f0",
-    "reviewed_through_commit": "8a77f92f07b9a8fac4641d6234f7222b2d5fa7f9",
-    "since_commit": "966f6ffbfe2162341d0bbabe2098b909dcbba6f0",
-    "tree_sha": "4e207c97a8b3d4fe5c0b8e6251fcd74c2e34813b",
+    "base_commit": "57274110658a0ecfde81cf516893dcc9e2c30d1e",
+    "currency_repair_parent_commit": "57274110658a0ecfde81cf516893dcc9e2c30d1e",
+    "reviewed_through_commit": "88a2161ac2c99c35648667e25f8fdbba56285ce8",
+    "since_commit": "57274110658a0ecfde81cf516893dcc9e2c30d1e",
+    "tree_sha": "67612265ba949aaf184a555f66c2785cf49a6409",
     "identity_note": "Content identity is the candidate input digest set plus the candidate tree hash. The record is committed after the candidate, so it names the reviewed-through commit and its tree rather than its own.",
     "toolchain": "1.97.1 minimal with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
     "inputs": [
@@ -42,30 +42,23 @@
   "drift_review": {
     "specification_commits_reviewed": 2,
     "requirements_before": {
-      "count": 639,
-      "clauses": 923
-    },
-    "requirements_after": {
       "count": 642,
       "clauses": 926
     },
+    "requirements_after": {
+      "count": 644,
+      "clauses": 928
+    },
     "added_requirements": [
       {
-        "id": "GNT-51.0-time-foundation-scope",
+        "id": "GNT-51.3-injected-monotonic-clock",
         "clauses": 1,
         "profile_reviews": [
           "analyzer:covered"
         ]
       },
       {
-        "id": "GNT-51.1-time-modules-and-item-rows",
-        "clauses": 1,
-        "profile_reviews": [
-          "analyzer:covered"
-        ]
-      },
-      {
-        "id": "GNT-51.2-time-declaration-non-claims",
+        "id": "GNT-51.4-one-shot-timer",
         "clauses": 1,
         "profile_reviews": [
           "analyzer:covered"
@@ -73,18 +66,21 @@
       }
     ],
     "changed_requirement_bodies": [
-      "GNT-2.1"
+      "GNT-2.1",
+      "GNT-51.0-time-foundation-scope",
+      "GNT-51.1-time-modules-and-item-rows",
+      "GNT-51.2-time-declaration-non-claims"
     ],
     "removed_requirements": [],
     "profile_applicability": [
       {
         "profile": "analyzer",
-        "before_covered": 580,
+        "before_covered": 583,
         "before_not_applicable": 190,
-        "after_covered": 583,
+        "after_covered": 585,
         "after_not_applicable": 190,
         "after_planned": 0,
-        "outcome": "the three new clauses are covered by the time foundation lane and no reviewed clause is planned, open, or unresolved"
+        "outcome": "the two added clauses are covered by the timer lane, so analyzer coverage rises by two and no reviewed clause is planned or unresolved"
       },
       {
         "profile": "concurrent-evaluator",
@@ -93,7 +89,7 @@
         "after_covered": 330,
         "after_not_applicable": 9,
         "after_planned": 0,
-        "outcome": "unchanged because the new clauses declare analyzer applicability only"
+        "outcome": "unchanged because the added clauses declare analyzer applicability only"
       },
       {
         "profile": "durable-runtime",
@@ -102,7 +98,7 @@
         "after_covered": 363,
         "after_not_applicable": 16,
         "after_planned": 0,
-        "outcome": "unchanged because the slice delivers no durable timer or rule-data behavior"
+        "outcome": "unchanged because the added clauses declare analyzer applicability only"
       },
       {
         "profile": "embedding",
@@ -111,7 +107,7 @@
         "after_covered": 307,
         "after_not_applicable": 51,
         "after_planned": 0,
-        "outcome": "unchanged because the slice publishes no host adapter or embedding operation"
+        "outcome": "unchanged because the added clauses declare analyzer applicability only"
       },
       {
         "profile": "evaluator",
@@ -120,7 +116,7 @@
         "after_covered": 323,
         "after_not_applicable": 16,
         "after_planned": 0,
-        "outcome": "unchanged because the slice implements no clock, timer, or scheduler"
+        "outcome": "unchanged because the added clauses declare analyzer applicability only"
       },
       {
         "profile": "frontend",
@@ -129,16 +125,18 @@
         "after_covered": 59,
         "after_not_applicable": 16,
         "after_planned": 0,
-        "outcome": "unchanged because the slice adds no source syntax or grammar"
+        "outcome": "unchanged because the added clauses declare analyzer applicability only"
       }
     ],
     "reviewed_categories": [
-      "time-declaration-surface",
-      "standard-library-architecture",
+      "time-clock-and-timer-contract",
+      "injected-monotonic-clock",
+      "one-shot-timer",
+      "conformance-evidence-recut",
       "generated-protocol-and-publication",
       "qualification-recut"
     ],
-    "outcome": "The only authored specification change is Section 51 plus the one-line identifier registry update in GNT-2.1; every other reviewed body is unchanged and every open state is closed."
+    "outcome": "Section 51 adds the injected monotonic clock and one-shot timer clauses, corrects the declaration boundary wording, and adds the clock and timer refusal vocabulary. GNT-2.1 gains the new identifiers, and every affected requirement body is otherwise unchanged and fully covered."
   },
   "section14_review": {
     "excerpt_count_before": 51,
@@ -150,8 +148,12 @@
     "outcome": "Every retained Section 14 excerpt is still covered with executable evidence; the revision adds no excerpt and removes none."
   },
   "qualification": {
-    "scope": "Bounded std.time declaration candidate: Section 51 scope, closed six-row module declaration, declare and admit surfaces, aggregate and catalog rows, refusal coverage, documentation, and the derived requirement and publication recut. It implements no clock, timer, scheduler, or timezone upgrade.",
+    "scope": "Bounded Section 51 clock and timer candidate: injected monotonic clock port, clock-domain identity, checked deadline arithmetic, one-shot timer readiness recheck, generation binding, stale-wake fencing, single expiry-or-cancel winner, refusal coverage, documentation, and the derived requirement, gate, publication, and qualification recut.",
     "lanes": [
+      {
+        "lane": "timer_foundation",
+        "result": "pass"
+      },
       {
         "lane": "time_foundation",
         "result": "pass"
@@ -227,24 +229,28 @@
         "result": "rc 0, workspace graph and facade feature matrix valid"
       },
       {
+        "command": "cargo run --locked -p xtask -- check governance",
+        "result": "rc 0, publication lockfile and dependency governance valid"
+      },
+      {
         "command": "python3 governance/audit_spec_revision.py",
         "result": "mismatch_count 0"
       },
       {
         "command": "cargo run --locked -p xtask -- generate requirements",
-        "result": "regenerated the requirement inventory to 642 records and 926 clauses"
+        "result": "regenerated the requirement inventory to 644 records and 928 clauses"
       },
       {
         "command": "cargo run --locked -p xtask -- generate protocol",
         "result": "regenerated the corpus, manifest, publication artifacts, index, and verification report"
       },
       {
-        "command": "cargo test --locked -p gantry-conformance --test time_foundation",
-        "result": "7 passed, 0 failed"
+        "command": "cargo test --locked -p gantry-conformance --test timer_foundation",
+        "result": "12 passed, 0 failed"
       },
       {
-        "command": "cargo test --locked -p gantry-conformance --test stdlib_architecture",
-        "result": "38 passed, 0 failed"
+        "command": "cargo test --locked -p gantry-conformance --test time_foundation",
+        "result": "7 passed, 0 failed"
       },
       {
         "command": "cargo test --locked -p gantry-conformance --test specification_currency_qualification",
@@ -252,20 +258,20 @@
       },
       {
         "command": "cargo test --locked --workspace --all-targets --all-features --no-fail-fast",
-        "result": "all targets pass except the two inherited environment failures"
+        "result": "all targets pass except the inherited general_purpose_preregistration environment failure, which requires the absent ignored docs/reference/general-purpose-refactor-issue-plan.md"
       }
     ],
     "publication": {
       "member_count": 7,
-      "identity_at_currency_repair_parent": "46c7f8f146592ceaba766a393617c5913afc73832a4e7aeb5b9b3f34814c452e",
+      "identity_at_currency_repair_parent": "91e9170a5697b297720eb088e74366be9d793398397d7c5506b9291432623cda",
       "identity_note": "The seven-artifact publication set and the verification report were regenerated from the reviewed requirement inventory at the candidate; the recorded parent identity is the verification identity committed at the currency-repair parent, not a substituted digest.",
       "verification": "protocol/publication/verification-v1.json regenerated by the governed protocol generator on the candidate"
     }
   },
   "gaps": [
-    "No runtime std.time implementation is added: no clock, timer, scheduler, timezone upgrade, wall observation, host-preference snapshot, rule-data installation or upgrade, or target locale-data catalog is implemented or executed.",
-    "Typed civil ambiguity, pinned rule-data identities, and durable timer reconstruction are not delivered. The next slice owns the injected monotonic clock and one-shot timer under the existing ownership, wait, cancel, and fault contracts, with domain- and generation-bound deadlines, readiness recheck, stale-wake fencing, and exactly one completion or cancel winner.",
-    "Two inherited environment failures were observed while qualifying this slice: general_purpose_preregistration cannot read the gitignored docs/reference/general-purpose-refactor-issue-plan.md, and the xtask bin governance test cannot write the read-only cargo registry cache. Both stay outside this slice: the preregistration failure reproduced on the recut, the governance test passed on this host, and no slice claim depends on either."
+    "No host monotonic-clock adapter, real-time driver, periodic scheduler, or durable timer store is delivered: the model consumes an explicitly injected port and a deterministic test clock only.",
+    "Typed civil ambiguity, pinned rule-data identities, locale and preference snapshots, target data catalogs, wall observation, and durable timer reconstruction remain future slices; no raw monotonic restart continuity is claimed.",
+    "The inherited general_purpose_preregistration failure stays outside this slice: it requires the gitignored docs/reference/general-purpose-refactor-issue-plan.md, and no clock or timer claim depends on it."
   ],
   "successors": [
     {
