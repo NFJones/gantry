@@ -226,39 +226,39 @@
     },
     {
       "path": "protocol/catalogs/embedding-contracts-v1.json",
-      "sha256": "284ba87e46eb3f9520f4268db1449a6fb561ce511ccf17d878d5783bf0d9c4ca"
+      "sha256": "0fd8c31e4269da4b09cedd4dedcbb69d59cd4a6eeba417aaa5e68e2bfdfbae73"
     },
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "90bd1026815649e188dd0063a286b493db2a4ca3c46ab773fc41f6868e62dd44"
+      "sha256": "c2c231d76fb19d40cb17d879fd073673226cd89b235b58a07c49e21fe3868380"
     },
     {
       "path": "protocol/conformance/analyzer-gate-v1.json",
-      "sha256": "3e9b4e4c745e30cc86bb26ff93f82a3e2990552df099d335da720b735fbfd795"
+      "sha256": "328f68d1cccaa3e80cb9db709223d4dfdb41fd570ffe76fbec6238c4f3b907cd"
     },
     {
       "path": "protocol/conformance/execution-observation-v1.json",
-      "sha256": "96a6490a57770d2619962c0b7f9b526e573ccce60388cd40e9ef478eca9d7f34"
+      "sha256": "dcdcc28b2a322d9196816ab7260bd5946448922edf9a3c1b2939cb65d908b4c2"
     },
     {
       "path": "protocol/conformance/executor-services-v1.json",
-      "sha256": "c63499a94bbf647523f940a5bf96a7277fc98e439dcd6c6e0cf9c5a3a54d009e"
+      "sha256": "20e61ef926c25ed919be51a84411461233e1ade507f4e98fcac247c3fe765e29"
     },
     {
       "path": "protocol/conformance/interpreter-lifecycle-v1.json",
-      "sha256": "46772cbd150df79c5153376e4ce501b43df3df9ac62d0cdcee06f3e185cbc74f"
+      "sha256": "af8417d8f6d9c2da308629ca22479c100a8c7a5d1df7a2e4c25be6c1148775c3"
     },
     {
       "path": "protocol/conformance/sequential-evaluator-refinement-v1.json",
-      "sha256": "2f7868081f437656c9006f7f82fb95d436b2cfdcb97397d39633c023d844d290"
+      "sha256": "75f2032da91fc1695e2c5c2ed5a604958e0e964480fee5af2a81c1fc9e95fa1c"
     },
     {
       "path": "protocol/conformance/sequential-machine-v1.json",
-      "sha256": "5e5b16d673573354bee6fb42ff5505784e1f4114d45ff0e152707236abefc79e"
+      "sha256": "391812a014f3678fbeb68479739170067417b505d4f05e2a8f3cb2d4e6ca6cfc"
     },
     {
       "path": "protocol/goldens/embedding-contracts-v1.canonical.json",
-      "sha256": "e13d98b155f28980429281e82a946f7051a05fe237765eb5847f5209d7398366"
+      "sha256": "74541d38b935ec197723f8c16095ee7aaffaa3b857457437a16cf5e75e3bee1e"
     },
     {
       "path": "protocol/goldens/sequential-evaluator-model-v1.json",
@@ -270,15 +270,15 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "5b6ded891add616da9ab341ebcf160ee8cab1a90d469662b0373c3781e6e72a0"
+      "sha256": "b5feaeebd37dbe16d1ccdcf0deadc97f6c64ff3f4149237eb9d1d045efce0ff4"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "ca4c6b579ee2b3fe761428195fa37d4037f14057cad2611f2f3366478ce9a85d"
+      "sha256": "d36f809bd4b6229bad2bc7553f309ac925bb5ba5ae7f84b2b481ac2c2e79dd1a"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
-      "sha256": "ad7043ac0255d0ed5785620e4582d8b0c28c2f1b2abe98af517295a23f7b1b80"
+      "sha256": "591af249aee189824863b899ddd56307103a7eaaf1cd7cea3b4a2fcd94aa1c08"
     }
   ],
   "claim": {

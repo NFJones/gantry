@@ -21,35 +21,35 @@
   "contract_artifacts": [
     {
       "path": "crates/gantry-core/src/generated/portable.rs",
-      "sha256": "2d0a6fe341c478974c43333f4c31d494ce2c19aa2e78aa3491103e4d4d7b37aa"
+      "sha256": "21adbf514d00176d065481fc52864316be1242e9570abff3d1940e5d9a48e86e"
     },
     {
       "path": "crates/gantry-core/src/generated/profiles.rs",
-      "sha256": "3d76c080a26e59ee5d7c3a626b7f47f09080c9ac7f0efe0b1036602357468825"
+      "sha256": "eb97a72ed5438966d96483395adfd8f6ed2b414e45be9e2161270b5171f655de"
     },
     {
       "path": "crates/gantry-host/src/generated/embedding.rs",
-      "sha256": "69fcb515736e84ce99aaf97a6a111203889344456c3d2bb0c65b5d81630a4d76"
+      "sha256": "cf09b404f2025302d6abc3720868902b4e147ec51c0751b761909a17f51645f5"
     },
     {
       "path": "protocol/catalogs/embedding-contracts-v1.json",
-      "sha256": "284ba87e46eb3f9520f4268db1449a6fb561ce511ccf17d878d5783bf0d9c4ca"
+      "sha256": "0fd8c31e4269da4b09cedd4dedcbb69d59cd4a6eeba417aaa5e68e2bfdfbae73"
     },
     {
       "path": "protocol/catalogs/portable-contracts-v1.json",
-      "sha256": "ed6acd417483501fbb5179605ddbe486168591bfee08e45b457b3c380e5e4e00"
+      "sha256": "53a5ca3fbb84876294c76a2bc7569f1c029aa40a7dc74d00b849fce81feaf23b"
     },
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "90bd1026815649e188dd0063a286b493db2a4ca3c46ab773fc41f6868e62dd44"
+      "sha256": "c2c231d76fb19d40cb17d879fd073673226cd89b235b58a07c49e21fe3868380"
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "5b6ded891add616da9ab341ebcf160ee8cab1a90d469662b0373c3781e6e72a0"
+      "sha256": "b5feaeebd37dbe16d1ccdcf0deadc97f6c64ff3f4149237eb9d1d045efce0ff4"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "ca4c6b579ee2b3fe761428195fa37d4037f14057cad2611f2f3366478ce9a85d"
+      "sha256": "d36f809bd4b6229bad2bc7553f309ac925bb5ba5ae7f84b2b481ac2c2e79dd1a"
     },
     {
       "path": "protocol/schemas/embedding-contracts-v1.schema.json",

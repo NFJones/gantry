@@ -14,7 +14,7 @@
     },
     {
       "path": "protocol/conformance/async-execution-contract-v1.json",
-      "sha256": "3940f11f8665e1f177aaf364e3e787e2fbb093c5f7aeaeeed3c070c99f817e1f"
+      "sha256": "d387629c881ee71d06ecba79aef6d8f16a842e34fa31749a89b0d0f3ddb6e485"
     }
   ],
   "capabilities": [

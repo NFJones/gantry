@@ -10,43 +10,43 @@
     },
     {
       "path": "protocol/catalogs/ir-contracts-v1.json",
-      "sha256": "78f54eb43968acf1a2dc139a90530ae25cdc551fd00ec2c60ae0dffb6714e3c7"
+      "sha256": "67d743e4438848fe7e24d37ea3b4e2332ebc410932cc83e5a18c7733d1652b96"
     },
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "90bd1026815649e188dd0063a286b493db2a4ca3c46ab773fc41f6868e62dd44"
+      "sha256": "c2c231d76fb19d40cb17d879fd073673226cd89b235b58a07c49e21fe3868380"
     },
     {
       "path": "protocol/conformance/analyzer-ir-v1.json",
-      "sha256": "bbb7c166844ba841735bd0c330d4010cd0cd5f8bffff0e92175704db30abd219"
+      "sha256": "cb719ff02be87ef9dec2b98e84862cdeb0cd3565a753c26b6a9524fb02334f92"
     },
     {
       "path": "protocol/conformance/analyzer-lowering-v1.json",
-      "sha256": "c524ca0985cdc623edfdd5c85c3117a2e4929cab6ad1d5d3dee0b64f114582df"
+      "sha256": "aed5274d8e8f624cd5e12f8471e8f4070ae00bc3b015d95503ab28d7d90a84fe"
     },
     {
       "path": "protocol/conformance/analyzer-package-v1.json",
-      "sha256": "859bf4c92e4a4a51cc565785af7948efd19e86763319e9877ee249c45f086fac"
+      "sha256": "d5272ed40dfe87b609e58f17fa112db10cda9ad898995e92064a8ae66d43eef8"
     },
     {
       "path": "protocol/conformance/analyzer-symbols-v1.json",
-      "sha256": "ceb7d72f3cf0f6d9a450f31039f5f5b7a42ae71d6b4fe46508b8ad62c2ff2f85"
+      "sha256": "208a755ff3beec7b227d27ef809d6bf0229e4a1f2151582ed192feffb141caa4"
     },
     {
       "path": "protocol/conformance/analyzer-types-v1.json",
-      "sha256": "784bad5270c9aefa6e4e89001c6adca45980bb84fe6b67bd7417ae22473e9efb"
+      "sha256": "68eb9f99c5f6e7fb87997b42fb88c258f55bd684c0cd855088fdb004a7a25d6a"
     },
     {
       "path": "protocol/conformance/analyzer-validity-v1.json",
-      "sha256": "88a3bd6dfa898ace0b758c045593caba6b794d37ebd6232d43b4bd5087388bb8"
+      "sha256": "910309fb06df9ba44efa0af1f74e03e7b7ae831d4945758032dc9a96c1e02a44"
     },
     {
       "path": "protocol/conformance/analyzer-workflows-v1.json",
-      "sha256": "8c294886d028b09076d3c1583e2902226538bc7109614968489783eb2a1b6487"
+      "sha256": "618672431f3e63f4bb917b69dd3205b7795391932f945c0497929be64de9ee08"
     },
     {
       "path": "protocol/conformance/frontend-gate-v1.json",
-      "sha256": "5a91243e70ff1f2c173d79168799d3841354941c67b99df20e7ff1bc1bd25c8a"
+      "sha256": "8699cc4c0e6863df65ceae508173f01d1b3c7655e781a2d75bf4da45795bd19d"
     },
     {
       "path": "protocol/goldens/activity-observation-vectors-v1.json",
@@ -62,23 +62,23 @@
     },
     {
       "path": "protocol/goldens/ir-contracts-v1.canonical.json",
-      "sha256": "cab8444183e12368899a7cb37c9bc0729c5dd6df7230729292984ce5add42be8"
+      "sha256": "f68b086a9c0826c05b8bc3ddb151c86b7b3b3156f13bbeec6918fdbf12fe1596"
     },
     {
       "path": "protocol/goldens/profiles-v1.canonical.json",
-      "sha256": "5a269afaa5a74d8cf8c9595587dcac0fb896798ed3096231b3095a8d02b51a79"
+      "sha256": "d4dd52bf624d667b57248a38ca868e9bff358eba1dbaa0ea7c434777c52bb41a"
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "5b6ded891add616da9ab341ebcf160ee8cab1a90d469662b0373c3781e6e72a0"
+      "sha256": "b5feaeebd37dbe16d1ccdcf0deadc97f6c64ff3f4149237eb9d1d045efce0ff4"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "ca4c6b579ee2b3fe761428195fa37d4037f14057cad2611f2f3366478ce9a85d"
+      "sha256": "d36f809bd4b6229bad2bc7553f309ac925bb5ba5ae7f84b2b481ac2c2e79dd1a"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
-      "sha256": "ad7043ac0255d0ed5785620e4582d8b0c28c2f1b2abe98af517295a23f7b1b80"
+      "sha256": "591af249aee189824863b899ddd56307103a7eaaf1cd7cea3b4a2fcd94aa1c08"
     },
     {
       "path": "protocol/schemas/activity-observation-v1.schema.json",
@@ -174,8 +174,8 @@
   ],
   "profile": "analyzer",
   "review_summary": {
-    "applicable_clause_count": 773,
-    "covered_count": 583,
+    "applicable_clause_count": 775,
+    "covered_count": 585,
     "not_applicable_count": 190
   },
   "section14_excerpt_count": 51,

@@ -82,11 +82,11 @@
     },
     {
       "path": "protocol/conformance/generics-traits-adoption-v1.json",
-      "sha256": "fb01cd646c3816f0e8c41d9371201e28cc1c56dd225ffbc465aebac21651f7a9"
+      "sha256": "d091cf9566a126d0725cd9b387ad0ee28754bf86ed5ee338032c7d7c9025a133"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "ca4c6b579ee2b3fe761428195fa37d4037f14057cad2611f2f3366478ce9a85d"
+      "sha256": "d36f809bd4b6229bad2bc7553f309ac925bb5ba5ae7f84b2b481ac2c2e79dd1a"
     }
   ],
   "environment_gaps": [
@@ -140,7 +140,7 @@
   ],
   "profile_review_summary": [
     {
-      "covered_count": 583,
+      "covered_count": 585,
       "not_applicable_count": 190,
       "planned_count": 0,
       "profile": "analyzer"
