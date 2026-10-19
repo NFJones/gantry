@@ -7,9 +7,9 @@
   "candidate": {
     "base_commit": "966f6ffbfe2162341d0bbabe2098b909dcbba6f0",
     "currency_repair_parent_commit": "966f6ffbfe2162341d0bbabe2098b909dcbba6f0",
-    "reviewed_through_commit": "661b28ac96fcc7ecc7c4df3bf482e2e169f9a45a",
+    "reviewed_through_commit": "8a77f92f07b9a8fac4641d6234f7222b2d5fa7f9",
     "since_commit": "966f6ffbfe2162341d0bbabe2098b909dcbba6f0",
-    "tree_sha": "0c1ee39491e3a3c787a9abc28061732a00694fb3",
+    "tree_sha": "4e207c97a8b3d4fe5c0b8e6251fcd74c2e34813b",
     "identity_note": "Content identity is the candidate input digest set plus the candidate tree hash. The record is committed after the candidate, so it names the reviewed-through commit and its tree rather than its own.",
     "toolchain": "1.97.1 minimal with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
     "inputs": [
