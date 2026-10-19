@@ -7,9 +7,9 @@
   "candidate": {
     "base_commit": "966f6ffbfe2162341d0bbabe2098b909dcbba6f0",
     "currency_repair_parent_commit": "966f6ffbfe2162341d0bbabe2098b909dcbba6f0",
-    "reviewed_through_commit": "c4b12db721d6c8652e1a888bbb10ce09c240c725",
+    "reviewed_through_commit": "661b28ac96fcc7ecc7c4df3bf482e2e169f9a45a",
     "since_commit": "966f6ffbfe2162341d0bbabe2098b909dcbba6f0",
-    "tree_sha": "7f9a56b21aea446fedf2a4493fd745557d379b9b",
+    "tree_sha": "0c1ee39491e3a3c787a9abc28061732a00694fb3",
     "identity_note": "Content identity is the candidate input digest set plus the candidate tree hash. The record is committed after the candidate, so it names the reviewed-through commit and its tree rather than its own.",
     "toolchain": "1.97.1 minimal with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
     "inputs": [
@@ -19,15 +19,15 @@
       },
       {
         "path": "protocol/requirements/reviewed-v1.json",
-        "sha256": "df4a3acd40dc6b1cb957036b5bb21f84cd2b4dcf6f5d6d5bab04a6d1ac2c3389"
+        "sha256": "ca4c6b579ee2b3fe761428195fa37d4037f14057cad2611f2f3366478ce9a85d"
       },
       {
         "path": "protocol/requirements/section14-v1.json",
-        "sha256": "18ffe745196920d808b50371e6a2faa4a25312c31e62df08ebfe9ea7ca3c9b60"
+        "sha256": "ad7043ac0255d0ed5785620e4582d8b0c28c2f1b2abe98af517295a23f7b1b80"
       },
       {
         "path": "protocol/requirements/generated/requirements-v1.json",
-        "sha256": "03f2af007980565a7eea432d5412e682d2d42cae90970320c6b5bd330e433c46"
+        "sha256": "5b6ded891add616da9ab341ebcf160ee8cab1a90d469662b0373c3781e6e72a0"
       },
       {
         "path": "Cargo.lock",
@@ -40,7 +40,7 @@
     ]
   },
   "drift_review": {
-    "specification_commits_reviewed": 1,
+    "specification_commits_reviewed": 2,
     "requirements_before": {
       "count": 639,
       "clauses": 923
