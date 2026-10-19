@@ -67,7 +67,8 @@ order, package and item applicability, exact declaration and admission, every pu
 class (missing, extra, duplicate, reordered, wrong class, wrong tier, wrong mode, wrong target,
 and wrongly-bound clause), and the no-mutation rule.
 `crates/gantry-conformance/tests/stdlib_architecture.rs` checks aggregate composition and
-catalog identity. These tests perform no host I/O and observe no clock.
+catalog identity. These tests perform no host time, locale, rule-data, or clock operation and
+observe no clock: they read committed repository fixtures and the aggregate catalog only.
 
 Passing these lanes does not qualify a specification revision, publication, release, target
 adapter, or time runtime. Generated and revision-bound checks must still agree with genuinely

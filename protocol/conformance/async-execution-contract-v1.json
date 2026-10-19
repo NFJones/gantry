@@ -21,35 +21,35 @@
   "contract_artifacts": [
     {
       "path": "crates/gantry-core/src/generated/portable.rs",
-      "sha256": "6af6fedcca740ff812510639d93273b536fbf2a65945a0155460e454cbce0646"
+      "sha256": "2d0a6fe341c478974c43333f4c31d494ce2c19aa2e78aa3491103e4d4d7b37aa"
     },
     {
       "path": "crates/gantry-core/src/generated/profiles.rs",
-      "sha256": "a6a378fe107a590bf39790273158ec2e5a6c382bc434249e3a97f76736211fd9"
+      "sha256": "3d76c080a26e59ee5d7c3a626b7f47f09080c9ac7f0efe0b1036602357468825"
     },
     {
       "path": "crates/gantry-host/src/generated/embedding.rs",
-      "sha256": "ff300201ca045c159433cb86ed5a881cbbc10bdc0e4e7100975816d091831fa6"
+      "sha256": "69fcb515736e84ce99aaf97a6a111203889344456c3d2bb0c65b5d81630a4d76"
     },
     {
       "path": "protocol/catalogs/embedding-contracts-v1.json",
-      "sha256": "c3a56a9374797fc13ff57768995152c310456145b13c5ec85e97d2ceb17cb6d0"
+      "sha256": "284ba87e46eb3f9520f4268db1449a6fb561ce511ccf17d878d5783bf0d9c4ca"
     },
     {
       "path": "protocol/catalogs/portable-contracts-v1.json",
-      "sha256": "3a80753ede0779b2d12827bd1e3ff1e27fd0af6774704d403fd6725e7b6ccfc5"
+      "sha256": "ed6acd417483501fbb5179605ddbe486168591bfee08e45b457b3c380e5e4e00"
     },
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "03a5a5a3f5200282c775ed95da895d71da62c06a957986404041dfba241959cc"
+      "sha256": "90bd1026815649e188dd0063a286b493db2a4ca3c46ab773fc41f6868e62dd44"
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "03f2af007980565a7eea432d5412e682d2d42cae90970320c6b5bd330e433c46"
+      "sha256": "5b6ded891add616da9ab341ebcf160ee8cab1a90d469662b0373c3781e6e72a0"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "df4a3acd40dc6b1cb957036b5bb21f84cd2b4dcf6f5d6d5bab04a6d1ac2c3389"
+      "sha256": "ca4c6b579ee2b3fe761428195fa37d4037f14057cad2611f2f3366478ce9a85d"
     },
     {
       "path": "protocol/schemas/embedding-contracts-v1.schema.json",
@@ -902,6 +902,6 @@
       "requirement": "GNT-15.9"
     }
   ],
-  "specification_sha256": "2f2e7429e286d21c8efa6b4aea4ca0cc61a4d8dd52ac74cce209647d0496b80b",
+  "specification_sha256": "0ea3c63354ef06fa5cf7022076937d1fdb6c753b37f4582a880aea226ff632d4",
   "status": "verified"
 }

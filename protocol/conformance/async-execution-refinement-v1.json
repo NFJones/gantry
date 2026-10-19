@@ -1,6 +1,6 @@
 {
   "format": "gantry.async-execution-refinement-evidence/v1",
-  "specification_sha256": "2f2e7429e286d21c8efa6b4aea4ca0cc61a4d8dd52ac74cce209647d0496b80b",
+  "specification_sha256": "0ea3c63354ef06fa5cf7022076937d1fdb6c753b37f4582a880aea226ff632d4",
   "issue": "GNT-ASYNC-PROOF-001",
   "argument": "docs/async-execution-refinement.md",
   "models": [
