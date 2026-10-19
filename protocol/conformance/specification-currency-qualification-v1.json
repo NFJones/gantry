@@ -7,9 +7,9 @@
   "candidate": {
     "base_commit": "966f6ffbfe2162341d0bbabe2098b909dcbba6f0",
     "currency_repair_parent_commit": "966f6ffbfe2162341d0bbabe2098b909dcbba6f0",
-    "reviewed_through_commit": "41a1707ca4186b0af2039405d90e4a9ecd118c7d",
+    "reviewed_through_commit": "c4b12db721d6c8652e1a888bbb10ce09c240c725",
     "since_commit": "966f6ffbfe2162341d0bbabe2098b909dcbba6f0",
-    "tree_sha": "397b26d3c0dc6dbf66cada79046d80dcebd4f299",
+    "tree_sha": "7f9a56b21aea446fedf2a4493fd745557d379b9b",
     "identity_note": "Content identity is the candidate input digest set plus the candidate tree hash. The record is committed after the candidate, so it names the reviewed-through commit and its tree rather than its own.",
     "toolchain": "1.97.1 minimal with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
     "inputs": [
@@ -265,7 +265,7 @@
   "gaps": [
     "No runtime std.time implementation is added: no clock, timer, scheduler, timezone upgrade, wall observation, host-preference snapshot, rule-data installation or upgrade, or target locale-data catalog is implemented or executed.",
     "Typed civil ambiguity, pinned rule-data identities, and durable timer reconstruction are not delivered. The next slice owns the injected monotonic clock and one-shot timer under the existing ownership, wait, cancel, and fault contracts, with domain- and generation-bound deadlines, readiness recheck, stale-wake fencing, and exactly one completion or cancel winner.",
-    "Two inherited environment failures remain outside this slice: general_purpose_preregistration cannot read the gitignored docs/reference/general-purpose-refactor-issue-plan.md, and the xtask bin governance test cannot write the read-only cargo registry cache."
+    "Two inherited environment failures were observed while qualifying this slice: general_purpose_preregistration cannot read the gitignored docs/reference/general-purpose-refactor-issue-plan.md, and the xtask bin governance test cannot write the read-only cargo registry cache. Both stay outside this slice: the preregistration failure reproduced on the recut, the governance test passed on this host, and no slice claim depends on either."
   ],
   "successors": [
     {
