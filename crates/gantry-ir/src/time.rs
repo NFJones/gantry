@@ -3,7 +3,8 @@
 //! This module publishes the six canonical module rows of the capability-backed `std.time`
 //! family, their classification, tier, application-only applicability over the library and
 //! binary target kinds, the clauses that publish them, and the declare and admit surfaces that
-//! refuse a missing, extra, duplicate, wrong-class, wrong-tier, or wrong-applicability row.
+//! refuse a missing, extra, duplicate, reordered, wrong-class, wrong-tier, wrong-applicability, or
+//! wrongly-bound row.
 //!
 //! It consumes Section 33 rather than restating it: civil-time, locale, and rule-data semantics
 //! remain owned by `GNT-33`, and monotonic and wall separation remains owned by

@@ -197,6 +197,10 @@ fn time_surface_declaration_requires_package_and_admits_exact_rows() {
         refusal(declare_time_surface(&mut empty)),
         StdlibDiagnosticCode::UnknownEdge
     );
+    assert_eq!(
+        refusal(admit_time_surface(&empty)),
+        StdlibDiagnosticCode::UnknownEdge
+    );
 
     let mut graph = StdGraph::new(Prelude::canonical());
     assert!(
@@ -336,6 +340,33 @@ fn time_surface_rejects_missing_extra_and_duplicate_rows() {
         StdlibDiagnosticCode::InvalidNameClassification
     );
 
+    let reordered = [
+        TIME_MODULE_ROWS[1],
+        TIME_MODULE_ROWS[0],
+        TIME_MODULE_ROWS[2],
+        TIME_MODULE_ROWS[3],
+        TIME_MODULE_ROWS[4],
+        TIME_MODULE_ROWS[5],
+    ];
+    assert_eq!(
+        refusal(validate_time_module_rows(&reordered)),
+        StdlibDiagnosticCode::InvalidNameClassification
+    );
+
+    let extra_rows = [
+        TIME_MODULE_ROWS[0],
+        TIME_MODULE_ROWS[1],
+        TIME_MODULE_ROWS[2],
+        TIME_MODULE_ROWS[3],
+        TIME_MODULE_ROWS[4],
+        TIME_MODULE_ROWS[5],
+        TIME_MODULE_ROWS[5],
+    ];
+    assert_eq!(
+        refusal(validate_time_module_rows(&extra_rows)),
+        StdlibDiagnosticCode::InvalidNameClassification
+    );
+
     let mut duplicate_surface = graph_with_rows(
         NameClass::Module,
         StabilityTier::Stable,
@@ -406,6 +437,52 @@ fn time_surface_rejects_wrong_class_tier_and_applicability() {
         StdlibDiagnosticCode::UnsupportedApplicability
     );
     assert_eq!(wrong_item_modes, before);
+
+    let wrong_clauses = [
+        DeclaredModuleRow {
+            name: TIME_MODULE_ROWS[0].name,
+            class: TIME_MODULE_ROWS[0].class,
+            tier: TIME_MODULE_ROWS[0].tier,
+            modes: TIME_MODULE_ROWS[0].modes,
+            targets: TIME_MODULE_ROWS[0].targets,
+            clauses: &[TIME_MODULE_CLAUSES[1], TIME_MODULE_CLAUSES[0]],
+        },
+        TIME_MODULE_ROWS[1],
+        TIME_MODULE_ROWS[2],
+        TIME_MODULE_ROWS[3],
+        TIME_MODULE_ROWS[4],
+        TIME_MODULE_ROWS[5],
+    ];
+    assert_eq!(
+        refusal(validate_time_module_rows(&wrong_clauses)),
+        StdlibDiagnosticCode::InvalidNameClassification
+    );
+
+    let mut wrong_targets = StdGraph::new(Prelude::canonical());
+    assert!(
+        wrong_targets
+            .declare(family_package(&TIME_MODULE_MODES, &[TargetKind::Library]))
+            .is_ok()
+    );
+    let before = wrong_targets.clone();
+    assert_eq!(
+        refusal(declare_time_surface(&mut wrong_targets)),
+        StdlibDiagnosticCode::UnsupportedApplicability
+    );
+    assert_eq!(wrong_targets, before);
+
+    let wrong_item_targets = graph_with_rows(
+        NameClass::Module,
+        StabilityTier::Stable,
+        &TIME_MODULE_MODES,
+        &[TargetKind::Library],
+    );
+    let before = wrong_item_targets.clone();
+    assert_eq!(
+        refusal(admit_time_surface(&wrong_item_targets)),
+        StdlibDiagnosticCode::UnsupportedApplicability
+    );
+    assert_eq!(wrong_item_targets, before);
 }
 
 #[test]

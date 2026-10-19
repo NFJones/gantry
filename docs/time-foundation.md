@@ -21,16 +21,16 @@ Every row applies only in the application semantic mode over the library and bin
 kinds. `TIME_MODULE_ROWS` publishes the rows, and `TIME_MODULE_CLAUSES` publishes the scope and
 row-owning clause vocabulary. `declare_time_surface`, `admit_time_surface`, and
 `validate_time_module_rows` refuse a missing, extra, duplicate, reordered, wrong-class,
-wrong-tier, or wrong-applicability row instead of repairing it, and a refusal never mutates the
-decided graph. `canonical_time_hierarchy` composes the family with the pure hierarchy, and
-`canonical_std_hierarchy` includes the same defining package and item identity. The aggregate
-catalog records the package interface digest. Repository module paths and host adapters are not
-the source-level package identity.
+wrong-tier, wrong-applicability, or wrongly-bound clause row instead of repairing it, and a
+refusal never mutates the decided graph. `canonical_time_hierarchy` composes the family with the
+pure hierarchy, and `canonical_std_hierarchy` includes the same defining package and item
+identity. The aggregate catalog records the package interface digest. Repository module paths
+and host adapters are not the source-level package identity.
 
-Wrong class, duplicate, missing, extra, and reordered rows are refused under
-`std-invalid-name-classification` of `GNT-34.2-name-classification`; a wrong tier is refused
-under `std-invalid-stability-transition` of `GNT-34.6-stability-tiers`; and wrong applicability
-is refused under `std-unsupported-applicability` of
+Wrong class, duplicate, missing, extra, reordered, and wrongly-bound clause rows are refused
+under `std-invalid-name-classification` of `GNT-34.2-name-classification`; a wrong tier is
+refused under `std-invalid-stability-transition` of `GNT-34.6-stability-tiers`; and wrong
+applicability is refused under `std-unsupported-applicability` of
 `GNT-34.7-applicability-and-feature-granularity`. Section 51 owns no diagnostic spelling and
 adds no refusal condition to Section 33.
 
@@ -62,8 +62,10 @@ observations and host preferences require separate authority and are not implied
 
 ## Evidence and qualification
 
-`crates/gantry-conformance/tests/time_foundation.rs` checks the closed rows, applicability,
-exact declaration and admission, all six refusal classes, and the no-mutation rule.
+`crates/gantry-conformance/tests/time_foundation.rs` checks the closed rows and their canonical
+order, package and item applicability, exact declaration and admission, every published refusal
+class (missing, extra, duplicate, reordered, wrong class, wrong tier, wrong mode, wrong target,
+and wrongly-bound clause), and the no-mutation rule.
 `crates/gantry-conformance/tests/stdlib_architecture.rs` checks aggregate composition and
 catalog identity. These tests perform no host I/O and observe no clock.
 
