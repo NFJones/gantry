@@ -16,11 +16,11 @@ use gantry::ir::{
     NATIVE_DIRECTORY_CLAUSES, NativeDirectoryAuthority, NativeDirectoryCase,
     NativeDirectoryChildGrant, NativeDirectoryComparison, NativeDirectoryCompletion,
     NativeDirectoryDiagnosticCode, NativeDirectoryDurablePresentation, NativeDirectoryHandle,
-    NativeDirectoryLedger, NativeDirectoryMapping, NativeDirectoryPath, NativeDirectoryRefusal,
-    NativeDirectoryRequirement, NativeDirectoryRequirementKind, NativeDirectorySlot,
-    NativeDirectorySubjectFacts, NativeDirectoryTarget, OwnerGeneration, ResourceGenerationId,
-    RightsSet, SemanticMode, StaticSiteId, StructuralPosition, TaskBodyIdentity, TypeDescriptor,
-    recover_native_directory,
+    NativeDirectoryIssuer, NativeDirectoryLedger, NativeDirectoryMapping, NativeDirectoryPath,
+    NativeDirectoryRefusal, NativeDirectoryRequirement, NativeDirectoryRequirementKind,
+    NativeDirectorySlot, NativeDirectorySubjectFacts, NativeDirectoryTarget, OwnerGeneration,
+    ResourceGenerationId, RightsSet, SemanticMode, StaticSiteId, StructuralPosition,
+    TaskBodyIdentity, TypeDescriptor, recover_native_directory,
 };
 
 /// Compile-time proof that one type implements none of the listed traits.
@@ -127,9 +127,9 @@ fn path(text: &str, mapping: NativeDirectoryMapping) -> NativeDirectoryPath {
 }
 
 /// One attached slot over one admitted path.
-fn slot(identity: &str, text: &str) -> NativeDirectorySlot {
+fn slot(identity: &str, text: &str, facts: &NativeDirectorySubjectFacts) -> NativeDirectorySlot {
     let mapping = NativeDirectoryMapping::LINUX_SENSITIVE;
-    match NativeDirectorySlot::new(identity, path(text, mapping)) {
+    match NativeDirectorySlot::new(identity, path(text, mapping), facts.clone()) {
         Ok(slot) => slot,
         Err(error) => panic!("the declared slot identity {identity} is named: {error}"),
     }
@@ -310,7 +310,7 @@ fn issue(
     facts: &NativeDirectorySubjectFacts,
     fence: u64,
 ) -> NativeDirectoryHandle {
-    match ledger.issue(slot(identity, text), authority(facts, text, fence)) {
+    match ledger.issue(slot(identity, text, facts), authority(facts, text, fence)) {
         Ok(handle) => handle,
         Err(error) => panic!("the declared issuance is admitted: {error}"),
     }
@@ -357,7 +357,7 @@ fn authority_requires_a_right_and_the_application_mode() {
 
 #[test]
 fn every_route_compares_the_exact_requirement_identity() {
-    let mut ledger = NativeDirectoryLedger::new();
+    let mut ledger = NativeDirectoryLedger::new(NativeDirectoryIssuer::new(1));
     let facts = subject(1, "run", 4);
     let handle = issue(&mut ledger, "slot-a", "/srv/work", &facts, 2);
     let held = requirement(NativeDirectoryRequirementKind::Open, "Int");
@@ -376,7 +376,7 @@ fn every_route_compares_the_exact_requirement_identity() {
 
 #[test]
 fn every_route_compares_exact_facts_including_execution_and_task_provenance() {
-    let mut ledger = NativeDirectoryLedger::new();
+    let mut ledger = NativeDirectoryLedger::new(NativeDirectoryIssuer::new(1));
     let facts = subject(1, "run", 4);
     let handle = issue(&mut ledger, "slot-a", "/srv/work", &facts, 2);
     let held = requirement(NativeDirectoryRequirementKind::Open, "Int");
@@ -409,11 +409,11 @@ fn every_route_compares_exact_facts_including_execution_and_task_provenance() {
 
 #[test]
 fn issuance_binds_the_handle_path_to_the_attached_slot_path() {
-    let mut ledger = NativeDirectoryLedger::new();
+    let mut ledger = NativeDirectoryLedger::new(NativeDirectoryIssuer::new(1));
     let facts = subject(1, "run", 4);
     assert_eq!(
         refusal(ledger.issue(
-            slot("slot-a", "/srv/work"),
+            slot("slot-a", "/srv/work", &facts),
             authority(&facts, "/srv/other", 2),
         )),
         NativeDirectoryDiagnosticCode::PathBindingRefused,
@@ -423,6 +423,7 @@ fn issuance_binds_the_handle_path_to_the_attached_slot_path() {
     let drifted = match NativeDirectorySlot::new(
         "slot-a",
         path("/srv/other", NativeDirectoryMapping::LINUX_SENSITIVE),
+        facts.clone(),
     ) {
         Ok(slot) => slot,
         Err(error) => panic!("the declared slot identity is named: {error}"),
@@ -439,18 +440,18 @@ fn issuance_binds_the_handle_path_to_the_attached_slot_path() {
 
 #[test]
 fn exclusive_issuance_admits_one_live_handle_per_slot() {
-    let mut ledger = NativeDirectoryLedger::new();
+    let mut ledger = NativeDirectoryLedger::new(NativeDirectoryIssuer::new(1));
     let facts = subject(1, "run", 4);
     let first = issue(&mut ledger, "slot-a", "/srv/work", &facts, 2);
     assert_eq!(
         refusal(ledger.issue(
-            slot("slot-a", "/srv/work"),
+            slot("slot-a", "/srv/work", &facts),
             authority(&facts, "/srv/work", 2),
         )),
         NativeDirectoryDiagnosticCode::DuplicateIssuance,
     );
     let winner = match ledger.settle(
-        first,
+        &first,
         NativeDirectoryCompletion::Completed { settled_at: 5 },
     ) {
         Ok(winner) => winner,
@@ -464,11 +465,11 @@ fn exclusive_issuance_admits_one_live_handle_per_slot() {
 
 #[test]
 fn a_settled_slot_reissues_only_a_succeeding_owner_generation() {
-    let mut ledger = NativeDirectoryLedger::new();
+    let mut ledger = NativeDirectoryLedger::new(NativeDirectoryIssuer::new(1));
     let facts = subject(1, "run", 4);
     let first = issue(&mut ledger, "slot-a", "/srv/work", &facts, 2);
     match ledger.settle(
-        first,
+        &first,
         NativeDirectoryCompletion::Cancelled { settled_at: 6 },
     ) {
         Ok(winner) => assert!(winner.is_cancellation()),
@@ -476,7 +477,7 @@ fn a_settled_slot_reissues_only_a_succeeding_owner_generation() {
     }
     assert_eq!(
         refusal(ledger.issue(
-            slot("slot-a", "/srv/work"),
+            slot("slot-a", "/srv/work", &facts),
             authority(&facts, "/srv/work", 2),
         )),
         NativeDirectoryDiagnosticCode::StaleGeneration,
@@ -487,13 +488,13 @@ fn a_settled_slot_reissues_only_a_succeeding_owner_generation() {
 
 #[test]
 fn the_handle_is_affine_and_settles_exactly_once() {
-    let mut ledger = NativeDirectoryLedger::new();
+    let mut ledger = NativeDirectoryLedger::new(NativeDirectoryIssuer::new(1));
     let facts = subject(1, "run", 4);
     let handle = issue(&mut ledger, "slot-a", "/srv/work", &facts, 2);
     let held = requirement(NativeDirectoryRequirementKind::Open, "Int");
     assert!(ledger.route(&handle, &held, &facts).is_ok());
     match ledger.settle(
-        handle,
+        &handle,
         NativeDirectoryCompletion::Completed { settled_at: 8 },
     ) {
         Ok(winner) => assert_eq!(winner.settled_at(), 8),
@@ -501,7 +502,7 @@ fn the_handle_is_affine_and_settles_exactly_once() {
     }
     assert_eq!(
         refusal(ledger.settle_completion(
-            &slot("slot-a", "/srv/work"),
+            &slot("slot-a", "/srv/work", &facts),
             &facts,
             NativeDirectoryCompletion::Completed { settled_at: 9 },
         )),
@@ -511,7 +512,7 @@ fn the_handle_is_affine_and_settles_exactly_once() {
 
 #[test]
 fn revocation_fences_every_route_of_already_issued_handles() {
-    let mut ledger = NativeDirectoryLedger::new();
+    let mut ledger = NativeDirectoryLedger::new(NativeDirectoryIssuer::new(1));
     let facts = subject(1, "run", 4);
     let handle = issue(&mut ledger, "slot-a", "/srv/work", &facts, 2);
     let held = requirement(NativeDirectoryRequirementKind::Open, "Int");
@@ -522,13 +523,13 @@ fn revocation_fences_every_route_of_already_issued_handles() {
     );
     assert_eq!(
         refusal(ledger.issue(
-            slot("slot-b", "/srv/other"),
+            slot("slot-b", "/srv/other", &facts),
             authority(&facts, "/srv/other", 2),
         )),
         NativeDirectoryDiagnosticCode::Revoked,
     );
     match ledger.settle(
-        handle,
+        &handle,
         NativeDirectoryCompletion::Cancelled { settled_at: 11 },
     ) {
         Ok(winner) => assert!(winner.is_cancellation()),
@@ -538,12 +539,12 @@ fn revocation_fences_every_route_of_already_issued_handles() {
 
 #[test]
 fn late_and_repeated_completions_are_refused_without_effect() {
-    let mut ledger = NativeDirectoryLedger::new();
+    let mut ledger = NativeDirectoryLedger::new(NativeDirectoryIssuer::new(1));
     let facts = subject(1, "run", 4);
     let handle = issue(&mut ledger, "slot-a", "/srv/work", &facts, 2);
-    let live = slot("slot-a", "/srv/work");
+    let live = slot("slot-a", "/srv/work", &facts);
     assert_eq!(
-        refusal(ledger.settle(handle, NativeDirectoryCompletion::Late { settled_at: 3 })),
+        refusal(ledger.settle(&handle, NativeDirectoryCompletion::Late { settled_at: 3 })),
         NativeDirectoryDiagnosticCode::LateCompletion,
     );
     assert_eq!(
@@ -572,7 +573,7 @@ fn late_and_repeated_completions_are_refused_without_effect() {
     );
     assert_eq!(
         refusal(ledger.settle_completion(
-            &slot("slot-z", "/srv/nowhere"),
+            &slot("slot-z", "/srv/nowhere", &facts),
             &facts,
             NativeDirectoryCompletion::Completed { settled_at: 9 },
         )),
@@ -582,7 +583,7 @@ fn late_and_repeated_completions_are_refused_without_effect() {
 
 #[test]
 fn child_projection_attenuates_rights_and_refuses_escapes() {
-    let mut ledger = NativeDirectoryLedger::new();
+    let mut ledger = NativeDirectoryLedger::new(NativeDirectoryIssuer::new(1));
     let facts = subject(1, "run", 4);
     let handle = issue(&mut ledger, "slot-a", "/srv/work", &facts, 2);
     let child_rights = RightsSet::from_rights(&[AuthorityRight::Observe]);
@@ -623,11 +624,12 @@ fn child_projection_attenuates_rights_and_refuses_escapes() {
 fn child_projection_keeps_the_inherited_mapping_refusal() {
     let mapping = NativeDirectoryMapping::MACOS_ASCII_INSENSITIVE;
     let facts = subject(1, "run", 4);
-    let mut ledger = NativeDirectoryLedger::new();
-    let attached = match NativeDirectorySlot::new("slot-a", path("/srv/work", mapping)) {
-        Ok(attached) => attached,
-        Err(error) => panic!("the declared slot identity is named: {error}"),
-    };
+    let mut ledger = NativeDirectoryLedger::new(NativeDirectoryIssuer::new(1));
+    let attached =
+        match NativeDirectorySlot::new("slot-a", path("/srv/work", mapping), facts.clone()) {
+            Ok(attached) => attached,
+            Err(error) => panic!("the declared slot identity is named: {error}"),
+        };
     let authority = match NativeDirectoryAuthority::declare(
         requirement(NativeDirectoryRequirementKind::Open, "Int"),
         RightsSet::from_rights(&[AuthorityRight::Observe]),
@@ -707,6 +709,91 @@ fn section_52_note_publishes_the_contract_boundaries() {
             "the note publishes its boundaries"
         );
     }
+}
+
+#[test]
+fn a_handle_from_another_issuer_is_not_an_equivalent_issuance() {
+    let facts = subject(1, "run", 4);
+    let held = requirement(NativeDirectoryRequirementKind::Open, "Int");
+    let mut first = NativeDirectoryLedger::new(NativeDirectoryIssuer::new(1));
+    let mut second = NativeDirectoryLedger::new(NativeDirectoryIssuer::new(2));
+    let handle = issue(&mut first, "slot-a", "/srv/work", &facts, 2);
+    let foreign = issue(&mut second, "slot-a", "/srv/work", &facts, 2);
+    assert_ne!(handle.issuance(), foreign.issuance());
+
+    assert!(first.route(&handle, &held, &facts).is_ok());
+    assert_eq!(
+        refusal(first.route(&foreign, &held, &facts)),
+        NativeDirectoryDiagnosticCode::ForeignSubject,
+        "an equivalent declaration from another issuer is not this ledger issuance",
+    );
+
+    first.revoke(AuthorityGeneration::new(2));
+    assert_eq!(
+        refusal(first.route(&handle, &held, &facts)),
+        NativeDirectoryDiagnosticCode::Revoked,
+    );
+    assert!(
+        second.route(&foreign, &held, &facts).is_ok(),
+        "another issuer revocation never fences this issuance",
+    );
+}
+
+#[test]
+fn a_path_admitted_under_another_mapping_is_refused() {
+    let admitted = path("/hé", NativeDirectoryMapping::LINUX_SENSITIVE);
+    assert_eq!(
+        refusal(NativeDirectoryAuthority::declare(
+            requirement(NativeDirectoryRequirementKind::Open, "Int"),
+            RightsSet::from_rights(&[AuthorityRight::Observe]),
+            NativeDirectoryMapping::MACOS_ASCII_INSENSITIVE,
+            SemanticMode::Application,
+            subject(1, "run", 4),
+            admitted,
+            AuthorityGeneration::new(2),
+        )),
+        NativeDirectoryDiagnosticCode::UnsupportedRepresentation,
+        "the declared mapping cannot preserve a path admitted under another mapping",
+    );
+}
+
+#[test]
+fn attached_slot_facts_must_be_the_declared_subject_facts() {
+    let facts = subject(1, "run", 4);
+    let other = subject(1, "rerun", 4);
+    let mut ledger = NativeDirectoryLedger::new(NativeDirectoryIssuer::new(1));
+    assert_eq!(
+        refusal(ledger.issue(
+            slot("slot-a", "/srv/work", &other),
+            authority(&facts, "/srv/work", 2),
+        )),
+        NativeDirectoryDiagnosticCode::ForeignSubject,
+    );
+}
+
+#[test]
+fn a_refused_late_presentation_leaves_the_handle_usable() {
+    let facts = subject(1, "run", 4);
+    let held = requirement(NativeDirectoryRequirementKind::Open, "Int");
+    let mut ledger = NativeDirectoryLedger::new(NativeDirectoryIssuer::new(1));
+    let handle = issue(&mut ledger, "slot-a", "/srv/work", &facts, 2);
+    assert_eq!(
+        refusal(ledger.settle(&handle, NativeDirectoryCompletion::Late { settled_at: 3 })),
+        NativeDirectoryDiagnosticCode::LateCompletion,
+    );
+    assert!(
+        ledger.route(&handle, &held, &facts).is_ok(),
+        "a refused late presentation leaves the live issuance routable",
+    );
+    assert!(
+        ledger
+            .settle(
+                &handle,
+                NativeDirectoryCompletion::Completed { settled_at: 9 }
+            )
+            .is_ok(),
+        "the same handle still settles exactly once afterwards",
+    );
 }
 
 /// The workspace root of the conformance crate.

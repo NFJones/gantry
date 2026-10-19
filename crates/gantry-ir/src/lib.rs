@@ -273,11 +273,11 @@ pub use env_native::{
     NATIVE_DIRECTORY_CLAUSES, NativeDirectoryAuthority, NativeDirectoryCase,
     NativeDirectoryChildGrant, NativeDirectoryChildProjection, NativeDirectoryComparison,
     NativeDirectoryCompletion, NativeDirectoryDiagnosticCode, NativeDirectoryDurablePresentation,
-    NativeDirectoryHandle, NativeDirectoryLedger, NativeDirectoryLineage, NativeDirectoryMapping,
-    NativeDirectoryPath, NativeDirectoryRecovery, NativeDirectoryRefusal,
-    NativeDirectoryRequirement, NativeDirectoryRequirementKind, NativeDirectorySettlementWinner,
-    NativeDirectorySlot, NativeDirectorySubjectFacts, NativeDirectoryTarget,
-    recover_native_directory,
+    NativeDirectoryHandle, NativeDirectoryIssuanceId, NativeDirectoryIssuer, NativeDirectoryLedger,
+    NativeDirectoryLineage, NativeDirectoryMapping, NativeDirectoryPath, NativeDirectoryRecovery,
+    NativeDirectoryRefusal, NativeDirectoryRequirement, NativeDirectoryRequirementKind,
+    NativeDirectorySettlementWinner, NativeDirectorySlot, NativeDirectorySubjectFacts,
+    NativeDirectoryTarget, recover_native_directory,
 };
 // `identifier` is re-exported here for the identifier-security surface, except
 // for `AliasMap`, `CollisionCondition`, and `DeclaredName`, which the package and

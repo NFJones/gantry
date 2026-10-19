@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "b718864eda8838ad80de9df46a35a1e7feab93c0e87b1894763bf5b2288caabc",
-  "byte_length": 1448787,
+  "specification_sha256": "293136ab2847bd3a47776866ed24af40875e3b00449c5ae587425da1d8bdaac8",
+  "byte_length": 1450104,
   "line_count": 18316,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9780,
       "end_line": 18316,
-      "sha256": "4c4ca9fa346aab50a9c7b5db6a4db257506f3fb8f2e714444ecf8b6bdbdc0e6f",
+      "sha256": "ef2272d1f94f12f8d0232a045f1f3434207278bac83121da217560f91c59544f",
       "rationale": null
     }
   ],
@@ -46382,11 +46382,11 @@
       "id": "GNT-52.1-native-directory-requirement-and-mapping-policy",
       "span_start_line": 18282,
       "span_end_line": 18285,
-      "span_sha256": "fdf0157ebf87481f8c7f8b26aa355356066e95ac2833c36231ae544eb9ce4079",
+      "span_sha256": "a73845e76a861b5b66e13fa963c8b40b4be5d94af25574b05ff4f6a7f622ff7f",
       "anchor_line": 18282,
       "body_start_line": 18283,
       "body_end_line": 18284,
-      "body_sha256": "d7bbae4750c30416e40edfde40b34a76dc3dfa7c11edbfd78ed8ee64d3b8051c",
+      "body_sha256": "8a19a61f820e41a07a06d07a4233187e8aa43a08ce1e374aae96fb36a2c40426",
       "profiles": [
         "analyzer"
       ],
@@ -46425,11 +46425,11 @@
       "id": "GNT-52.2-native-directory-path-and-fact-binding",
       "span_start_line": 18286,
       "span_end_line": 18289,
-      "span_sha256": "5f577ecfc0fc8b62ddaeac50e012d907c0fdff4df056818e71cd1b81e962c2f4",
+      "span_sha256": "2a2e70bf5f00aef438eb4ad42318b86ad68530885e23bb30271fe197de82c215",
       "anchor_line": 18286,
       "body_start_line": 18287,
       "body_end_line": 18288,
-      "body_sha256": "48e83e77126771c3ce525d7da2dd0986e1666da5dff897674280a79edbeffc47",
+      "body_sha256": "5e92717dfec302288b1ed540b6434576320b99b4407e133bfa89d031ac5dac24",
       "profiles": [
         "analyzer"
       ],
@@ -46469,11 +46469,11 @@
       "id": "GNT-52.3-native-directory-exclusive-issuance-and-ownership",
       "span_start_line": 18290,
       "span_end_line": 18293,
-      "span_sha256": "258ec610245e0d0020ef5a31be3e7c02c4b7b72c7bdf8e08fc2f9c883d8922ae",
+      "span_sha256": "3daeb0bdb0917268157555f90eb5e03b532f146efc2df12d02cfdb771db7c8c5",
       "anchor_line": 18290,
       "body_start_line": 18291,
       "body_end_line": 18292,
-      "body_sha256": "a888cbe19d6063bdd5ac080289d9dff104997b6aee270a941d276b4de9dfd25d",
+      "body_sha256": "014e83e32e7254b144c96c66df173b24f35738550ea631280a99430990cc4a39",
       "profiles": [
         "analyzer"
       ],
@@ -46553,11 +46553,11 @@
       "id": "GNT-52.5-native-directory-completion-and-late-response",
       "span_start_line": 18298,
       "span_end_line": 18301,
-      "span_sha256": "14a46262a0cc0732e40b71582bf560aad7f57bc961542b08591a6b2ce5f2137c",
+      "span_sha256": "daf20ae52ee5b8d3fed1c4046b879d50146655656950e29c4a948727332d047c",
       "anchor_line": 18298,
       "body_start_line": 18299,
       "body_end_line": 18300,
-      "body_sha256": "a0c55d4cb645fadd73bff295b13467348ddb4073f0bd12a8fd208409e4b60453",
+      "body_sha256": "6f999aabeff245571589ae932acf29b17bfc7d8125b9fa25bfbccb0056d79eb1",
       "profiles": [
         "analyzer"
       ],
