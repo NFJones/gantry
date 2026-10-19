@@ -260,14 +260,14 @@ impl ClockObservation {
         self.last
     }
 
-    /// Observes one sample, refusing a foreign domain or a regression.
+    /// Checks one sample, refusing a foreign domain or a regression.
     ///
     /// # Errors
     ///
     /// Returns [`TimerError::WrongClockDomain`] when the sample names another
     /// domain, and [`TimerError::MonotonicRegression`] when the sample is less than
-    /// one already observed for this domain.
-    pub fn observe(&mut self, instant: &MonotonicInstant) -> Result<u64, TimerError> {
+    /// one already observed for this domain. A refused sample mutates nothing.
+    pub fn check(&self, instant: &MonotonicInstant) -> Result<u64, TimerError> {
         if instant.domain() != &self.domain {
             return Err(TimerError::WrongClockDomain {
                 held: self.domain.clone(),
@@ -283,8 +283,18 @@ impl ClockObservation {
                 presented: instant.micros(),
             });
         }
-        self.last = Some(instant.micros());
         Ok(instant.micros())
+    }
+
+    /// Records one checked sample as the last accepted sample.
+    ///
+    /// # Errors
+    ///
+    /// Returns every refusal of [`Self::check`].
+    pub fn observe(&mut self, instant: &MonotonicInstant) -> Result<u64, TimerError> {
+        let micros = self.check(instant)?;
+        self.last = Some(micros);
+        Ok(micros)
     }
 }
 
@@ -507,9 +517,9 @@ impl OneShotTimer {
         registration: WaitRegistration,
         waits: &mut WaitSet,
     ) -> Result<TimerArm, TimerError> {
-        let instant = self.observe(clock)?;
+        let instant = self.sample(clock)?;
         let deadline = TimerDeadline::after(&instant, duration, registration.generation())?;
-        self.arm(deadline, instant.micros(), registration, waits)
+        self.arm(deadline, instant, registration, waits)
     }
 
     /// Arms one absolute deadline and rechecks readiness in one atomic step.
@@ -525,14 +535,14 @@ impl OneShotTimer {
         registration: WaitRegistration,
         waits: &mut WaitSet,
     ) -> Result<TimerArm, TimerError> {
-        let instant = self.observe(clock)?;
+        let instant = self.sample(clock)?;
         if deadline.domain() != &self.domain {
             return Err(TimerError::WrongClockDomain {
                 held: self.domain.clone(),
                 presented: deadline.domain().clone(),
             });
         }
-        self.arm(deadline, instant.micros(), registration, waits)
+        self.arm(deadline, instant, registration, waits)
     }
 
     /// Delivers one expiry under the held waiter-generation fence.
@@ -575,7 +585,7 @@ impl OneShotTimer {
             });
         }
         let deadline = self.deadline.clone().ok_or(TimerError::TimerUnarmed)?;
-        let instant = self.observe(clock)?;
+        let instant = self.sample(clock)?;
         if !deadline.has_elapsed(&instant)? {
             return Err(TimerError::TimerNotDue {
                 deadline: deadline.micros(),
@@ -583,6 +593,7 @@ impl OneShotTimer {
             });
         }
         let record = waits.wake(&self.wait_id()?, presented, WakeCause::Timeout)?;
+        self.observation.observe(&instant)?;
         self.state = TimerState::Settled(TimerWinner::Expired);
         Ok(record)
     }
@@ -624,8 +635,8 @@ impl OneShotTimer {
         Ok(record)
     }
 
-    /// Samples the injected clock and observes it for this domain.
-    fn observe(&mut self, clock: &dyn MonotonicClock) -> Result<MonotonicInstant, TimerError> {
+    /// Samples the injected clock and checks it without recording it.
+    fn sample(&self, clock: &dyn MonotonicClock) -> Result<MonotonicInstant, TimerError> {
         if clock.domain() != &self.domain {
             return Err(TimerError::WrongClockDomain {
                 held: self.domain.clone(),
@@ -633,7 +644,7 @@ impl OneShotTimer {
             });
         }
         let instant = clock.sample();
-        self.observation.observe(&instant)?;
+        self.observation.check(&instant)?;
         Ok(instant)
     }
 
@@ -641,7 +652,7 @@ impl OneShotTimer {
     fn arm(
         &mut self,
         deadline: TimerDeadline,
-        sampled: u64,
+        instant: MonotonicInstant,
         registration: WaitRegistration,
         waits: &mut WaitSet,
     ) -> Result<TimerArm, TimerError> {
@@ -659,7 +670,13 @@ impl OneShotTimer {
             });
         }
         let mut registration = registration;
-        let elapsed = sampled >= deadline.micros();
+        if deadline.generation() != registration.generation() {
+            return Err(TimerError::GenerationMismatch {
+                deadline: deadline.generation(),
+                registration: registration.generation(),
+            });
+        }
+        let elapsed = instant.micros() >= deadline.micros();
         let observation = if elapsed {
             ReadinessObservation::Ready(WakeCause::Timeout)
         } else {
@@ -668,6 +685,7 @@ impl OneShotTimer {
         match registration.register_and_recheck(observation)? {
             RegistrationOutcome::Registered => {
                 waits.register(&registration)?;
+                self.observation.observe(&instant)?;
                 self.registration = Some(registration);
                 self.deadline = Some(deadline);
                 self.state = TimerState::Armed;
@@ -681,6 +699,7 @@ impl OneShotTimer {
                 if outcome.require_winner()? != WakeCause::Timeout {
                     return Err(TimerError::UnexpectedReadiness { cause });
                 }
+                self.observation.observe(&instant)?;
                 self.registration = Some(registration);
                 self.deadline = Some(deadline);
                 self.outcome = Some(outcome);
@@ -726,29 +745,32 @@ pub enum TimerDiagnosticCode {
     MonotonicRegression,
     /// Checked deadline arithmetic exceeds the declared microsecond count.
     DeadlineOverflow,
+    /// A deadline observes another waiter-generation fence than its registration.
+    GenerationMismatch,
     /// An expiry observation is presented before the recorded deadline.
     TimerNotDue,
     /// A second deadline is presented to a timer that is already armed.
     TimerAlreadyArmed,
-    /// A later expiry or cancellation is presented after one winner settled.
-    TimerAlreadySettled,
     /// An expiry or cancellation is presented before any deadline is armed.
     TimerUnarmed,
     /// A wake presents a fence the live wait does not hold.
     StaleWake,
+    /// A later expiry or cancellation follows one settled winner.
+    SecondWake,
     /// The readiness recheck reports a cause this timer did not declare.
     UnexpectedReadiness,
 }
 
 impl TimerDiagnosticCode {
     /// Every frozen code, in sorted code order.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::DeadlineOverflow,
+        Self::GenerationMismatch,
         Self::InvalidClockDomain,
         Self::MonotonicRegression,
+        Self::SecondWake,
         Self::StaleWake,
         Self::TimerAlreadyArmed,
-        Self::TimerAlreadySettled,
         Self::TimerNotDue,
         Self::TimerUnarmed,
         Self::UnexpectedReadiness,
@@ -763,11 +785,12 @@ impl TimerDiagnosticCode {
             Self::WrongClockDomain => "time-wrong-clock-domain",
             Self::MonotonicRegression => "time-monotonic-regression",
             Self::DeadlineOverflow => "time-deadline-overflow",
+            Self::GenerationMismatch => "time-generation-mismatch",
             Self::TimerNotDue => "time-timer-not-due",
             Self::TimerAlreadyArmed => "time-timer-already-armed",
-            Self::TimerAlreadySettled => "time-timer-already-settled",
             Self::TimerUnarmed => "time-timer-unarmed",
             Self::StaleWake => "wait-stale-wake-refused",
+            Self::SecondWake => "wait-second-wake-refused",
             Self::UnexpectedReadiness => "time-unexpected-readiness",
         }
         .to_owned()
@@ -777,16 +800,17 @@ impl TimerDiagnosticCode {
     #[must_use]
     pub fn owner(self) -> String {
         match self {
-            Self::InvalidClockDomain | Self::WrongClockDomain | Self::MonotonicRegression => {
-                "GNT-51.3-injected-monotonic-clock"
-            }
-            Self::StaleWake => "GNT-24.4-stale-wake-fencing-and-waiter-reuse",
-            Self::DeadlineOverflow
+            Self::InvalidClockDomain
+            | Self::WrongClockDomain
+            | Self::MonotonicRegression
+            | Self::DeadlineOverflow => "GNT-51.3-injected-monotonic-clock",
+            Self::GenerationMismatch
             | Self::TimerNotDue
             | Self::TimerAlreadyArmed
-            | Self::TimerAlreadySettled
             | Self::TimerUnarmed
             | Self::UnexpectedReadiness => "GNT-51.4-one-shot-timer",
+            Self::StaleWake => "GNT-24.4-stale-wake-fencing-and-waiter-reuse",
+            Self::SecondWake => "GNT-24.3-wake-causes-and-wake-ownership",
         }
         .to_owned()
     }
@@ -827,6 +851,13 @@ pub enum TimerError {
         /// The added duration.
         duration: u64,
     },
+    /// A deadline observes another waiter-generation fence than its registration.
+    GenerationMismatch {
+        /// The deadline fence.
+        deadline: WaitGeneration,
+        /// The registration fence.
+        registration: WaitGeneration,
+    },
     /// An expiry observation is presented before the recorded deadline.
     TimerNotDue {
         /// The recorded deadline.
@@ -862,28 +893,44 @@ pub enum TimerError {
 }
 
 impl TimerError {
-    /// Returns the closed diagnostic code of this refusal.
+    /// Returns the exact frozen refusal spelling.
     #[must_use]
-    pub fn code(&self) -> TimerDiagnosticCode {
+    pub fn wire_name(&self) -> String {
         match self {
-            Self::InvalidClockDomain { .. } => TimerDiagnosticCode::InvalidClockDomain,
-            Self::WrongClockDomain { .. } => TimerDiagnosticCode::WrongClockDomain,
-            Self::MonotonicRegression { .. } => TimerDiagnosticCode::MonotonicRegression,
-            Self::DeadlineOverflow { .. } => TimerDiagnosticCode::DeadlineOverflow,
-            Self::TimerNotDue { .. } => TimerDiagnosticCode::TimerNotDue,
-            Self::TimerAlreadyArmed => TimerDiagnosticCode::TimerAlreadyArmed,
-            Self::TimerAlreadySettled { .. } => TimerDiagnosticCode::TimerAlreadySettled,
-            Self::TimerUnarmed => TimerDiagnosticCode::TimerUnarmed,
-            Self::StaleWake { .. } => TimerDiagnosticCode::StaleWake,
-            Self::UnexpectedReadiness { .. } => TimerDiagnosticCode::UnexpectedReadiness,
-            Self::Wait(error) => match error {
-                WaitError::SecondWake { .. } => TimerDiagnosticCode::TimerAlreadySettled,
-                WaitError::StaleWake { .. } | WaitError::StaleRegistration { .. } => {
-                    TimerDiagnosticCode::StaleWake
-                }
-                _ => TimerDiagnosticCode::TimerUnarmed,
-            },
+            Self::InvalidClockDomain { .. } => "time-invalid-clock-domain",
+            Self::WrongClockDomain { .. } => "time-wrong-clock-domain",
+            Self::MonotonicRegression { .. } => "time-monotonic-regression",
+            Self::DeadlineOverflow { .. } => "time-deadline-overflow",
+            Self::GenerationMismatch { .. } => "time-generation-mismatch",
+            Self::TimerNotDue { .. } => "time-timer-not-due",
+            Self::TimerAlreadyArmed => "time-timer-already-armed",
+            Self::TimerUnarmed => "time-timer-unarmed",
+            Self::UnexpectedReadiness { .. } => "time-unexpected-readiness",
+            Self::StaleWake { .. } => "wait-stale-wake-refused",
+            Self::TimerAlreadySettled { .. } => "wait-second-wake-refused",
+            Self::Wait(error) => return error.code().wire_name().to_owned(),
         }
+        .to_owned()
+    }
+
+    /// Returns the one clause that owns this refusal.
+    #[must_use]
+    pub fn owner(&self) -> String {
+        match self {
+            Self::InvalidClockDomain { .. }
+            | Self::WrongClockDomain { .. }
+            | Self::MonotonicRegression { .. }
+            | Self::DeadlineOverflow { .. } => "GNT-51.3-injected-monotonic-clock",
+            Self::GenerationMismatch { .. }
+            | Self::TimerNotDue { .. }
+            | Self::TimerAlreadyArmed
+            | Self::TimerUnarmed
+            | Self::UnexpectedReadiness { .. } => "GNT-51.4-one-shot-timer",
+            Self::StaleWake { .. } => "GNT-24.4-stale-wake-fencing-and-waiter-reuse",
+            Self::TimerAlreadySettled { .. } => "GNT-24.3-wake-causes-and-wake-ownership",
+            Self::Wait(error) => return error.code().requirement().to_owned(),
+        }
+        .to_owned()
     }
 }
 
@@ -914,6 +961,13 @@ impl fmt::Display for TimerError {
             } => write!(
                 formatter,
                 "deadline arithmetic in domain {domain} overflows from {base} by {duration}"
+            ),
+            Self::GenerationMismatch {
+                deadline,
+                registration,
+            } => write!(
+                formatter,
+                "the deadline fence {deadline} differs from the registration fence {registration}"
             ),
             Self::TimerNotDue { deadline, observed } => write!(
                 formatter,

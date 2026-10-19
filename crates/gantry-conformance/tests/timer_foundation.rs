@@ -82,10 +82,10 @@ fn next_fence(fence: WaitGeneration) -> WaitGeneration {
     }
 }
 
-fn refusal_code<T>(result: Result<T, TimerError>) -> TimerDiagnosticCode {
+fn refusal_wire<T>(result: Result<T, TimerError>) -> String {
     match result {
         Ok(_) => panic!("the declared decision must be refused"),
-        Err(error) => error.code(),
+        Err(error) => error.wire_name(),
     }
 }
 
@@ -115,6 +115,7 @@ fn timer_clauses_publish_injected_clock_and_one_shot_boundaries() {
         "readiness recheck",
         "exactly one source-visible winner",
         "refused under `wait-second-wake-refused`",
+        "refused under `time-generation-mismatch`",
         "refused under `time-timer-not-due`",
         "refused under `wait-stale-wake-refused`",
         "no raw monotonic restart guarantee",
@@ -133,7 +134,7 @@ fn timer_clauses_publish_injected_clock_and_one_shot_boundaries() {
         .into_iter()
         .map(TimerDiagnosticCode::wire_name)
         .collect::<Vec<_>>();
-    assert_eq!(codes.len(), 10);
+    assert_eq!(codes.len(), 11);
     assert_eq!(
         codes.iter().collect::<BTreeSet<_>>().len(),
         codes.len(),
@@ -149,14 +150,14 @@ fn timer_clauses_publish_injected_clock_and_one_shot_boundaries() {
 fn clock_domains_are_bounded_and_samples_never_regress() {
     for value in ["", "clock/with/slash", "clock with space"] {
         assert_eq!(
-            refusal_code(ClockDomainId::new(value)),
-            TimerDiagnosticCode::InvalidClockDomain
+            refusal_wire(ClockDomainId::new(value)),
+            "time-invalid-clock-domain"
         );
     }
     let oversized = "a".repeat(65);
     assert_eq!(
-        refusal_code(ClockDomainId::new(&oversized)),
-        TimerDiagnosticCode::InvalidClockDomain
+        refusal_wire(ClockDomainId::new(&oversized)),
+        "time-invalid-clock-domain"
     );
     let clock = domain("monotonic-session-1");
     let mut observation = ClockObservation::new(clock.clone());
@@ -168,10 +169,7 @@ fn clock_domains_are_bounded_and_samples_never_regress() {
     );
     assert_eq!(observation.last(), Some(10));
     let regressed = observation.observe(&MonotonicInstant::new(clock.clone(), 9));
-    assert_eq!(
-        refusal_code(regressed),
-        TimerDiagnosticCode::MonotonicRegression
-    );
+    assert_eq!(refusal_wire(regressed), "time-monotonic-regression");
     assert_eq!(
         observation.last(),
         Some(10),
@@ -183,8 +181,8 @@ fn clock_domains_are_bounded_and_samples_never_regress() {
     );
     let foreign = domain("monotonic-session-2");
     assert_eq!(
-        refusal_code(observation.observe(&MonotonicInstant::new(foreign, 11))),
-        TimerDiagnosticCode::WrongClockDomain
+        refusal_wire(observation.observe(&MonotonicInstant::new(foreign, 11))),
+        "time-wrong-clock-domain"
     );
 }
 
@@ -193,8 +191,8 @@ fn checked_deadline_arithmetic_refuses_overflow_and_foreign_domains() {
     let clock = domain("clock-a");
     let near_max = MonotonicInstant::new(clock.clone(), u64::MAX - 1);
     assert_eq!(
-        refusal_code(near_max.checked_add(TimerDuration::from_micros(2))),
-        TimerDiagnosticCode::DeadlineOverflow
+        refusal_wire(near_max.checked_add(TimerDuration::from_micros(2))),
+        "time-deadline-overflow"
     );
     let start = MonotonicInstant::new(clock, 5);
     let deadline = match TimerDeadline::after(
@@ -221,8 +219,8 @@ fn checked_deadline_arithmetic_refuses_overflow_and_foreign_domains() {
     );
     let foreign = domain("clock-b");
     assert_eq!(
-        refusal_code(deadline.has_elapsed(&MonotonicInstant::new(foreign, 99))),
-        TimerDiagnosticCode::WrongClockDomain
+        refusal_wire(deadline.has_elapsed(&MonotonicInstant::new(foreign, 99))),
+        "time-wrong-clock-domain"
     );
 }
 
@@ -246,17 +244,17 @@ fn zero_and_past_deadlines_publish_immediate_timeout_without_a_later_wake() {
     assert_eq!(timer.winner(), Some(TimerWinner::Expired));
     assert_eq!(timer.deadline().map(TimerDeadline::micros), Some(100));
     assert_eq!(
-        refusal_code(timer.expire(&clock, &mut waits)),
-        TimerDiagnosticCode::TimerAlreadySettled
+        refusal_wire(timer.expire(&clock, &mut waits)),
+        "wait-second-wake-refused"
     );
     assert_eq!(
-        refusal_code(timer.cancel(&mut waits)),
-        TimerDiagnosticCode::TimerAlreadySettled
+        refusal_wire(timer.cancel(&mut waits)),
+        "wait-second-wake-refused"
     );
 
     let past = TimerDeadline::from_instant(
         &MonotonicInstant::new(clock_domain.clone(), 50),
-        WaitGeneration::FIRST,
+        next_fence(WaitGeneration::FIRST),
     );
     let mut second = OneShotTimer::new(clock_domain);
     let armed = match second.arm_at(
@@ -296,8 +294,8 @@ fn future_deadline_registers_and_expires_once() {
     assert!(timer.is_armed());
     assert_eq!(timer.deadline().map(TimerDeadline::micros), Some(150));
     assert_eq!(
-        refusal_code(timer.expire(&clock, &mut waits)),
-        TimerDiagnosticCode::TimerNotDue
+        refusal_wire(timer.expire(&clock, &mut waits)),
+        "time-timer-not-due"
     );
     assert!(
         timer.is_armed(),
@@ -313,8 +311,8 @@ fn future_deadline_registers_and_expires_once() {
     assert_eq!(record.generation(), fence);
     assert_eq!(timer.winner(), Some(TimerWinner::Expired));
     assert_eq!(
-        refusal_code(timer.expire(&clock, &mut waits)),
-        TimerDiagnosticCode::TimerAlreadySettled
+        refusal_wire(timer.expire(&clock, &mut waits)),
+        "wait-second-wake-refused"
     );
     match waits.wake(&wait_id, fence, WakeCause::Timeout) {
         Ok(_) => panic!("the landed wait set refuses a second wake"),
@@ -346,13 +344,16 @@ fn cancellation_and_expiry_have_exactly_one_winner() {
     assert_eq!(record.cause(), WakeCause::Cancellation);
     assert_eq!(cancelled.winner(), Some(TimerWinner::Cancelled));
     assert_eq!(
-        refusal_code(cancelled.expire(&clock, &mut waits)),
-        TimerDiagnosticCode::TimerAlreadySettled
+        refusal_wire(cancelled.expire(&clock, &mut waits)),
+        "wait-second-wake-refused"
     );
-    assert_eq!(
-        refusal_code(cancelled.cancel(&mut waits)),
-        TimerDiagnosticCode::TimerAlreadySettled
-    );
+    match cancelled.cancel(&mut waits) {
+        Err(error) => {
+            assert_eq!(error.wire_name(), "wait-second-wake-refused");
+            assert_eq!(error.owner(), "GNT-24.3-wake-causes-and-wake-ownership");
+        }
+        Ok(_) => panic!("a second winner is refused"),
+    }
 
     let mut expired = OneShotTimer::new(clock_domain);
     let fence = next_fence(WaitGeneration::FIRST);
@@ -373,8 +374,8 @@ fn cancellation_and_expiry_have_exactly_one_winner() {
     };
     assert_eq!(expired.winner(), Some(TimerWinner::Expired));
     assert_eq!(
-        refusal_code(expired.cancel(&mut waits)),
-        TimerDiagnosticCode::TimerAlreadySettled
+        refusal_wire(expired.cancel(&mut waits)),
+        "wait-second-wake-refused"
     );
 }
 
@@ -437,16 +438,16 @@ fn wrong_domain_clock_sample_and_deadline_are_refused() {
     let first = domain("clock-a");
     let second = domain("clock-b");
     let mut waits = WaitSet::new();
-    let mut clock = FixedMonotonicClock::new(second.clone(), 100);
+    let clock = FixedMonotonicClock::new(second.clone(), 100);
     let mut timer = OneShotTimer::new(first.clone());
     assert_eq!(
-        refusal_code(timer.arm_after(
+        refusal_wire(timer.arm_after(
             &clock,
             TimerDuration::from_micros(1),
             registration(1, WaitGeneration::FIRST),
             &mut waits,
         )),
-        TimerDiagnosticCode::WrongClockDomain
+        "time-wrong-clock-domain"
     );
     assert!(!timer.is_armed());
 
@@ -455,28 +456,29 @@ fn wrong_domain_clock_sample_and_deadline_are_refused() {
         instant: MonotonicInstant::new(second.clone(), 100),
     };
     assert_eq!(
-        refusal_code(timer.arm_after(
+        refusal_wire(timer.arm_after(
             &drifting,
             TimerDuration::from_micros(1),
             registration(2, next_fence(WaitGeneration::FIRST)),
             &mut waits,
         )),
-        TimerDiagnosticCode::WrongClockDomain
+        "time-wrong-clock-domain"
     );
     assert!(!timer.is_armed());
 
-    clock.set_micros(100);
+    let same = FixedMonotonicClock::new(first.clone(), 100);
     let foreign =
         TimerDeadline::from_instant(&MonotonicInstant::new(second, 200), WaitGeneration::FIRST);
     assert_eq!(
-        refusal_code(timer.arm_at(
-            &clock,
+        refusal_wire(timer.arm_at(
+            &same,
             foreign,
             registration(3, next_fence(next_fence(WaitGeneration::FIRST))),
             &mut waits,
         )),
-        TimerDiagnosticCode::WrongClockDomain
+        "time-wrong-clock-domain"
     );
+    assert_eq!(timer.observation().last(), None);
 }
 
 #[test]
@@ -486,13 +488,10 @@ fn unarmed_and_rearmed_timers_are_refused() {
     let mut waits = WaitSet::new();
     let mut timer = OneShotTimer::new(clock_domain);
     assert_eq!(
-        refusal_code(timer.expire(&clock, &mut waits)),
-        TimerDiagnosticCode::TimerUnarmed
+        refusal_wire(timer.expire(&clock, &mut waits)),
+        "time-timer-unarmed"
     );
-    assert_eq!(
-        refusal_code(timer.cancel(&mut waits)),
-        TimerDiagnosticCode::TimerUnarmed
-    );
+    assert_eq!(refusal_wire(timer.cancel(&mut waits)), "time-timer-unarmed");
     match timer.arm_after(
         &clock,
         TimerDuration::from_micros(50),
@@ -503,14 +502,152 @@ fn unarmed_and_rearmed_timers_are_refused() {
         Err(error) => panic!("the first arm is admitted: {error}"),
     }
     assert_eq!(
-        refusal_code(timer.arm_after(
+        refusal_wire(timer.arm_after(
             &clock,
             TimerDuration::from_micros(1),
             registration(2, next_fence(WaitGeneration::FIRST)),
             &mut waits,
         )),
-        TimerDiagnosticCode::TimerAlreadyArmed
+        "time-timer-already-armed"
     );
     assert!(timer.is_armed());
     assert_eq!(timer.winner(), None);
+}
+
+#[test]
+fn deadline_and_registration_generations_must_match() {
+    let clock_domain = domain("clock-a");
+    let clock = FixedMonotonicClock::new(clock_domain.clone(), 100);
+    let mut waits = WaitSet::new();
+    let mut timer = OneShotTimer::new(clock_domain.clone());
+    let mismatch = next_fence(WaitGeneration::FIRST);
+    let deadline = TimerDeadline::from_instant(
+        &MonotonicInstant::new(clock_domain.clone(), 200),
+        WaitGeneration::FIRST,
+    );
+    assert_eq!(
+        refusal_wire(timer.arm_at(&clock, deadline, registration(1, mismatch), &mut waits,)),
+        "time-generation-mismatch"
+    );
+    assert!(!timer.is_armed());
+    assert_eq!(timer.observation().last(), None);
+    let admitted = TimerDeadline::from_instant(
+        &MonotonicInstant::new(clock_domain, 200),
+        WaitGeneration::FIRST,
+    );
+    match timer.arm_at(
+        &clock,
+        admitted,
+        registration(2, WaitGeneration::FIRST),
+        &mut waits,
+    ) {
+        Ok(armed) => assert_eq!(armed, TimerArm::Armed),
+        Err(error) => panic!("the matching generation is admitted: {error}"),
+    }
+    assert!(timer.is_armed());
+    assert_eq!(timer.observation().last(), Some(100));
+}
+
+#[test]
+fn refusals_never_commit_a_clock_sample() {
+    let clock_domain = domain("clock-a");
+    let mut waits = WaitSet::new();
+    let mut overflow = OneShotTimer::new(clock_domain.clone());
+    let near_max = FixedMonotonicClock::new(clock_domain.clone(), u64::MAX - 1);
+    assert_eq!(
+        refusal_wire(overflow.arm_after(
+            &near_max,
+            TimerDuration::from_micros(2),
+            registration(1, WaitGeneration::FIRST),
+            &mut waits,
+        )),
+        "time-deadline-overflow"
+    );
+    assert!(!overflow.is_armed());
+    assert_eq!(overflow.observation().last(), None);
+
+    let mut clock = FixedMonotonicClock::new(clock_domain.clone(), 100);
+    let mut timer = OneShotTimer::new(clock_domain);
+    match timer.arm_after(
+        &clock,
+        TimerDuration::from_micros(50),
+        registration(2, WaitGeneration::FIRST),
+        &mut waits,
+    ) {
+        Ok(armed) => assert_eq!(armed, TimerArm::Armed),
+        Err(error) => panic!("the sample-preservation candidate arms: {error}"),
+    }
+    assert_eq!(timer.observation().last(), Some(100));
+    clock.set_micros(120);
+    assert_eq!(
+        refusal_wire(timer.expire(&clock, &mut waits)),
+        "time-timer-not-due"
+    );
+    assert_eq!(timer.observation().last(), Some(100));
+    clock.set_micros(150);
+    match timer.expire(&clock, &mut waits) {
+        Ok(record) => assert_eq!(record.cause(), WakeCause::Timeout),
+        Err(error) => panic!("the due deadline settles: {error}"),
+    }
+    assert_eq!(timer.observation().last(), Some(150));
+    clock.set_micros(160);
+    assert_eq!(
+        refusal_wire(timer.arm_after(
+            &clock,
+            TimerDuration::from_micros(1),
+            registration(3, next_fence(WaitGeneration::FIRST)),
+            &mut waits,
+        )),
+        "wait-second-wake-refused"
+    );
+    assert_eq!(timer.observation().last(), Some(150));
+}
+
+#[test]
+fn predecessor_fence_after_slot_reuse_is_refused() {
+    let clock_domain = domain("clock-a");
+    let mut clock = FixedMonotonicClock::new(clock_domain.clone(), 100);
+    let mut waits = WaitSet::new();
+    let mut first = OneShotTimer::new(clock_domain.clone());
+    match first.arm_after(
+        &clock,
+        TimerDuration::from_micros(50),
+        registration(1, WaitGeneration::FIRST),
+        &mut waits,
+    ) {
+        Ok(armed) => assert_eq!(armed, TimerArm::Armed),
+        Err(error) => panic!("the first slot occupant arms: {error}"),
+    }
+    match first.cancel(&mut waits) {
+        Ok(record) => assert_eq!(record.cause(), WakeCause::Cancellation),
+        Err(error) => panic!("the first slot occupant cancels: {error}"),
+    }
+    let successor = next_fence(WaitGeneration::FIRST);
+    let mut second = OneShotTimer::new(clock_domain);
+    match second.arm_after(
+        &clock,
+        TimerDuration::from_micros(50),
+        registration(2, successor),
+        &mut waits,
+    ) {
+        Ok(armed) => assert_eq!(armed, TimerArm::Armed),
+        Err(error) => panic!("the reused slot arms: {error}"),
+    }
+    assert_eq!(second.observation().last(), Some(100));
+    match second.expire_under(&clock, &mut waits, WaitGeneration::FIRST) {
+        Err(TimerError::StaleWake {
+            held, presented, ..
+        }) => {
+            assert_eq!(held, successor);
+            assert_eq!(presented, WaitGeneration::FIRST);
+        }
+        other => panic!("the predecessor fence is refused, observed {other:?}"),
+    }
+    assert!(second.is_armed());
+    assert_eq!(second.observation().last(), Some(100));
+    clock.set_micros(150);
+    match second.expire(&clock, &mut waits) {
+        Ok(record) => assert_eq!(record.cause(), WakeCause::Timeout),
+        Err(error) => panic!("the held fence still settles: {error}"),
+    }
 }

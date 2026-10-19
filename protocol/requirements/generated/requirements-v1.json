@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "4c2bd97e4c97efc72e2e3649292a75b7e98d5d57e8fcdbec86beb4af456c383c",
-  "byte_length": 1433869,
+  "specification_sha256": "49c3fe100b4109ba227f9d48cd083a6f32753d7ae881afbbb67b3c40273b0cbf",
+  "byte_length": 1433991,
   "line_count": 18273,
   "regions": [
     {
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8576,
-      "sha256": "035bc38da62d276bd6ed3ba2399fa3c7bc2d64a0da5a6ccf7729c0409cad6c68",
+      "sha256": "232a7ab89fb88e595c329ea919468e63424623e213c636b2d9e28999b0015eff",
       "rationale": null
     },
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9780,
       "end_line": 18273,
-      "sha256": "5d61e8e2c36d27428e963dd45979d5a81b1c7fa6ee561aa91c911525a79a7333",
+      "sha256": "82b3881f18428ff081a6273e87ff864fce0f6b02397cb085641090688357ce19",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 770,
       "span_end_line": 832,
-      "span_sha256": "f7d48a9c663fe506e3dce55d3722af6280e6e6957b3c2671f87dbfbb8cb6ee17",
+      "span_sha256": "b39f0f5cc402664fc89033dfc688987976302ca6a8a7c08917eb71e3c9f1ca78",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 829,
-      "body_sha256": "ecdc2b1641bbe5d819145cf6867af9f542635b9cdb59d7a75741468347667dae",
+      "body_sha256": "c48af77b5f082cf6fd5dd2fa5ed2cf6f801b23d9e24c94c411b1015ea640b794",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -46160,11 +46160,11 @@
       "id": "GNT-51.1-time-modules-and-item-rows",
       "span_start_line": 18259,
       "span_end_line": 18262,
-      "span_sha256": "18ec981b170d5c892e52aa551e05bd5bdd887ae2318069c3b8b0faaaac8a9424",
+      "span_sha256": "c7162bd514889ed03cb86807d40d41c751feea5aa1965bacfdc5804940760494",
       "anchor_line": 18259,
       "body_start_line": 18260,
       "body_end_line": 18261,
-      "body_sha256": "222bb4e9d3fa38dfcafd13ca230c9ca78301c12d2587d1b1dbe579855f07a6d4",
+      "body_sha256": "07b610b3c6ea9f9c64e19ca8a486a92c535068aebda2185f2e89e82ab83c3ed8",
       "profiles": [
         "analyzer"
       ],
@@ -46278,7 +46278,8 @@
                 "crates/gantry-conformance/tests/timer_foundation.rs#timer_clauses_publish_injected_clock_and_one_shot_boundaries",
                 "crates/gantry-conformance/tests/timer_foundation.rs#clock_domains_are_bounded_and_samples_never_regress",
                 "crates/gantry-conformance/tests/timer_foundation.rs#checked_deadline_arithmetic_refuses_overflow_and_foreign_domains",
-                "crates/gantry-conformance/tests/timer_foundation.rs#wrong_domain_clock_sample_and_deadline_are_refused"
+                "crates/gantry-conformance/tests/timer_foundation.rs#wrong_domain_clock_sample_and_deadline_are_refused",
+                "crates/gantry-conformance/tests/timer_foundation.rs#refusals_never_commit_a_clock_sample"
               ],
               "rationale": null
             }
@@ -46290,11 +46291,11 @@
       "id": "GNT-51.4-one-shot-timer",
       "span_start_line": 18271,
       "span_end_line": 18273,
-      "span_sha256": "3f7f0a18b7be9a70f26c1b351d1ac593e36396521c8b013d41e6c36b5660510f",
+      "span_sha256": "cb24e6555461ec96770ac72b9fd001994f10d7c62a19228f0014b884bc5ded7e",
       "anchor_line": 18271,
       "body_start_line": 18272,
       "body_end_line": 18273,
-      "body_sha256": "ef4dbfee8ac6765ffa93ff5e70d56feeb1ef6f8b6e1f94b1bb4afc3ec8644822",
+      "body_sha256": "6a0561db1063ab2c0a8f646426c348e4549e16b3c220276f14abb18f20a5507a",
       "profiles": [
         "analyzer"
       ],
@@ -46325,7 +46326,10 @@
                 "crates/gantry-conformance/tests/timer_foundation.rs#cancellation_and_expiry_have_exactly_one_winner",
                 "crates/gantry-conformance/tests/timer_foundation.rs#stale_wake_fence_is_refused_without_mutation",
                 "crates/gantry-conformance/tests/timer_foundation.rs#wrong_domain_clock_sample_and_deadline_are_refused",
-                "crates/gantry-conformance/tests/timer_foundation.rs#unarmed_and_rearmed_timers_are_refused"
+                "crates/gantry-conformance/tests/timer_foundation.rs#unarmed_and_rearmed_timers_are_refused",
+                "crates/gantry-conformance/tests/timer_foundation.rs#deadline_and_registration_generations_must_match",
+                "crates/gantry-conformance/tests/timer_foundation.rs#refusals_never_commit_a_clock_sample",
+                "crates/gantry-conformance/tests/timer_foundation.rs#predecessor_fence_after_slot_reuse_is_refused"
               ],
               "rationale": null
             }

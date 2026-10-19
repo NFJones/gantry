@@ -48,7 +48,7 @@ that domain and one exact count of elapsed microseconds since its epoch, and `Cl
 refuses a sample that moves backwards within one domain. `TimerDuration` and
 `MonotonicInstant::checked_add` use exact checked arithmetic, so an overflowing deadline is
 refused under `time-deadline-overflow` rather than saturated or wrapped. A sample, deadline, or
-clock of another domain is refused under `time-wrong-clock-domain`.
+clock of another domain is refused under `time-wrong-clock-domain`, and a deadline that names another waiter-generation fence than its registration is refused under `time-generation-mismatch`.
 
 Monotonic order belongs to one epoch. A new epoch is a new `ClockDomainId`, and the model claims
 no raw tick continuity across epochs, restarts, processes, or hosts. A sample is never a wall
@@ -66,8 +66,8 @@ the timeout cause of `GNT-24.3-wake-causes-and-wake-ownership` as readiness and 
 later wake, while a future deadline registers one live waiter in a `WaitSet`.
 
 `OneShotTimer::expire` samples the injected clock, refuses a not-due observation under
-`time-timer-not-due` without clearing the deadline, and wakes the registered waiter with the
-timeout cause. `OneShotTimer::cancel` wakes it with the landed cancellation cause. The first
+`time-timer-not-due` without clearing the deadline or recording the refused sample, and wakes
+the registered waiter with the timeout cause. `OneShotTimer::cancel` wakes it with the landed cancellation cause. The first
 admissible wake fixes exactly one winner, `TimerWinner::Expired` or `TimerWinner::Cancelled`, and
 a later expiry or cancellation is refused as a second wake. A wake presented under a fence the
 live wait does not hold is refused under the landed `wait-stale-wake-refused` spelling and

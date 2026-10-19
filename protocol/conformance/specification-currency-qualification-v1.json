@@ -2,7 +2,7 @@
   "format": "gantry.specification-currency-qualification/v1",
   "issue": "be47045e-93fb-473b-af7a-2d459aae091c",
   "status": "verified",
-  "specification_sha256": "4c2bd97e4c97efc72e2e3649292a75b7e98d5d57e8fcdbec86beb4af456c383c",
+  "specification_sha256": "49c3fe100b4109ba227f9d48cd083a6f32753d7ae881afbbb67b3c40273b0cbf",
   "superseded_specification_sha256": "351c0873e458a7d24da1e7f47e3d7284c0b7b7e27e481d3c8ac73efc6ab065f9",
   "candidate": {
     "base_commit": "966f6ffbfe2162341d0bbabe2098b909dcbba6f0",
@@ -15,7 +15,7 @@
     "inputs": [
       {
         "path": "SPEC.md",
-        "sha256": "4c2bd97e4c97efc72e2e3649292a75b7e98d5d57e8fcdbec86beb4af456c383c"
+        "sha256": "49c3fe100b4109ba227f9d48cd083a6f32753d7ae881afbbb67b3c40273b0cbf"
       },
       {
         "path": "protocol/requirements/reviewed-v1.json",

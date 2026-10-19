@@ -263,7 +263,7 @@
       "evidence": "crates/gantry-conformance/tests/execution_coordinator.rs#registration_and_settlement_interleavings_do_not_lose_wakeups"
     }
   ],
-  "specification_sha256": "4c2bd97e4c97efc72e2e3649292a75b7e98d5d57e8fcdbec86beb4af456c383c",
+  "specification_sha256": "49c3fe100b4109ba227f9d48cd083a6f32753d7ae881afbbb67b3c40273b0cbf",
   "status": "verified",
   "validation_commands": [
     "timeout 180s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test native_source_concurrency_gate",

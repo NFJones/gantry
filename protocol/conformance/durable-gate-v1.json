@@ -2,7 +2,7 @@
   "artifacts": [
     {
       "path": "SPEC.md",
-      "sha256": "4c2bd97e4c97efc72e2e3649292a75b7e98d5d57e8fcdbec86beb4af456c383c"
+      "sha256": "49c3fe100b4109ba227f9d48cd083a6f32753d7ae881afbbb67b3c40273b0cbf"
     },
     {
       "path": "crates/gantry-conformance/tests/authority_closure.rs",
@@ -225,7 +225,7 @@
   },
   "specification": {
     "path": "SPEC.md",
-    "sha256": "4c2bd97e4c97efc72e2e3649292a75b7e98d5d57e8fcdbec86beb4af456c383c"
+    "sha256": "49c3fe100b4109ba227f9d48cd083a6f32753d7ae881afbbb67b3c40273b0cbf"
   },
   "status": "verified",
   "validation_commands": [

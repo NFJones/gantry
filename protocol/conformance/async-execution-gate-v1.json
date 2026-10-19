@@ -214,7 +214,7 @@
       "evidence": "crates/gantry-conformance/tests/task_supervision.rs#semantic_settlement_retains_capacity_until_physical_reaping"
     }
   ],
-  "specification_sha256": "4c2bd97e4c97efc72e2e3649292a75b7e98d5d57e8fcdbec86beb4af456c383c",
+  "specification_sha256": "49c3fe100b4109ba227f9d48cd083a6f32753d7ae881afbbb67b3c40273b0cbf",
   "status": "verified",
   "validation_commands": [
     "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test async_cancellation",

@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "4c2bd97e4c97efc72e2e3649292a75b7e98d5d57e8fcdbec86beb4af456c383c",
+  "specification_sha256": "49c3fe100b4109ba227f9d48cd083a6f32753d7ae881afbbb67b3c40273b0cbf",
   "regions": [
     {
       "kind": "excluded",
@@ -44983,7 +44983,8 @@
                 "crates/gantry-conformance/tests/timer_foundation.rs#timer_clauses_publish_injected_clock_and_one_shot_boundaries",
                 "crates/gantry-conformance/tests/timer_foundation.rs#clock_domains_are_bounded_and_samples_never_regress",
                 "crates/gantry-conformance/tests/timer_foundation.rs#checked_deadline_arithmetic_refuses_overflow_and_foreign_domains",
-                "crates/gantry-conformance/tests/timer_foundation.rs#wrong_domain_clock_sample_and_deadline_are_refused"
+                "crates/gantry-conformance/tests/timer_foundation.rs#wrong_domain_clock_sample_and_deadline_are_refused",
+                "crates/gantry-conformance/tests/timer_foundation.rs#refusals_never_commit_a_clock_sample"
               ],
               "rationale": null
             }
@@ -45028,7 +45029,10 @@
                 "crates/gantry-conformance/tests/timer_foundation.rs#cancellation_and_expiry_have_exactly_one_winner",
                 "crates/gantry-conformance/tests/timer_foundation.rs#stale_wake_fence_is_refused_without_mutation",
                 "crates/gantry-conformance/tests/timer_foundation.rs#wrong_domain_clock_sample_and_deadline_are_refused",
-                "crates/gantry-conformance/tests/timer_foundation.rs#unarmed_and_rearmed_timers_are_refused"
+                "crates/gantry-conformance/tests/timer_foundation.rs#unarmed_and_rearmed_timers_are_refused",
+                "crates/gantry-conformance/tests/timer_foundation.rs#deadline_and_registration_generations_must_match",
+                "crates/gantry-conformance/tests/timer_foundation.rs#refusals_never_commit_a_clock_sample",
+                "crates/gantry-conformance/tests/timer_foundation.rs#predecessor_fence_after_slot_reuse_is_refused"
               ],
               "rationale": null
             }
