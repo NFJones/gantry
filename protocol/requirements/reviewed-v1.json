@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "49c3fe100b4109ba227f9d48cd083a6f32753d7ae881afbbb67b3c40273b0cbf",
+  "specification_sha256": "b718864eda8838ad80de9df46a35a1e7feab93c0e87b1894763bf5b2288caabc",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9780,
-      "end_line": 18273,
+      "end_line": 18316,
       "rationale": null
     }
   ],
@@ -44995,7 +44995,7 @@
     {
       "id": "GNT-51.4-one-shot-timer",
       "span_start_line": 18271,
-      "span_end_line": 18273,
+      "span_end_line": 18277,
       "anchor_line": 18271,
       "body_start_line": 18272,
       "body_end_line": 18273,
@@ -45033,6 +45033,405 @@
                 "crates/gantry-conformance/tests/timer_foundation.rs#deadline_and_registration_generations_must_match",
                 "crates/gantry-conformance/tests/timer_foundation.rs#refusals_never_commit_a_clock_sample",
                 "crates/gantry-conformance/tests/timer_foundation.rs#predecessor_fence_after_slot_reuse_is_refused"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.0-native-directory-foundation-scope",
+      "span_start_line": 18278,
+      "span_end_line": 18281,
+      "anchor_line": 18278,
+      "body_start_line": 18279,
+      "body_end_line": 18280,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18279,
+          "end_line": 18280,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#section_52_clauses_and_refusals_are_closed_bound_and_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.1-native-directory-requirement-and-mapping-policy",
+      "span_start_line": 18282,
+      "span_end_line": 18285,
+      "anchor_line": 18282,
+      "body_start_line": 18283,
+      "body_end_line": 18284,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18283,
+          "end_line": 18284,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#declared_mappings_are_the_only_admitted_target_case_combinations",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#mapping_admission_and_comparison_are_explicit_and_target_aware",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#authority_requires_a_right_and_the_application_mode"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.2-native-directory-path-and-fact-binding",
+      "span_start_line": 18286,
+      "span_end_line": 18289,
+      "anchor_line": 18286,
+      "body_start_line": 18287,
+      "body_end_line": 18288,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18287,
+          "end_line": 18288,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#every_route_compares_the_exact_requirement_identity",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#every_route_compares_exact_facts_including_execution_and_task_provenance",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#issuance_binds_the_handle_path_to_the_attached_slot_path",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#path_text_is_admitted_data_that_never_grants_authority"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.3-native-directory-exclusive-issuance-and-ownership",
+      "span_start_line": 18290,
+      "span_end_line": 18293,
+      "anchor_line": 18290,
+      "body_start_line": 18291,
+      "body_end_line": 18292,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18291,
+          "end_line": 18292,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#exclusive_issuance_admits_one_live_handle_per_slot",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#a_settled_slot_reissues_only_a_succeeding_owner_generation",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#the_handle_is_affine_and_settles_exactly_once"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.4-native-directory-revocation-fencing",
+      "span_start_line": 18294,
+      "span_end_line": 18297,
+      "anchor_line": 18294,
+      "body_start_line": 18295,
+      "body_end_line": 18296,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18295,
+          "end_line": 18296,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#revocation_fences_every_route_of_already_issued_handles"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.5-native-directory-completion-and-late-response",
+      "span_start_line": 18298,
+      "span_end_line": 18301,
+      "anchor_line": 18298,
+      "body_start_line": 18299,
+      "body_end_line": 18300,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18299,
+          "end_line": 18300,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#late_and_repeated_completions_are_refused_without_effect",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#the_handle_is_affine_and_settles_exactly_once"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.6-native-directory-durable-exclusion",
+      "span_start_line": 18302,
+      "span_end_line": 18305,
+      "anchor_line": 18302,
+      "body_start_line": 18303,
+      "body_end_line": 18304,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18303,
+          "end_line": 18304,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#durable_presentations_never_resurrect_a_native_handle"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.7-native-directory-child-projection",
+      "span_start_line": 18306,
+      "span_end_line": 18309,
+      "anchor_line": 18306,
+      "body_start_line": 18307,
+      "body_end_line": 18308,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18307,
+          "end_line": 18308,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#child_projection_attenuates_rights_and_refuses_escapes",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#child_projection_keeps_the_inherited_mapping_refusal"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.8-native-directory-refusal-vocabulary",
+      "span_start_line": 18310,
+      "span_end_line": 18313,
+      "anchor_line": 18310,
+      "body_start_line": 18311,
+      "body_end_line": 18312,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18311,
+          "end_line": 18312,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#section_52_clauses_and_refusals_are_closed_bound_and_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.9-native-directory-non-claims",
+      "span_start_line": 18314,
+      "span_end_line": 18316,
+      "anchor_line": 18314,
+      "body_start_line": 18315,
+      "body_end_line": 18316,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18315,
+          "end_line": 18316,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#section_52_note_publishes_the_contract_boundaries"
               ],
               "rationale": null
             }

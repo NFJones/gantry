@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "49c3fe100b4109ba227f9d48cd083a6f32753d7ae881afbbb67b3c40273b0cbf",
-  "byte_length": 1433991,
-  "line_count": 18273,
+  "specification_sha256": "b718864eda8838ad80de9df46a35a1e7feab93c0e87b1894763bf5b2288caabc",
+  "byte_length": 1448787,
+  "line_count": 18316,
   "regions": [
     {
       "kind": "excluded",
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 670,
       "end_line": 8576,
-      "sha256": "232a7ab89fb88e595c329ea919468e63424623e213c636b2d9e28999b0015eff",
+      "sha256": "1d6df7f427c6e40b95a630970cd4393328d0c25cd20c7aa20f96c0a58d8aff35",
       "rationale": null
     },
     {
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9780,
-      "end_line": 18273,
-      "sha256": "82b3881f18428ff081a6273e87ff864fce0f6b02397cb085641090688357ce19",
+      "end_line": 18316,
+      "sha256": "4c4ca9fa346aab50a9c7b5db6a4db257506f3fb8f2e714444ecf8b6bdbdc0e6f",
       "rationale": null
     }
   ],
@@ -482,11 +482,11 @@
       "id": "GNT-2.1",
       "span_start_line": 770,
       "span_end_line": 832,
-      "span_sha256": "b39f0f5cc402664fc89033dfc688987976302ca6a8a7c08917eb71e3c9f1ca78",
+      "span_sha256": "f0fced9f25ca560ec80288b6193f7ee93ceebb2104b04bc5a84b01aff41bea8e",
       "anchor_line": 770,
       "body_start_line": 771,
       "body_end_line": 829,
-      "body_sha256": "c48af77b5f082cf6fd5dd2fa5ed2cf6f801b23d9e24c94c411b1015ea640b794",
+      "body_sha256": "ad249ea51047f250ffff16129d52a95c59c4115ec06a5145da547b5f90ab6d75",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -45992,11 +45992,11 @@
       "id": "GNT-49.1-environment-modules-and-item-rows",
       "span_start_line": 18223,
       "span_end_line": 18243,
-      "span_sha256": "30d5598ebed20bb0e9ea46e7e79a48a75c5b0bd319a626ed381eb33bd9cccead",
+      "span_sha256": "2c3cd704d467f8582fce448ac175796a6544351a95d1345a9a18e4786d2638b7",
       "anchor_line": 18223,
       "body_start_line": 18224,
       "body_end_line": 18240,
-      "body_sha256": "3a935063af1cf966a0759ee6b368c2a9bfd276eeaa28492d7d943b0886cea169",
+      "body_sha256": "ee762baa2443624791cc568ad4f9566dc823097d53ff5b3d36216f9c8c1bcfaf",
       "profiles": [
         "analyzer"
       ],
@@ -46290,8 +46290,8 @@
     {
       "id": "GNT-51.4-one-shot-timer",
       "span_start_line": 18271,
-      "span_end_line": 18273,
-      "span_sha256": "cb24e6555461ec96770ac72b9fd001994f10d7c62a19228f0014b884bc5ded7e",
+      "span_end_line": 18277,
+      "span_sha256": "132517592a333e7c64f3007f1b2f9fbec519d4a54fd5a65e8aca041288afeb9b",
       "anchor_line": 18271,
       "body_start_line": 18272,
       "body_end_line": 18273,
@@ -46330,6 +46330,425 @@
                 "crates/gantry-conformance/tests/timer_foundation.rs#deadline_and_registration_generations_must_match",
                 "crates/gantry-conformance/tests/timer_foundation.rs#refusals_never_commit_a_clock_sample",
                 "crates/gantry-conformance/tests/timer_foundation.rs#predecessor_fence_after_slot_reuse_is_refused"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.0-native-directory-foundation-scope",
+      "span_start_line": 18278,
+      "span_end_line": 18281,
+      "span_sha256": "03f20692d73848928e956f709000dce0d1d9fb6062548365f96a13d9ee2ded72",
+      "anchor_line": 18278,
+      "body_start_line": 18279,
+      "body_end_line": 18280,
+      "body_sha256": "0a33dc4de11864b54341ec0a98ebde9455537e64f707f9f2f5731c4a57995d0b",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18279,
+          "end_line": 18280,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#section_52_clauses_and_refusals_are_closed_bound_and_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.1-native-directory-requirement-and-mapping-policy",
+      "span_start_line": 18282,
+      "span_end_line": 18285,
+      "span_sha256": "fdf0157ebf87481f8c7f8b26aa355356066e95ac2833c36231ae544eb9ce4079",
+      "anchor_line": 18282,
+      "body_start_line": 18283,
+      "body_end_line": 18284,
+      "body_sha256": "d7bbae4750c30416e40edfde40b34a76dc3dfa7c11edbfd78ed8ee64d3b8051c",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18283,
+          "end_line": 18284,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#declared_mappings_are_the_only_admitted_target_case_combinations",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#mapping_admission_and_comparison_are_explicit_and_target_aware",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#authority_requires_a_right_and_the_application_mode"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.2-native-directory-path-and-fact-binding",
+      "span_start_line": 18286,
+      "span_end_line": 18289,
+      "span_sha256": "5f577ecfc0fc8b62ddaeac50e012d907c0fdff4df056818e71cd1b81e962c2f4",
+      "anchor_line": 18286,
+      "body_start_line": 18287,
+      "body_end_line": 18288,
+      "body_sha256": "48e83e77126771c3ce525d7da2dd0986e1666da5dff897674280a79edbeffc47",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18287,
+          "end_line": 18288,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#every_route_compares_the_exact_requirement_identity",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#every_route_compares_exact_facts_including_execution_and_task_provenance",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#issuance_binds_the_handle_path_to_the_attached_slot_path",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#path_text_is_admitted_data_that_never_grants_authority"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.3-native-directory-exclusive-issuance-and-ownership",
+      "span_start_line": 18290,
+      "span_end_line": 18293,
+      "span_sha256": "258ec610245e0d0020ef5a31be3e7c02c4b7b72c7bdf8e08fc2f9c883d8922ae",
+      "anchor_line": 18290,
+      "body_start_line": 18291,
+      "body_end_line": 18292,
+      "body_sha256": "a888cbe19d6063bdd5ac080289d9dff104997b6aee270a941d276b4de9dfd25d",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18291,
+          "end_line": 18292,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#exclusive_issuance_admits_one_live_handle_per_slot",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#a_settled_slot_reissues_only_a_succeeding_owner_generation",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#the_handle_is_affine_and_settles_exactly_once"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.4-native-directory-revocation-fencing",
+      "span_start_line": 18294,
+      "span_end_line": 18297,
+      "span_sha256": "53d588068443139f3f839a42ea3741c4854de5ed64fad24b5e01ea2714ebd45a",
+      "anchor_line": 18294,
+      "body_start_line": 18295,
+      "body_end_line": 18296,
+      "body_sha256": "7eea16661d919b52f2f2a3f5dcccedb701b793a32ba6d3a4bf476872e0aeb13c",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18295,
+          "end_line": 18296,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#revocation_fences_every_route_of_already_issued_handles"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.5-native-directory-completion-and-late-response",
+      "span_start_line": 18298,
+      "span_end_line": 18301,
+      "span_sha256": "14a46262a0cc0732e40b71582bf560aad7f57bc961542b08591a6b2ce5f2137c",
+      "anchor_line": 18298,
+      "body_start_line": 18299,
+      "body_end_line": 18300,
+      "body_sha256": "a0c55d4cb645fadd73bff295b13467348ddb4073f0bd12a8fd208409e4b60453",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18299,
+          "end_line": 18300,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#late_and_repeated_completions_are_refused_without_effect",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#the_handle_is_affine_and_settles_exactly_once"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.6-native-directory-durable-exclusion",
+      "span_start_line": 18302,
+      "span_end_line": 18305,
+      "span_sha256": "abaf804fb4aa7a87cff7c0c8fc16ffce0be3e39eb999fe6b1046275346ad08c4",
+      "anchor_line": 18302,
+      "body_start_line": 18303,
+      "body_end_line": 18304,
+      "body_sha256": "28aada85069b43f7a8bcf8cd600e82710b3cc9534027f134d0293ef1121134b5",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18303,
+          "end_line": 18304,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#durable_presentations_never_resurrect_a_native_handle"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.7-native-directory-child-projection",
+      "span_start_line": 18306,
+      "span_end_line": 18309,
+      "span_sha256": "8cdab1d3621c9bcbad2ce2d6e280455c80feee236c9a59c02b1623d0fc928f1b",
+      "anchor_line": 18306,
+      "body_start_line": 18307,
+      "body_end_line": 18308,
+      "body_sha256": "3d2b09e21a4b572212af96e81a86b8f99c181b07fb732a9f995fd52f322817a9",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18307,
+          "end_line": 18308,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#child_projection_attenuates_rights_and_refuses_escapes",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#child_projection_keeps_the_inherited_mapping_refusal"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.8-native-directory-refusal-vocabulary",
+      "span_start_line": 18310,
+      "span_end_line": 18313,
+      "span_sha256": "752fbf9d10878fee6c81aafc4d6c9dcf8338fc16bbc99f41084a0f0626d7511a",
+      "anchor_line": 18310,
+      "body_start_line": 18311,
+      "body_end_line": 18312,
+      "body_sha256": "f45a1914eca6307637c9f4ca0cf2a8e75878d6978a45763e51efb705c14a187e",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18311,
+          "end_line": 18312,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#section_52_clauses_and_refusals_are_closed_bound_and_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-52.9-native-directory-non-claims",
+      "span_start_line": 18314,
+      "span_end_line": 18316,
+      "span_sha256": "c490841f582b0f934b20be58ac15c4122e0523440926c33a4d1695ed7197fdaa",
+      "anchor_line": 18314,
+      "body_start_line": 18315,
+      "body_end_line": 18316,
+      "body_sha256": "7182b0fd78d29bbde20f1b63f45fd84893591e60c4ab4dde9c011d5c4876c51c",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18315,
+          "end_line": 18316,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#section_52_note_publishes_the_contract_boundaries"
               ],
               "rationale": null
             }

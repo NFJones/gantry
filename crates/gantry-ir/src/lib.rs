@@ -29,6 +29,7 @@ mod data;
 mod effects;
 mod env;
 mod env_cwd;
+mod env_native;
 pub mod error_semantics;
 mod executable;
 mod facts;
@@ -265,6 +266,18 @@ pub use env_cwd::{
     CWD_TARGET_POLICIES, CWD_VALUE_CONTRACT_VERSION, CwdCasePolicy, CwdComparison,
     CwdDiagnosticCode, CwdEncodingPolicy, CwdError, CwdLimits, CwdTargetPolicy, LogicalCwdRoot,
     LogicalCwdSegment, LogicalWorkingDirectory,
+};
+// Section 52 publishes the declaration-layer policy model for application-native directory
+// handles. It materializes no handle and grants no directory authority.
+pub use env_native::{
+    NATIVE_DIRECTORY_CLAUSES, NativeDirectoryAuthority, NativeDirectoryCase,
+    NativeDirectoryChildGrant, NativeDirectoryChildProjection, NativeDirectoryComparison,
+    NativeDirectoryCompletion, NativeDirectoryDiagnosticCode, NativeDirectoryDurablePresentation,
+    NativeDirectoryHandle, NativeDirectoryLedger, NativeDirectoryLineage, NativeDirectoryMapping,
+    NativeDirectoryPath, NativeDirectoryRecovery, NativeDirectoryRefusal,
+    NativeDirectoryRequirement, NativeDirectoryRequirementKind, NativeDirectorySettlementWinner,
+    NativeDirectorySlot, NativeDirectorySubjectFacts, NativeDirectoryTarget,
+    recover_native_directory,
 };
 // `identifier` is re-exported here for the identifier-security surface, except
 // for `AliasMap`, `CollisionCondition`, and `DeclaredName`, which the package and
