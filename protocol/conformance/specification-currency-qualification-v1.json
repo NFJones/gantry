@@ -7,9 +7,9 @@
   "candidate": {
     "base_commit": "c52dee4df0cb31b707efee842bd0d9e96d793c99",
     "currency_repair_parent_commit": "c52dee4df0cb31b707efee842bd0d9e96d793c99",
-    "reviewed_through_commit": "50ef89d43b45cb4fd6fc5f43ec3768b9a5d9f32b",
+    "reviewed_through_commit": "96efe7ea199b933bcf4da02cf746f4aa3e384d87",
     "since_commit": "c52dee4df0cb31b707efee842bd0d9e96d793c99",
-    "tree_sha": "3f7dcee7ab56932776579adeb21c462a9d43afc8",
+    "tree_sha": "c13a8d454417f584b41aea84ad2f48fd2b2b0d6c",
     "identity_note": "Content identity is the candidate input digest set plus the candidate tree hash. The record is committed after the candidate, so it names the reviewed-through commit and its tree rather than its own.",
     "toolchain": "1.97.1 minimal with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
     "inputs": [
@@ -40,7 +40,7 @@
     ]
   },
   "drift_review": {
-    "specification_commits_reviewed": 1,
+    "specification_commits_reviewed": 2,
     "requirements_before": {
       "count": 644,
       "clauses": 928
@@ -192,11 +192,14 @@
       "durable-exclusion",
       "child-projection",
       "refusal-vocabulary-and-non-claims",
+      "review-repair-issuer-scoped-issuance",
+      "review-repair-mapping-admission-and-path-domain",
+      "review-repair-non-destructive-settlement",
       "conformance-evidence-recut",
       "generated-protocol-and-publication",
       "qualification-recut"
     ],
-    "outcome": "Section 52 adds ten declaration-layer clauses that publish the application-native directory contract the environment section deferred: typed requirement identity, the three declared target mappings, path and provenance fact binding, exclusive issuance and ownership, live revocation fencing, completion and late-response precedence, durable exclusion, child projection, the eighteen-spelling refusal vocabulary, and explicit non-claims. GNT-2.1 registers the new identifiers, GNT-49.1 now cites the section that supplies its deferred contract, and the conformance records that pin the specification revision and artifact digests were recut to the candidate bytes without changing any unrelated verdict."
+    "outcome": "Section 52 adds ten declaration-layer clauses that publish the application-native directory contract the environment section deferred, and the first independent review of the candidate drove four normative repairs: a live issuance is now identified by an issuer identity and issuance sequence so an equivalent declaration from another issuer carries no authority, a declared path must be the path admitted under the declaring mapping, a native path text is explicitly not a GNT-47.2 value and neither relaxes nor extends it, and settlement retires the live issuance rather than the handle value so a refused late presentation leaves the same handle routable and still settleable once. Subject facts are now the facts the attached slot independently declares and are compared as two declarations. GNT-2.1 registers the new identifiers, GNT-49.1 now cites the section that supplies its deferred contract, and the conformance records that pin the specification revision and artifact digests were recut to the candidate bytes without changing any unrelated verdict."
   },
   "section14_review": {
     "excerpt_count_before": 51,
@@ -208,7 +211,7 @@
     "outcome": "Every retained Section 14 excerpt is still covered with executable evidence; the revision adds no excerpt and removes none."
   },
   "qualification": {
-    "scope": "Bounded Section 52 native-directory contract candidate: the declaration-layer requirement, mapping, fact-binding, issuance, revocation, settlement, projection, durability, refusal, and non-claim model, its documentation, and the derived requirement, gate, publication, and qualification recut. No runtime implementation, host adapter, or carrier change is claimed.",
+    "scope": "Bounded Section 52 native-directory contract candidate: the declaration-layer requirement, mapping, fact-binding, issuance, revocation, settlement, projection, durability, refusal, and non-claim model, the four review-driven repairs, its documentation, and the derived requirement, gate, publication, and qualification recut. No runtime implementation, host adapter, or carrier change is claimed.",
     "lanes": [
       {
         "lane": "env_native_directory_contract",
@@ -306,7 +309,7 @@
       },
       {
         "command": "cargo test --locked -p gantry-conformance --test env_native_directory_contract",
-        "result": "17 passed, 0 failed"
+        "result": "21 passed, 0 failed"
       },
       {
         "command": "cargo test --locked --workspace --all-targets --all-features --no-fail-fast",
@@ -322,14 +325,14 @@
   },
   "gaps": [
     "No runtime implementation of any Section 52 clause is delivered or claimed: the model decides declaration, admission, fencing, settlement, projection, and durable-exclusion questions only, and the preserved branch fix/c8717957-native-cwd at 3196597 remains unmerged and unqualified.",
-    "Findings 1 and 4 of the earlier review are stated as requirements, not delivered: authenticated slot type and native-directory fact agreement plus single-issuer registry ownership still require the RESOURCE-RUNTIME carrier slice, and this section deliberately names no carrier class.",
+    "The contract now declares declaration-level agreement of the attached slot path and slot facts with the declared authority, but authenticating the physical type, family, and attachment of the resource value behind the slot is not declared here: that remains the RESOURCE-RUNTIME carrier obligation, and this section deliberately names no carrier class.",
     "The landed carrier record lists the native working directory among the resources ineligible for any carrier form in v1 while the preserved branch binds its handle to the machine resource carrier; Section 52 prefers neither reading and the conflict stays owned by the RESOURCE-RUNTIME record and its successor slice rather than being resolved here.",
     "The inherited general_purpose_preregistration failure stays outside this slice: it requires the gitignored docs/reference/general-purpose-refactor-issue-plan.md, and no native-directory claim depends on it."
   ],
   "successors": [
     {
       "path": "protocol/conformance/manifest-v1.json",
-      "sha256": "850c1bdc7d59f569232b23ca56f9413764767914896181716f0ddea53690a647"
+      "sha256": ""
     },
     {
       "path": "protocol/conformance/specification-currency-qualification-v1.json",
@@ -337,15 +340,15 @@
     },
     {
       "path": "protocol/publication/index-v1.json",
-      "sha256": "8101751b230a333a5615e817ee81b5ba28343634556cfc81ddb0d9319ab58641"
+      "sha256": ""
     },
     {
       "path": "protocol/publication/v1/gantry.conformance.json",
-      "sha256": "c3433dda54630fe1d72f1621eb08d339940c3f8d1e862f1bcacec927362e000d"
+      "sha256": ""
     },
     {
       "path": "protocol/publication/verification-v1.json",
-      "sha256": "49b2b452e515262ddb1c765e4f22f3bbf6f14a292653dc5e170f72e5df7e78a7"
+      "sha256": ""
     }
   ]
 }
