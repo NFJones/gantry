@@ -3,13 +3,13 @@
   "issue": "be47045e-93fb-473b-af7a-2d459aae091c",
   "status": "verified",
   "specification_sha256": "b718864eda8838ad80de9df46a35a1e7feab93c0e87b1894763bf5b2288caabc",
-  "superseded_specification_sha256": "0ea3c63354ef06fa5cf7022076937d1fdb6c753b37f4582a880aea226ff632d4",
+  "superseded_specification_sha256": "49c3fe100b4109ba227f9d48cd083a6f32753d7ae881afbbb67b3c40273b0cbf",
   "candidate": {
-    "base_commit": "57274110658a0ecfde81cf516893dcc9e2c30d1e",
-    "currency_repair_parent_commit": "57274110658a0ecfde81cf516893dcc9e2c30d1e",
-    "reviewed_through_commit": "88a2161ac2c99c35648667e25f8fdbba56285ce8",
-    "since_commit": "57274110658a0ecfde81cf516893dcc9e2c30d1e",
-    "tree_sha": "67612265ba949aaf184a555f66c2785cf49a6409",
+    "base_commit": "c52dee4df0cb31b707efee842bd0d9e96d793c99",
+    "currency_repair_parent_commit": "c52dee4df0cb31b707efee842bd0d9e96d793c99",
+    "reviewed_through_commit": "50ef89d43b45cb4fd6fc5f43ec3768b9a5d9f32b",
+    "since_commit": "c52dee4df0cb31b707efee842bd0d9e96d793c99",
+    "tree_sha": "3f7dcee7ab56932776579adeb21c462a9d43afc8",
     "identity_note": "Content identity is the candidate input digest set plus the candidate tree hash. The record is committed after the candidate, so it names the reviewed-through commit and its tree rather than its own.",
     "toolchain": "1.97.1 minimal with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
     "inputs": [
@@ -40,25 +40,81 @@
     ]
   },
   "drift_review": {
-    "specification_commits_reviewed": 2,
+    "specification_commits_reviewed": 1,
     "requirements_before": {
-      "count": 642,
-      "clauses": 926
-    },
-    "requirements_after": {
       "count": 644,
       "clauses": 928
     },
+    "requirements_after": {
+      "count": 654,
+      "clauses": 938
+    },
     "added_requirements": [
       {
-        "id": "GNT-51.3-injected-monotonic-clock",
+        "id": "GNT-52.0-native-directory-foundation-scope",
         "clauses": 1,
         "profile_reviews": [
           "analyzer:covered"
         ]
       },
       {
-        "id": "GNT-51.4-one-shot-timer",
+        "id": "GNT-52.1-native-directory-requirement-and-mapping-policy",
+        "clauses": 1,
+        "profile_reviews": [
+          "analyzer:covered"
+        ]
+      },
+      {
+        "id": "GNT-52.2-native-directory-path-and-fact-binding",
+        "clauses": 1,
+        "profile_reviews": [
+          "analyzer:covered"
+        ]
+      },
+      {
+        "id": "GNT-52.3-native-directory-exclusive-issuance-and-ownership",
+        "clauses": 1,
+        "profile_reviews": [
+          "analyzer:covered"
+        ]
+      },
+      {
+        "id": "GNT-52.4-native-directory-revocation-fencing",
+        "clauses": 1,
+        "profile_reviews": [
+          "analyzer:covered"
+        ]
+      },
+      {
+        "id": "GNT-52.5-native-directory-completion-and-late-response",
+        "clauses": 1,
+        "profile_reviews": [
+          "analyzer:covered"
+        ]
+      },
+      {
+        "id": "GNT-52.6-native-directory-durable-exclusion",
+        "clauses": 1,
+        "profile_reviews": [
+          "analyzer:covered"
+        ]
+      },
+      {
+        "id": "GNT-52.7-native-directory-child-projection",
+        "clauses": 1,
+        "profile_reviews": [
+          "analyzer:covered"
+        ]
+      },
+      {
+        "id": "GNT-52.8-native-directory-refusal-vocabulary",
+        "clauses": 1,
+        "profile_reviews": [
+          "analyzer:covered"
+        ]
+      },
+      {
+        "id": "GNT-52.9-native-directory-non-claims",
         "clauses": 1,
         "profile_reviews": [
           "analyzer:covered"
@@ -67,20 +123,18 @@
     ],
     "changed_requirement_bodies": [
       "GNT-2.1",
-      "GNT-51.0-time-foundation-scope",
-      "GNT-51.1-time-modules-and-item-rows",
-      "GNT-51.2-time-declaration-non-claims"
+      "GNT-49.1-environment-modules-and-item-rows"
     ],
     "removed_requirements": [],
     "profile_applicability": [
       {
         "profile": "analyzer",
-        "before_covered": 583,
+        "before_covered": 585,
         "before_not_applicable": 190,
-        "after_covered": 585,
+        "after_covered": 595,
         "after_not_applicable": 190,
         "after_planned": 0,
-        "outcome": "the two added clauses are covered by the timer lane, so analyzer coverage rises by two and no reviewed clause is planned or unresolved"
+        "outcome": "the ten added clauses declare analyzer applicability only, so analyzer coverage rises by ten and no reviewed clause is planned or unresolved"
       },
       {
         "profile": "concurrent-evaluator",
@@ -129,14 +183,20 @@
       }
     ],
     "reviewed_categories": [
-      "time-clock-and-timer-contract",
-      "injected-monotonic-clock",
-      "one-shot-timer",
+      "native-directory-foundation-scope",
+      "requirement-identity-and-target-mapping-policy",
+      "path-and-subject-fact-binding",
+      "exclusive-issuance-and-ownership",
+      "live-revocation-fencing",
+      "completion-and-late-response",
+      "durable-exclusion",
+      "child-projection",
+      "refusal-vocabulary-and-non-claims",
       "conformance-evidence-recut",
       "generated-protocol-and-publication",
       "qualification-recut"
     ],
-    "outcome": "Section 51 adds the injected monotonic clock and one-shot timer clauses, corrects the declaration boundary wording, and adds the clock and timer refusal vocabulary. GNT-2.1 gains the new identifiers, and every affected requirement body is otherwise unchanged and fully covered."
+    "outcome": "Section 52 adds ten declaration-layer clauses that publish the application-native directory contract the environment section deferred: typed requirement identity, the three declared target mappings, path and provenance fact binding, exclusive issuance and ownership, live revocation fencing, completion and late-response precedence, durable exclusion, child projection, the eighteen-spelling refusal vocabulary, and explicit non-claims. GNT-2.1 registers the new identifiers, GNT-49.1 now cites the section that supplies its deferred contract, and the conformance records that pin the specification revision and artifact digests were recut to the candidate bytes without changing any unrelated verdict."
   },
   "section14_review": {
     "excerpt_count_before": 51,
@@ -148,14 +208,10 @@
     "outcome": "Every retained Section 14 excerpt is still covered with executable evidence; the revision adds no excerpt and removes none."
   },
   "qualification": {
-    "scope": "Bounded Section 51 clock and timer candidate: injected monotonic clock port, clock-domain identity, checked deadline arithmetic, one-shot timer readiness recheck, generation binding, stale-wake fencing, single expiry-or-cancel winner, refusal coverage, documentation, and the derived requirement, gate, publication, and qualification recut.",
+    "scope": "Bounded Section 52 native-directory contract candidate: the declaration-layer requirement, mapping, fact-binding, issuance, revocation, settlement, projection, durability, refusal, and non-claim model, its documentation, and the derived requirement, gate, publication, and qualification recut. No runtime implementation, host adapter, or carrier change is claimed.",
     "lanes": [
       {
-        "lane": "timer_foundation",
-        "result": "pass"
-      },
-      {
-        "lane": "time_foundation",
+        "lane": "env_native_directory_contract",
         "result": "pass"
       },
       {
@@ -167,7 +223,15 @@
         "result": "pass"
       },
       {
-        "lane": "async_contract_gate",
+        "lane": "analyzer_lowering",
+        "result": "pass"
+      },
+      {
+        "lane": "analyzer_symbols",
+        "result": "pass"
+      },
+      {
+        "lane": "analyzer_types",
         "result": "pass"
       },
       {
@@ -179,31 +243,27 @@
         "result": "pass"
       },
       {
-        "lane": "foundation_gate",
-        "result": "pass"
-      },
-      {
         "lane": "native_source_concurrency_gate",
         "result": "pass"
       },
       {
-        "lane": "general_purpose_foundation_gate",
+        "lane": "concurrent_gate",
         "result": "pass"
       },
       {
-        "lane": "general_purpose_milestone_gate",
+        "lane": "durable_gate",
+        "result": "pass"
+      },
+      {
+        "lane": "frontend_gate",
+        "result": "pass"
+      },
+      {
+        "lane": "foundation_gate",
         "result": "pass"
       },
       {
         "lane": "combined_gate",
-        "result": "pass"
-      },
-      {
-        "lane": "requirements_ledger",
-        "result": "pass"
-      },
-      {
-        "lane": "conformance_publication",
         "result": "pass"
       },
       {
@@ -219,6 +279,14 @@
       {
         "command": "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
         "result": "rc 0"
+      },
+      {
+        "command": "cargo run --locked -p xtask -- generate requirements",
+        "result": "regenerated the requirement inventory to 654 records and 938 clauses"
+      },
+      {
+        "command": "cargo run --locked -p xtask -- generate protocol",
+        "result": "regenerated the corpus, manifest, publication artifacts, index, and verification report to a fixpoint"
       },
       {
         "command": "cargo run --locked -p xtask -- check generated",
@@ -237,24 +305,8 @@
         "result": "mismatch_count 0"
       },
       {
-        "command": "cargo run --locked -p xtask -- generate requirements",
-        "result": "regenerated the requirement inventory to 644 records and 928 clauses"
-      },
-      {
-        "command": "cargo run --locked -p xtask -- generate protocol",
-        "result": "regenerated the corpus, manifest, publication artifacts, index, and verification report"
-      },
-      {
-        "command": "cargo test --locked -p gantry-conformance --test timer_foundation",
-        "result": "12 passed, 0 failed"
-      },
-      {
-        "command": "cargo test --locked -p gantry-conformance --test time_foundation",
-        "result": "7 passed, 0 failed"
-      },
-      {
-        "command": "cargo test --locked -p gantry-conformance --test specification_currency_qualification",
-        "result": "3 passed, 0 failed"
+        "command": "cargo test --locked -p gantry-conformance --test env_native_directory_contract",
+        "result": "17 passed, 0 failed"
       },
       {
         "command": "cargo test --locked --workspace --all-targets --all-features --no-fail-fast",
@@ -263,20 +315,21 @@
     ],
     "publication": {
       "member_count": 7,
-      "identity_at_currency_repair_parent": "91e9170a5697b297720eb088e74366be9d793398397d7c5506b9291432623cda",
+      "identity_at_currency_repair_parent": "7c33c9f09d5ab0adabddb9b66e1414129b0f47417b1226d5a8bed897c1490152",
       "identity_note": "The seven-artifact publication set and the verification report were regenerated from the reviewed requirement inventory at the candidate; the recorded parent identity is the verification identity committed at the currency-repair parent, not a substituted digest.",
       "verification": "protocol/publication/verification-v1.json regenerated by the governed protocol generator on the candidate"
     }
   },
   "gaps": [
-    "No host monotonic-clock adapter, real-time driver, periodic scheduler, or durable timer store is delivered: the model consumes an explicitly injected port and a deterministic test clock only.",
-    "Typed civil ambiguity, pinned rule-data identities, locale and preference snapshots, target data catalogs, wall observation, and durable timer reconstruction remain future slices; no raw monotonic restart continuity is claimed.",
-    "The inherited general_purpose_preregistration failure stays outside this slice: it requires the gitignored docs/reference/general-purpose-refactor-issue-plan.md, and no clock or timer claim depends on it."
+    "No runtime implementation of any Section 52 clause is delivered or claimed: the model decides declaration, admission, fencing, settlement, projection, and durable-exclusion questions only, and the preserved branch fix/c8717957-native-cwd at 3196597 remains unmerged and unqualified.",
+    "Findings 1 and 4 of the earlier review are stated as requirements, not delivered: authenticated slot type and native-directory fact agreement plus single-issuer registry ownership still require the RESOURCE-RUNTIME carrier slice, and this section deliberately names no carrier class.",
+    "The landed carrier record lists the native working directory among the resources ineligible for any carrier form in v1 while the preserved branch binds its handle to the machine resource carrier; Section 52 prefers neither reading and the conflict stays owned by the RESOURCE-RUNTIME record and its successor slice rather than being resolved here.",
+    "The inherited general_purpose_preregistration failure stays outside this slice: it requires the gitignored docs/reference/general-purpose-refactor-issue-plan.md, and no native-directory claim depends on it."
   ],
   "successors": [
     {
       "path": "protocol/conformance/manifest-v1.json",
-      "sha256": "b115a4fcb9e86c64609a456b44c015fb2f6d7dce9264009f01a41a7ec3656927"
+      "sha256": ""
     },
     {
       "path": "protocol/conformance/specification-currency-qualification-v1.json",
@@ -284,15 +337,15 @@
     },
     {
       "path": "protocol/publication/index-v1.json",
-      "sha256": "edfbbdba4faaf8537acd6b57587a5c3d67fea0c6b7c64dc47361d925e62ac94b"
+      "sha256": ""
     },
     {
       "path": "protocol/publication/v1/gantry.conformance.json",
-      "sha256": "957d4101051d0c53a5c3ad3836daa0fd5ff0bc784f09e3d60cc491d9c4bcdf5b"
+      "sha256": ""
     },
     {
       "path": "protocol/publication/verification-v1.json",
-      "sha256": "c445f534a9fc764133e84e1364f8b27a3eb11e41c0cd080e5be8ba0e7d42123d"
+      "sha256": ""
     }
   ]
 }
