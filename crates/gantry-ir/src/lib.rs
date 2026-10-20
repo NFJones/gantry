@@ -256,9 +256,10 @@ pub use telemetry::{
     TelemetryError, TelemetryFaultClass, TelemetryFaultReceipt, TelemetryField, TelemetryLabel,
     TelemetryLimit, TelemetryLimitDimension, TelemetryLimitSet, TelemetryLimits,
     TelemetryMetricValue, TelemetryName, TelemetryProtectedReference, TelemetryRecord,
-    TelemetryRecordBody, TelemetryRecordKind, TelemetrySeriesKey, TelemetrySettlement,
-    TelemetryShutdownPlan, TelemetryShutdownSettlement, TelemetrySinkFault, TelemetrySinkId,
-    TelemetrySinkPolicy, TelemetrySinkState, TelemetryTraceStatus, telemetry_is_semantic_evidence,
+    TelemetryRecordBody, TelemetryRecordKind, TelemetrySeriesKey, TelemetrySettleError,
+    TelemetrySettlement, TelemetryShutdownPlan, TelemetryShutdownSettlement, TelemetrySinkFault,
+    TelemetrySinkId, TelemetrySinkInstanceId, TelemetrySinkPolicy, TelemetrySinkState,
+    TelemetryTraceStatus, telemetry_is_semantic_evidence,
 };
 // Section 49 publishes the declared `std.env` module surface beside the bounded launch-value model
 // of Sections 30.2 and 30.3. It adds no host access or runtime environment behavior.

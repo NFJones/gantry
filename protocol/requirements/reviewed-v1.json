@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "cc428bbcf15f9f2f4d5142bf6f28c4fe020de169bd49f22b039b509a923b9071",
+  "specification_sha256": "f5af45332f858a5cf9962b176858d9d301ecd43c495d5818c0f8df142c867aa1",
   "regions": [
     {
       "kind": "excluded",
@@ -35,7 +35,7 @@
     {
       "kind": "normative",
       "start_line": 9780,
-      "end_line": 18457,
+      "end_line": 18468,
       "rationale": null
     }
   ],
@@ -44710,10 +44710,10 @@
     {
       "id": "GNT-48.3-telemetry-sink-policy-and-finite-limits",
       "span_start_line": 18232,
-      "span_end_line": 18252,
+      "span_end_line": 18254,
       "anchor_line": 18232,
       "body_start_line": 18233,
-      "body_end_line": 18251,
+      "body_end_line": 18253,
       "profiles": [
         "analyzer"
       ],
@@ -44725,7 +44725,7 @@
         {
           "key": "clause-001",
           "start_line": 18233,
-          "end_line": 18251,
+          "end_line": 18253,
           "profiles": [
             "analyzer"
           ],
@@ -44750,11 +44750,11 @@
     },
     {
       "id": "GNT-48.4-telemetry-atomic-admission-and-cardinality",
-      "span_start_line": 18253,
-      "span_end_line": 18273,
-      "anchor_line": 18253,
-      "body_start_line": 18254,
-      "body_end_line": 18272,
+      "span_start_line": 18255,
+      "span_end_line": 18275,
+      "anchor_line": 18255,
+      "body_start_line": 18256,
+      "body_end_line": 18274,
       "profiles": [
         "analyzer"
       ],
@@ -44765,8 +44765,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18254,
-          "end_line": 18272,
+          "start_line": 18256,
+          "end_line": 18274,
           "profiles": [
             "analyzer"
           ],
@@ -44791,11 +44791,11 @@
     },
     {
       "id": "GNT-48.5-telemetry-protected-labels-identity-and-release",
-      "span_start_line": 18274,
-      "span_end_line": 18292,
-      "anchor_line": 18274,
-      "body_start_line": 18275,
-      "body_end_line": 18291,
+      "span_start_line": 18276,
+      "span_end_line": 18295,
+      "anchor_line": 18276,
+      "body_start_line": 18277,
+      "body_end_line": 18294,
       "profiles": [
         "analyzer"
       ],
@@ -44806,8 +44806,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18275,
-          "end_line": 18291,
+          "start_line": 18277,
+          "end_line": 18294,
           "profiles": [
             "analyzer"
           ],
@@ -44830,11 +44830,11 @@
     },
     {
       "id": "GNT-48.6-telemetry-required-acknowledgement-and-best-effort",
-      "span_start_line": 18293,
-      "span_end_line": 18308,
-      "anchor_line": 18293,
-      "body_start_line": 18294,
-      "body_end_line": 18307,
+      "span_start_line": 18296,
+      "span_end_line": 18314,
+      "anchor_line": 18296,
+      "body_start_line": 18297,
+      "body_end_line": 18313,
       "profiles": [
         "analyzer"
       ],
@@ -44845,8 +44845,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18294,
-          "end_line": 18307,
+          "start_line": 18297,
+          "end_line": 18313,
           "profiles": [
             "analyzer"
           ],
@@ -44870,11 +44870,11 @@
     },
     {
       "id": "GNT-48.7-telemetry-backpressure-cancellation-and-shutdown",
-      "span_start_line": 18309,
-      "span_end_line": 18323,
-      "anchor_line": 18309,
-      "body_start_line": 18310,
-      "body_end_line": 18322,
+      "span_start_line": 18315,
+      "span_end_line": 18333,
+      "anchor_line": 18315,
+      "body_start_line": 18316,
+      "body_end_line": 18332,
       "profiles": [
         "analyzer"
       ],
@@ -44885,8 +44885,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18310,
-          "end_line": 18322,
+          "start_line": 18316,
+          "end_line": 18332,
           "profiles": [
             "analyzer"
           ],
@@ -44910,11 +44910,11 @@
     },
     {
       "id": "GNT-48.8-telemetry-sink-fault-containment",
-      "span_start_line": 18324,
-      "span_end_line": 18336,
-      "anchor_line": 18324,
-      "body_start_line": 18325,
-      "body_end_line": 18335,
+      "span_start_line": 18334,
+      "span_end_line": 18347,
+      "anchor_line": 18334,
+      "body_start_line": 18335,
+      "body_end_line": 18346,
       "profiles": [
         "analyzer"
       ],
@@ -44925,8 +44925,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18325,
-          "end_line": 18335,
+          "start_line": 18335,
+          "end_line": 18346,
           "profiles": [
             "analyzer"
           ],
@@ -44949,11 +44949,11 @@
     },
     {
       "id": "GNT-48.9-telemetry-evidence-separation-and-non-claims",
-      "span_start_line": 18337,
-      "span_end_line": 18350,
-      "anchor_line": 18337,
-      "body_start_line": 18338,
-      "body_end_line": 18349,
+      "span_start_line": 18348,
+      "span_end_line": 18361,
+      "anchor_line": 18348,
+      "body_start_line": 18349,
+      "body_end_line": 18360,
       "profiles": [
         "analyzer"
       ],
@@ -44964,8 +44964,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18338,
-          "end_line": 18349,
+          "start_line": 18349,
+          "end_line": 18360,
           "profiles": [
             "analyzer"
           ],
@@ -44989,11 +44989,11 @@
     },
     {
       "id": "GNT-49.0-environment-foundation-scope",
-      "span_start_line": 18351,
-      "span_end_line": 18363,
-      "anchor_line": 18351,
-      "body_start_line": 18352,
-      "body_end_line": 18362,
+      "span_start_line": 18362,
+      "span_end_line": 18374,
+      "anchor_line": 18362,
+      "body_start_line": 18363,
+      "body_end_line": 18373,
       "profiles": [
         "analyzer"
       ],
@@ -45004,8 +45004,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18352,
-          "end_line": 18362,
+          "start_line": 18363,
+          "end_line": 18373,
           "profiles": [
             "analyzer"
           ],
@@ -45028,11 +45028,11 @@
     },
     {
       "id": "GNT-49.1-environment-modules-and-item-rows",
-      "span_start_line": 18364,
-      "span_end_line": 18384,
-      "anchor_line": 18364,
-      "body_start_line": 18365,
-      "body_end_line": 18381,
+      "span_start_line": 18375,
+      "span_end_line": 18395,
+      "anchor_line": 18375,
+      "body_start_line": 18376,
+      "body_end_line": 18392,
       "profiles": [
         "analyzer"
       ],
@@ -45043,8 +45043,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18365,
-          "end_line": 18381,
+          "start_line": 18376,
+          "end_line": 18392,
           "profiles": [
             "analyzer"
           ],
@@ -45069,86 +45069,6 @@
     },
     {
       "id": "GNT-50.0-random-foundation-scope",
-      "span_start_line": 18385,
-      "span_end_line": 18388,
-      "anchor_line": 18385,
-      "body_start_line": 18386,
-      "body_end_line": 18387,
-      "profiles": [
-        "analyzer"
-      ],
-      "roles": [
-        "harness",
-        "implementation"
-      ],
-      "clauses": [
-        {
-          "key": "clause-001",
-          "start_line": 18386,
-          "end_line": 18387,
-          "profiles": [
-            "analyzer"
-          ],
-          "roles": [
-            "harness",
-            "implementation"
-          ],
-          "profile_reviews": [
-            {
-              "profile": "analyzer",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/stdlib_naming.rs#random_module_name_is_owned_by_its_own_scope_and_row_clauses",
-                "crates/gantry-conformance/tests/stdlib_naming.rs#every_declared_family_set_is_closed_and_refuses_without_mutation"
-              ],
-              "rationale": null
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "GNT-50.1-random-modules-and-item-rows",
-      "span_start_line": 18389,
-      "span_end_line": 18395,
-      "anchor_line": 18389,
-      "body_start_line": 18390,
-      "body_end_line": 18391,
-      "profiles": [
-        "analyzer"
-      ],
-      "roles": [
-        "harness",
-        "implementation"
-      ],
-      "clauses": [
-        {
-          "key": "clause-001",
-          "start_line": 18390,
-          "end_line": 18391,
-          "profiles": [
-            "analyzer"
-          ],
-          "roles": [
-            "harness",
-            "implementation"
-          ],
-          "profile_reviews": [
-            {
-              "profile": "analyzer",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/stdlib_naming.rs#random_module_name_is_owned_by_its_own_scope_and_row_clauses",
-                "crates/gantry-conformance/tests/stdlib_naming.rs#every_declared_family_set_is_closed_and_refuses_without_mutation"
-              ],
-              "rationale": null
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "GNT-51.0-time-foundation-scope",
       "span_start_line": 18396,
       "span_end_line": 18399,
       "anchor_line": 18396,
@@ -45178,7 +45098,8 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
-                "crates/gantry-conformance/tests/time_foundation.rs#time_scope_is_declared_without_runtime_or_authority_claims"
+                "crates/gantry-conformance/tests/stdlib_naming.rs#random_module_name_is_owned_by_its_own_scope_and_row_clauses",
+                "crates/gantry-conformance/tests/stdlib_naming.rs#every_declared_family_set_is_closed_and_refuses_without_mutation"
               ],
               "rationale": null
             }
@@ -45187,9 +45108,9 @@
       ]
     },
     {
-      "id": "GNT-51.1-time-modules-and-item-rows",
+      "id": "GNT-50.1-random-modules-and-item-rows",
       "span_start_line": 18400,
-      "span_end_line": 18403,
+      "span_end_line": 18406,
       "anchor_line": 18400,
       "body_start_line": 18401,
       "body_end_line": 18402,
@@ -45217,6 +45138,85 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
+                "crates/gantry-conformance/tests/stdlib_naming.rs#random_module_name_is_owned_by_its_own_scope_and_row_clauses",
+                "crates/gantry-conformance/tests/stdlib_naming.rs#every_declared_family_set_is_closed_and_refuses_without_mutation"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-51.0-time-foundation-scope",
+      "span_start_line": 18407,
+      "span_end_line": 18410,
+      "anchor_line": 18407,
+      "body_start_line": 18408,
+      "body_end_line": 18409,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18408,
+          "end_line": 18409,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/time_foundation.rs#time_scope_is_declared_without_runtime_or_authority_claims"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-51.1-time-modules-and-item-rows",
+      "span_start_line": 18411,
+      "span_end_line": 18414,
+      "anchor_line": 18411,
+      "body_start_line": 18412,
+      "body_end_line": 18413,
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18412,
+          "end_line": 18413,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
                 "crates/gantry-conformance/tests/time_foundation.rs#time_module_rows_are_closed_and_canonical",
                 "crates/gantry-conformance/tests/time_foundation.rs#time_surface_declaration_requires_package_and_admits_exact_rows",
                 "crates/gantry-conformance/tests/time_foundation.rs#time_surface_rejects_missing_extra_and_duplicate_rows",
@@ -45230,11 +45230,11 @@
     },
     {
       "id": "GNT-51.2-time-declaration-non-claims",
-      "span_start_line": 18404,
-      "span_end_line": 18407,
-      "anchor_line": 18404,
-      "body_start_line": 18405,
-      "body_end_line": 18406,
+      "span_start_line": 18415,
+      "span_end_line": 18418,
+      "anchor_line": 18415,
+      "body_start_line": 18416,
+      "body_end_line": 18417,
       "profiles": [
         "analyzer"
       ],
@@ -45245,8 +45245,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18405,
-          "end_line": 18406,
+          "start_line": 18416,
+          "end_line": 18417,
           "profiles": [
             "analyzer"
           ],
@@ -45270,11 +45270,11 @@
     },
     {
       "id": "GNT-51.3-injected-monotonic-clock",
-      "span_start_line": 18408,
-      "span_end_line": 18411,
-      "anchor_line": 18408,
-      "body_start_line": 18409,
-      "body_end_line": 18410,
+      "span_start_line": 18419,
+      "span_end_line": 18422,
+      "anchor_line": 18419,
+      "body_start_line": 18420,
+      "body_end_line": 18421,
       "profiles": [
         "analyzer"
       ],
@@ -45285,8 +45285,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18409,
-          "end_line": 18410,
+          "start_line": 18420,
+          "end_line": 18421,
           "profiles": [
             "analyzer"
           ],
@@ -45313,11 +45313,11 @@
     },
     {
       "id": "GNT-51.4-one-shot-timer",
-      "span_start_line": 18412,
-      "span_end_line": 18418,
-      "anchor_line": 18412,
-      "body_start_line": 18413,
-      "body_end_line": 18414,
+      "span_start_line": 18423,
+      "span_end_line": 18429,
+      "anchor_line": 18423,
+      "body_start_line": 18424,
+      "body_end_line": 18425,
       "profiles": [
         "analyzer"
       ],
@@ -45328,8 +45328,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18413,
-          "end_line": 18414,
+          "start_line": 18424,
+          "end_line": 18425,
           "profiles": [
             "analyzer"
           ],
@@ -45361,11 +45361,11 @@
     },
     {
       "id": "GNT-52.0-native-directory-foundation-scope",
-      "span_start_line": 18419,
-      "span_end_line": 18422,
-      "anchor_line": 18419,
-      "body_start_line": 18420,
-      "body_end_line": 18421,
+      "span_start_line": 18430,
+      "span_end_line": 18433,
+      "anchor_line": 18430,
+      "body_start_line": 18431,
+      "body_end_line": 18432,
       "profiles": [
         "analyzer"
       ],
@@ -45376,8 +45376,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18420,
-          "end_line": 18421,
+          "start_line": 18431,
+          "end_line": 18432,
           "profiles": [
             "analyzer"
           ],
@@ -45400,11 +45400,11 @@
     },
     {
       "id": "GNT-52.1-native-directory-requirement-and-mapping-policy",
-      "span_start_line": 18423,
-      "span_end_line": 18426,
-      "anchor_line": 18423,
-      "body_start_line": 18424,
-      "body_end_line": 18425,
+      "span_start_line": 18434,
+      "span_end_line": 18437,
+      "anchor_line": 18434,
+      "body_start_line": 18435,
+      "body_end_line": 18436,
       "profiles": [
         "analyzer"
       ],
@@ -45415,8 +45415,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18424,
-          "end_line": 18425,
+          "start_line": 18435,
+          "end_line": 18436,
           "profiles": [
             "analyzer"
           ],
@@ -45442,11 +45442,11 @@
     },
     {
       "id": "GNT-52.2-native-directory-path-and-fact-binding",
-      "span_start_line": 18427,
-      "span_end_line": 18430,
-      "anchor_line": 18427,
-      "body_start_line": 18428,
-      "body_end_line": 18429,
+      "span_start_line": 18438,
+      "span_end_line": 18441,
+      "anchor_line": 18438,
+      "body_start_line": 18439,
+      "body_end_line": 18440,
       "profiles": [
         "analyzer"
       ],
@@ -45457,8 +45457,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18428,
-          "end_line": 18429,
+          "start_line": 18439,
+          "end_line": 18440,
           "profiles": [
             "analyzer"
           ],
@@ -45486,11 +45486,11 @@
     },
     {
       "id": "GNT-52.3-native-directory-exclusive-issuance-and-ownership",
-      "span_start_line": 18431,
-      "span_end_line": 18434,
-      "anchor_line": 18431,
-      "body_start_line": 18432,
-      "body_end_line": 18433,
+      "span_start_line": 18442,
+      "span_end_line": 18445,
+      "anchor_line": 18442,
+      "body_start_line": 18443,
+      "body_end_line": 18444,
       "profiles": [
         "analyzer"
       ],
@@ -45501,8 +45501,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18432,
-          "end_line": 18433,
+          "start_line": 18443,
+          "end_line": 18444,
           "profiles": [
             "analyzer"
           ],
@@ -45528,11 +45528,11 @@
     },
     {
       "id": "GNT-52.4-native-directory-revocation-fencing",
-      "span_start_line": 18435,
-      "span_end_line": 18438,
-      "anchor_line": 18435,
-      "body_start_line": 18436,
-      "body_end_line": 18437,
+      "span_start_line": 18446,
+      "span_end_line": 18449,
+      "anchor_line": 18446,
+      "body_start_line": 18447,
+      "body_end_line": 18448,
       "profiles": [
         "analyzer"
       ],
@@ -45543,8 +45543,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18436,
-          "end_line": 18437,
+          "start_line": 18447,
+          "end_line": 18448,
           "profiles": [
             "analyzer"
           ],
@@ -45568,11 +45568,11 @@
     },
     {
       "id": "GNT-52.5-native-directory-completion-and-late-response",
-      "span_start_line": 18439,
-      "span_end_line": 18442,
-      "anchor_line": 18439,
-      "body_start_line": 18440,
-      "body_end_line": 18441,
+      "span_start_line": 18450,
+      "span_end_line": 18453,
+      "anchor_line": 18450,
+      "body_start_line": 18451,
+      "body_end_line": 18452,
       "profiles": [
         "analyzer"
       ],
@@ -45583,8 +45583,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18440,
-          "end_line": 18441,
+          "start_line": 18451,
+          "end_line": 18452,
           "profiles": [
             "analyzer"
           ],
@@ -45610,11 +45610,11 @@
     },
     {
       "id": "GNT-52.6-native-directory-durable-exclusion",
-      "span_start_line": 18443,
-      "span_end_line": 18446,
-      "anchor_line": 18443,
-      "body_start_line": 18444,
-      "body_end_line": 18445,
+      "span_start_line": 18454,
+      "span_end_line": 18457,
+      "anchor_line": 18454,
+      "body_start_line": 18455,
+      "body_end_line": 18456,
       "profiles": [
         "analyzer"
       ],
@@ -45625,8 +45625,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18444,
-          "end_line": 18445,
+          "start_line": 18455,
+          "end_line": 18456,
           "profiles": [
             "analyzer"
           ],
@@ -45649,11 +45649,11 @@
     },
     {
       "id": "GNT-52.7-native-directory-child-projection",
-      "span_start_line": 18447,
-      "span_end_line": 18450,
-      "anchor_line": 18447,
-      "body_start_line": 18448,
-      "body_end_line": 18449,
+      "span_start_line": 18458,
+      "span_end_line": 18461,
+      "anchor_line": 18458,
+      "body_start_line": 18459,
+      "body_end_line": 18460,
       "profiles": [
         "analyzer"
       ],
@@ -45664,8 +45664,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18448,
-          "end_line": 18449,
+          "start_line": 18459,
+          "end_line": 18460,
           "profiles": [
             "analyzer"
           ],
@@ -45689,11 +45689,11 @@
     },
     {
       "id": "GNT-52.8-native-directory-refusal-vocabulary",
-      "span_start_line": 18451,
-      "span_end_line": 18454,
-      "anchor_line": 18451,
-      "body_start_line": 18452,
-      "body_end_line": 18453,
+      "span_start_line": 18462,
+      "span_end_line": 18465,
+      "anchor_line": 18462,
+      "body_start_line": 18463,
+      "body_end_line": 18464,
       "profiles": [
         "analyzer"
       ],
@@ -45704,8 +45704,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18452,
-          "end_line": 18453,
+          "start_line": 18463,
+          "end_line": 18464,
           "profiles": [
             "analyzer"
           ],
@@ -45728,11 +45728,11 @@
     },
     {
       "id": "GNT-52.9-native-directory-non-claims",
-      "span_start_line": 18455,
-      "span_end_line": 18457,
-      "anchor_line": 18455,
-      "body_start_line": 18456,
-      "body_end_line": 18457,
+      "span_start_line": 18466,
+      "span_end_line": 18468,
+      "anchor_line": 18466,
+      "body_start_line": 18467,
+      "body_end_line": 18468,
       "profiles": [
         "analyzer"
       ],
@@ -45743,8 +45743,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18456,
-          "end_line": 18457,
+          "start_line": 18467,
+          "end_line": 18468,
           "profiles": [
             "analyzer"
           ],

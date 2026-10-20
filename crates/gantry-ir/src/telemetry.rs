@@ -180,6 +180,32 @@ impl TelemetrySinkId {
     }
 }
 
+/// One declared sink instance identity.
+///
+/// A sink identity names a declared sink; a sink instance identity names one admission/accounting
+/// state of that sink. Two states with the same declared sink identity are still distinct
+/// instances, and an emit remains bound to the instance that issued it.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TelemetrySinkInstanceId(TelemetryName);
+
+impl TelemetrySinkInstanceId {
+    /// Admits one ordinary sink instance identity.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TelemetryDiagnosticCode::InvalidIdentity`] under the same name rules as
+    /// [`TelemetryName::new`].
+    pub fn new(value: impl Into<String>) -> Result<Self, TelemetryError> {
+        Ok(Self(TelemetryName::new(value)?))
+    }
+
+    /// Returns the exact declared instance identity.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
 /// One declared ordinary field of a telemetry record.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct TelemetryField {
@@ -495,6 +521,12 @@ impl TelemetryDestinationRelease {
             return Err(TelemetryError::new(
                 TelemetryDiagnosticCode::ReleaseDestinationMismatch,
                 "a telemetry release must name the null telemetry destination",
+            ));
+        }
+        if projection.class() != class {
+            return Err(TelemetryError::new(
+                TelemetryDiagnosticCode::ReleaseClassMismatch,
+                "a telemetry projection must name the class it is declared for",
             ));
         }
         if self.projections.insert(class, projection).is_some() {
@@ -1272,6 +1304,7 @@ fn push_series_part(out: &mut String, value: &str) {
 pub struct TelemetryEmit {
     sequence: u64,
     sink: TelemetrySinkId,
+    instance: TelemetrySinkInstanceId,
     delivery: TelemetryDeliveryClass,
 }
 
@@ -1288,6 +1321,12 @@ impl TelemetryEmit {
         &self.sink
     }
 
+    /// Returns the exact sink instance that issued this emit.
+    #[must_use]
+    pub const fn instance(&self) -> &TelemetrySinkInstanceId {
+        &self.instance
+    }
+
     /// Returns the declared delivery class.
     #[must_use]
     pub const fn delivery(&self) -> TelemetryDeliveryClass {
@@ -1301,47 +1340,146 @@ impl TelemetryEmit {
     }
 
     /// Settles one required or best-effort emit at a declared sink acknowledgement.
-    #[must_use]
-    pub fn acknowledge(self, state: &mut TelemetrySinkState) -> TelemetrySettlement {
-        state.settle_emit(self.delivery);
-        state.acknowledged = state.acknowledged.saturating_add(1);
-        TelemetrySettlement::Acknowledged {
-            sequence: self.sequence,
-            sink: self.sink,
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TelemetryDiagnosticCode::InvalidSettlement`] when the emit belongs to another
+    /// sink instance, [`TelemetryDiagnosticCode::ShutdownAlreadySettled`] after aggregate shutdown
+    /// settlement, and [`TelemetryDiagnosticCode::BackpressureBound`] when the shutdown drain
+    /// budget is exhausted. Every refusal leaves the state unchanged.
+    pub fn acknowledge(
+        self,
+        state: &mut TelemetrySinkState,
+    ) -> Result<TelemetrySettlement, TelemetrySettleError> {
+        self.settle(state, SettlementKind::Acknowledged)
     }
 
     /// Settles one accepted cancellation exactly once.
-    #[must_use]
-    pub fn cancel(self, state: &mut TelemetrySinkState) -> TelemetrySettlement {
-        state.settle_emit(self.delivery);
-        state.cancelled = state.cancelled.saturating_add(1);
-        TelemetrySettlement::Cancelled {
-            sequence: self.sequence,
-            sink: self.sink,
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns the same ownership, shutdown, or drain-bound refusals as [`Self::acknowledge`].
+    pub fn cancel(
+        self,
+        state: &mut TelemetrySinkState,
+    ) -> Result<TelemetrySettlement, TelemetrySettleError> {
+        self.settle(state, SettlementKind::Cancelled)
     }
 
     /// Settles one ambiguous write without permitting a retry.
-    #[must_use]
-    pub fn ambiguous(self, state: &mut TelemetrySinkState) -> TelemetrySettlement {
-        state.settle_emit(self.delivery);
-        state.ambiguous = state.ambiguous.saturating_add(1);
-        TelemetrySettlement::Ambiguous {
-            sequence: self.sequence,
-            sink: self.sink,
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns the same ownership, shutdown, or drain-bound refusals as [`Self::acknowledge`].
+    pub fn ambiguous(
+        self,
+        state: &mut TelemetrySinkState,
+    ) -> Result<TelemetrySettlement, TelemetrySettleError> {
+        self.settle(state, SettlementKind::Ambiguous)
     }
 
     /// Settles one terminal delivery failure.
-    #[must_use]
-    pub fn failed(self, state: &mut TelemetrySinkState) -> TelemetrySettlement {
-        state.settle_emit(self.delivery);
-        state.failed = state.failed.saturating_add(1);
-        TelemetrySettlement::Failed {
-            sequence: self.sequence,
-            sink: self.sink,
+    ///
+    /// # Errors
+    ///
+    /// Returns the same ownership, shutdown, or drain-bound refusals as [`Self::acknowledge`].
+    pub fn failed(
+        self,
+        state: &mut TelemetrySinkState,
+    ) -> Result<TelemetrySettlement, TelemetrySettleError> {
+        self.settle(state, SettlementKind::Failed)
+    }
+
+    fn settle(
+        self,
+        state: &mut TelemetrySinkState,
+        kind: SettlementKind,
+    ) -> Result<TelemetrySettlement, TelemetrySettleError> {
+        if self.instance != *state.instance() {
+            return Err(TelemetrySettleError::new(
+                TelemetryError::new(
+                    TelemetryDiagnosticCode::InvalidSettlement,
+                    "the emit belongs to another sink instance",
+                ),
+                self,
+            ));
         }
+        if state.shutdown_complete() {
+            return Err(TelemetrySettleError::new(
+                TelemetryError::new(
+                    TelemetryDiagnosticCode::ShutdownAlreadySettled,
+                    "aggregate telemetry shutdown already settled",
+                ),
+                self,
+            ));
+        }
+        if let Err(error) = state.settle_emit(self.delivery) {
+            return Err(TelemetrySettleError::new(error, self));
+        }
+        let sequence = self.sequence;
+        let sink = self.sink;
+        Ok(match kind {
+            SettlementKind::Acknowledged => {
+                state.acknowledged = state.acknowledged.saturating_add(1);
+                TelemetrySettlement::Acknowledged { sequence, sink }
+            }
+            SettlementKind::Cancelled => {
+                state.cancelled = state.cancelled.saturating_add(1);
+                TelemetrySettlement::Cancelled { sequence, sink }
+            }
+            SettlementKind::Ambiguous => {
+                state.ambiguous = state.ambiguous.saturating_add(1);
+                TelemetrySettlement::Ambiguous { sequence, sink }
+            }
+            SettlementKind::Failed => {
+                state.failed = state.failed.saturating_add(1);
+                TelemetrySettlement::Failed { sequence, sink }
+            }
+        })
+    }
+}
+
+/// One terminal settlement kind requested by a live emit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SettlementKind {
+    Acknowledged,
+    Cancelled,
+    Ambiguous,
+    Failed,
+}
+
+/// One refused emit settlement that returns the unsettled affine emit.
+///
+/// A foreign instance, a completed aggregate shutdown, or an exhausted drain budget refuses
+/// without mutating the state and without losing the obligation. The caller may present the same
+/// emit to its issuing instance.
+#[derive(Debug)]
+pub struct TelemetrySettleError {
+    error: TelemetryError,
+    emit: TelemetryEmit,
+}
+
+impl TelemetrySettleError {
+    fn new(error: TelemetryError, emit: TelemetryEmit) -> Self {
+        Self { error, emit }
+    }
+
+    /// Returns the typed refusal.
+    #[must_use]
+    pub const fn error(&self) -> &TelemetryError {
+        &self.error
+    }
+
+    /// Returns the still-unsettled emit.
+    #[must_use]
+    pub fn into_emit(self) -> TelemetryEmit {
+        self.emit
+    }
+}
+
+impl fmt::Display for TelemetrySettleError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self.error)
     }
 }
 
@@ -1639,6 +1777,9 @@ impl TelemetryShutdownSettlement {
 /// series keys, and one redacted poison report; it stores no record, no payload, and no context.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TelemetrySinkState {
+    instance: TelemetrySinkInstanceId,
+    sink: Option<TelemetrySinkId>,
+    policy: Option<TelemetrySinkPolicy>,
     queued: u64,
     pending_emits: u64,
     retained: u64,
@@ -1651,20 +1792,18 @@ pub struct TelemetrySinkState {
     abandoned: u64,
     poisoned: Option<TelemetrySinkFault>,
     shutdown: Option<TelemetryShutdownPlan>,
+    shutdown_drained: u64,
     shutdown_complete: bool,
 }
 
-impl Default for TelemetrySinkState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl TelemetrySinkState {
-    /// Returns an empty sink admission state.
+    /// Returns an empty sink admission state for one declared sink instance.
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(instance: TelemetrySinkInstanceId) -> Self {
         Self {
+            instance,
+            sink: None,
+            policy: None,
             queued: 0,
             pending_emits: 0,
             retained: 0,
@@ -1677,8 +1816,36 @@ impl TelemetrySinkState {
             abandoned: 0,
             poisoned: None,
             shutdown: None,
+            shutdown_drained: 0,
             shutdown_complete: false,
         }
+    }
+
+    /// Returns a sink admission state already bound to one immutable policy.
+    #[must_use]
+    pub fn with_policy(instance: TelemetrySinkInstanceId, policy: TelemetrySinkPolicy) -> Self {
+        let mut state = Self::new(instance);
+        state.sink = Some(policy.sink().clone());
+        state.policy = Some(policy);
+        state
+    }
+
+    /// Returns the exact sink instance identity.
+    #[must_use]
+    pub const fn instance(&self) -> &TelemetrySinkInstanceId {
+        &self.instance
+    }
+
+    /// Returns the immutable policy bound to this state, when any.
+    #[must_use]
+    pub const fn policy(&self) -> Option<&TelemetrySinkPolicy> {
+        self.policy.as_ref()
+    }
+
+    /// Returns the declared sink identity bound to this state, when any.
+    #[must_use]
+    pub const fn sink(&self) -> Option<&TelemetrySinkId> {
+        self.sink.as_ref()
     }
 
     /// Returns the best-effort queue depth.
@@ -1759,13 +1926,67 @@ impl TelemetrySinkState {
         self.shutdown_complete
     }
 
+    /// Returns the emit count already settled against the shutdown drain budget.
+    #[must_use]
+    pub const fn shutdown_drained(&self) -> u64 {
+        self.shutdown_drained
+    }
+
+    fn check_policy(&self, policy: &TelemetrySinkPolicy) -> Result<(), TelemetryError> {
+        if let Some(sink) = &self.sink
+            && sink != policy.sink()
+        {
+            return Err(TelemetryError::new(
+                TelemetryDiagnosticCode::PolicyMismatch,
+                "the bound sink instance refuses a policy for another sink",
+            ));
+        }
+        if let Some(existing) = &self.policy
+            && existing != policy
+        {
+            return Err(TelemetryError::new(
+                TelemetryDiagnosticCode::PolicyMismatch,
+                "the bound sink instance refuses a replacement policy",
+            ));
+        }
+        Ok(())
+    }
+
+    fn commit_policy(&mut self, policy: &TelemetrySinkPolicy) {
+        if self.sink.is_none() {
+            self.sink = Some(policy.sink().clone());
+        }
+        if self.policy.is_none() {
+            self.policy = Some(policy.clone());
+        }
+    }
+
     /// Poisons this sink instance and returns its redacted containment receipt.
     ///
     /// A poisoned sink refuses every later admission. The fault is contained here and is not a
-    /// telemetry record, so it cannot be recursively logged through this sink.
-    pub fn poison(&mut self, fault: TelemetrySinkFault) -> TelemetryFaultReceipt {
+    /// telemetry record, so it cannot be recursively logged through this sink. A fault naming
+    /// another sink refuses without mutating this instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TelemetryDiagnosticCode::SinkMismatch`] when the fault names another sink.
+    pub fn poison(
+        &mut self,
+        fault: TelemetrySinkFault,
+    ) -> Result<TelemetryFaultReceipt, TelemetryError> {
+        if let Some(sink) = &self.sink
+            && sink != fault.sink()
+        {
+            return Err(TelemetryError::new(
+                TelemetryDiagnosticCode::SinkMismatch,
+                "a fault report names another sink instance",
+            ));
+        }
+        if self.sink.is_none() {
+            self.sink = Some(fault.sink().clone());
+        }
         self.poisoned = Some(fault.clone());
-        TelemetryFaultReceipt { fault }
+        Ok(TelemetryFaultReceipt { fault })
     }
 
     /// Admits one record atomically against one declared policy and emit grant.
@@ -1803,6 +2024,7 @@ impl TelemetrySinkState {
                 "a telemetry sink has no declared immutable policy",
             ));
         };
+        self.check_policy(policy)?;
         if grant.is_none_or(|grant| !grant.allows_emit()) {
             return Err(TelemetryError::new(
                 TelemetryDiagnosticCode::EmitNotGranted,
@@ -1898,6 +2120,7 @@ impl TelemetrySinkState {
                         ),
                     ));
                 }
+                self.commit_policy(policy);
                 self.pending_emits += 1;
                 if new_series {
                     self.active_series.insert(series);
@@ -1905,6 +2128,7 @@ impl TelemetrySinkState {
                 Ok(TelemetryAdmission::Pending(TelemetryEmit {
                     sequence: record.sequence(),
                     sink: policy.sink().clone(),
+                    instance: self.instance.clone(),
                     delivery: TelemetryDeliveryClass::Required,
                 }))
             }
@@ -1912,12 +2136,14 @@ impl TelemetrySinkState {
                 if self.queued >= limits.max_queue()
                     || self.pending_emits >= limits.max_pending_emits()
                 {
+                    self.commit_policy(policy);
                     self.dropped = self.dropped.saturating_add(1);
                     return Ok(TelemetryAdmission::Dropped(TelemetryDropReceipt {
                         sequence: record.sequence(),
                         dropped_total: self.dropped,
                     }));
                 }
+                self.commit_policy(policy);
                 self.queued += 1;
                 self.pending_emits += 1;
                 if new_series {
@@ -1926,6 +2152,7 @@ impl TelemetrySinkState {
                 Ok(TelemetryAdmission::Queued(TelemetryEmit {
                     sequence: record.sequence(),
                     sink: policy.sink().clone(),
+                    instance: self.instance.clone(),
                     delivery: TelemetryDeliveryClass::BestEffort,
                 }))
             }
@@ -1963,6 +2190,7 @@ impl TelemetrySinkState {
                 "a telemetry sink has no declared immutable policy",
             ));
         };
+        self.check_policy(policy)?;
         if self.retained >= policy.limits().max_retention() {
             return Err(TelemetryError::new(
                 TelemetryDiagnosticCode::RetentionBound,
@@ -1973,6 +2201,7 @@ impl TelemetrySinkState {
                 ),
             ));
         }
+        self.commit_policy(policy);
         self.retained += 1;
         Ok(())
     }
@@ -2004,12 +2233,15 @@ impl TelemetrySinkState {
                 "a telemetry sink has no declared immutable policy",
             ));
         };
+        self.check_policy(policy)?;
         let plan = TelemetryShutdownPlan {
             pending_emits: self.pending_emits,
             drain_bound: policy.limits().max_shutdown_drain(),
             timeout_us: policy.limits().max_shutdown_timeout_us(),
             within_bound: self.pending_emits <= policy.limits().max_shutdown_drain(),
         };
+        self.commit_policy(policy);
+        self.shutdown_drained = 0;
         self.shutdown = Some(plan);
         Ok(plan)
     }
@@ -2024,7 +2256,7 @@ impl TelemetrySinkState {
     /// Returns [`TelemetryDiagnosticCode::SinkShutdown`] when shutdown never began,
     /// [`TelemetryDiagnosticCode::ShutdownAlreadySettled`] when it already settled, and
     /// [`TelemetryDiagnosticCode::InvalidSettlement`] when the drained count exceeds the pending
-    /// count.
+    /// count or the declared shutdown drain bound.
     pub fn settle_shutdown(
         &mut self,
         drained: u64,
@@ -2047,23 +2279,43 @@ impl TelemetrySinkState {
                 "the drained count exceeds the pending emit count",
             ));
         }
+        let total_drained = self.shutdown_drained.saturating_add(drained);
+        if total_drained > plan.drain_bound {
+            return Err(TelemetryError::new(
+                TelemetryDiagnosticCode::InvalidSettlement,
+                "the drained count exceeds the declared shutdown drain bound",
+            ));
+        }
         let abandoned = self.pending_emits - drained;
+        self.shutdown_drained = total_drained;
         self.pending_emits = 0;
         self.queued = 0;
         self.abandoned = self.abandoned.saturating_add(abandoned);
         self.shutdown_complete = true;
         Ok(TelemetryShutdownSettlement {
-            drained,
+            drained: total_drained,
             abandoned,
-            within_bound: plan.within_bound,
+            within_bound: plan.within_bound && total_drained <= plan.drain_bound,
         })
     }
 
-    fn settle_emit(&mut self, delivery: TelemetryDeliveryClass) {
+    fn settle_emit(&mut self, delivery: TelemetryDeliveryClass) -> Result<(), TelemetryError> {
+        if let Some(plan) = self.shutdown
+            && self.shutdown_drained >= plan.drain_bound
+        {
+            return Err(TelemetryError::new(
+                TelemetryDiagnosticCode::BackpressureBound,
+                "the declared shutdown drain bound is exhausted",
+            ));
+        }
         self.pending_emits = self.pending_emits.saturating_sub(1);
         if delivery == TelemetryDeliveryClass::BestEffort {
             self.queued = self.queued.saturating_sub(1);
         }
+        if self.shutdown.is_some() {
+            self.shutdown_drained = self.shutdown_drained.saturating_add(1);
+        }
+        Ok(())
     }
 }
 
@@ -2095,8 +2347,12 @@ pub enum TelemetryDiagnosticCode {
     LabelCountBound,
     /// The sink has no declared policy.
     PolicyAbsent,
+    /// The sink refuses a replacement policy.
+    PolicyMismatch,
     /// The declared record material exceeds the bound.
     RecordBound,
+    /// A projection names another protected class.
+    ReleaseClassMismatch,
     /// A protected class is not declared by the destination release.
     ReleaseClassNotDeclared,
     /// A destination release names another sink or destination.
@@ -2109,6 +2365,8 @@ pub enum TelemetryDiagnosticCode {
     SeriesBound,
     /// Shutdown already settled.
     ShutdownAlreadySettled,
+    /// A fault or policy names another sink.
+    SinkMismatch,
     /// The sink is poisoned by a contained fault.
     SinkPoisoned,
     /// The sink began shutdown.
@@ -2119,7 +2377,7 @@ pub enum TelemetryDiagnosticCode {
 
 impl TelemetryDiagnosticCode {
     /// Every declared code, in exact wire-name order.
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 24] = [
         Self::BackpressureBound,
         Self::ContextBound,
         Self::EmitNotGranted,
@@ -2131,13 +2389,16 @@ impl TelemetryDiagnosticCode {
         Self::LabelByteBound,
         Self::LabelCountBound,
         Self::PolicyAbsent,
+        Self::PolicyMismatch,
         Self::RecordBound,
+        Self::ReleaseClassMismatch,
         Self::ReleaseClassNotDeclared,
         Self::ReleaseDestinationMismatch,
         Self::ReleaseRequired,
         Self::RetentionBound,
         Self::SeriesBound,
         Self::ShutdownAlreadySettled,
+        Self::SinkMismatch,
         Self::SinkPoisoned,
         Self::SinkShutdown,
         Self::UnlimitedPolicy,
@@ -2158,13 +2419,16 @@ impl TelemetryDiagnosticCode {
             Self::LabelByteBound => "telemetry-label-byte-bound",
             Self::LabelCountBound => "telemetry-label-count-bound",
             Self::PolicyAbsent => "telemetry-policy-absent",
+            Self::PolicyMismatch => "telemetry-policy-mismatch",
             Self::RecordBound => "telemetry-record-bound",
+            Self::ReleaseClassMismatch => "telemetry-release-class-mismatch",
             Self::ReleaseClassNotDeclared => "telemetry-release-class-not-declared",
             Self::ReleaseDestinationMismatch => "telemetry-release-destination-mismatch",
             Self::ReleaseRequired => "telemetry-release-required",
             Self::RetentionBound => "telemetry-retention-bound",
             Self::SeriesBound => "telemetry-series-bound",
             Self::ShutdownAlreadySettled => "telemetry-shutdown-already-settled",
+            Self::SinkMismatch => "telemetry-sink-mismatch",
             Self::SinkPoisoned => "telemetry-sink-poisoned",
             Self::SinkShutdown => "telemetry-sink-shutdown",
             Self::UnlimitedPolicy => "telemetry-unlimited-policy",
@@ -2193,16 +2457,18 @@ impl TelemetryDiagnosticCode {
             | Self::RecordBound
             | Self::RetentionBound
             | Self::SeriesBound => "GNT-48.4-telemetry-atomic-admission-and-cardinality",
-            Self::EmitNotGranted | Self::PolicyAbsent | Self::UnlimitedPolicy => {
-                "GNT-48.3-telemetry-sink-policy-and-finite-limits"
-            }
+            Self::EmitNotGranted
+            | Self::PolicyAbsent
+            | Self::PolicyMismatch
+            | Self::UnlimitedPolicy => "GNT-48.3-telemetry-sink-policy-and-finite-limits",
             Self::InvalidIdentity | Self::InvalidRecord => {
                 "GNT-48.2-telemetry-record-kinds-and-explicit-context"
             }
-            Self::ReleaseClassNotDeclared
+            Self::ReleaseClassMismatch
+            | Self::ReleaseClassNotDeclared
             | Self::ReleaseDestinationMismatch
             | Self::ReleaseRequired => "GNT-48.5-telemetry-protected-labels-identity-and-release",
-            Self::SinkPoisoned => "GNT-48.8-telemetry-sink-fault-containment",
+            Self::SinkMismatch | Self::SinkPoisoned => "GNT-48.8-telemetry-sink-fault-containment",
         }
     }
 }
@@ -2257,7 +2523,7 @@ fn validate_ordinary_text(value: &str, label: &str) -> Result<(), TelemetryError
             format!("{label} is empty"),
         ));
     }
-    if value.bytes().any(|byte| byte.is_ascii_control()) {
+    if value.chars().any(char::is_control) {
         return Err(TelemetryError::new(
             TelemetryDiagnosticCode::InvalidRecord,
             format!("{label} contains a control character"),

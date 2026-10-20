@@ -16,8 +16,8 @@ use gantry::ir::{
     TelemetryFaultClass, TelemetryField, TelemetryLabel, TelemetryLimit, TelemetryLimitDimension,
     TelemetryLimitSet, TelemetryLimits, TelemetryMetricValue, TelemetryName,
     TelemetryProtectedReference, TelemetryRecord, TelemetryRecordBody, TelemetryRecordKind,
-    TelemetrySettlement, TelemetrySinkFault, TelemetrySinkId, TelemetrySinkPolicy,
-    TelemetrySinkState, TelemetryTraceStatus, telemetry_is_semantic_evidence,
+    TelemetrySettlement, TelemetrySinkFault, TelemetrySinkId, TelemetrySinkInstanceId,
+    TelemetrySinkPolicy, TelemetrySinkState, TelemetryTraceStatus, telemetry_is_semantic_evidence,
 };
 
 /// Compile-time proof that one type implements none of the listed traits.
@@ -62,6 +62,11 @@ fn name(value: &str) -> TelemetryName {
 
 fn sink(value: &str) -> TelemetrySinkId {
     TelemetrySinkId::new(value).unwrap_or_else(|error| panic!("valid sink identity: {error}"))
+}
+
+fn instance(value: &str) -> TelemetrySinkInstanceId {
+    TelemetrySinkInstanceId::new(value)
+        .unwrap_or_else(|error| panic!("valid sink instance identity: {error}"))
 }
 
 fn label(key: &str, value: &str) -> TelemetryLabel {
@@ -251,7 +256,7 @@ fn telemetry_clauses_and_closed_vocabularies_are_published() {
             "each dimension owns one spelling"
         );
     }
-    assert_eq!(TelemetryDiagnosticCode::ALL.len(), 21);
+    assert_eq!(TelemetryDiagnosticCode::ALL.len(), 24);
     let mut prior_code = None;
     for code in TelemetryDiagnosticCode::ALL {
         assert_eq!(
@@ -487,7 +492,7 @@ fn sink_policies_are_immutable_and_need_a_positive_bounded_wait() {
 fn missing_policy_and_withheld_grant_refuse_without_mutation() {
     let record = log_record(1, "log");
     let policy = required_policy(TelemetryLimits::declared());
-    let mut absent = TelemetrySinkState::new();
+    let mut absent = TelemetrySinkState::new(instance("state-a"));
     let before = absent.clone();
     let error = refused(
         absent.admit(None, Some(&TelemetryEmitGrant::granted()), &record),
@@ -496,7 +501,7 @@ fn missing_policy_and_withheld_grant_refuse_without_mutation() {
     assert_eq!(error.code(), TelemetryDiagnosticCode::PolicyAbsent);
     assert_eq!(absent, before);
 
-    let mut withheld = TelemetrySinkState::new();
+    let mut withheld = TelemetrySinkState::new(instance("state-a"));
     let before = withheld.clone();
     let error = refused(
         withheld.admit(
@@ -529,7 +534,7 @@ fn record_field_label_and_context_bounds_refuse_atomically_without_truncation() 
     let record_with_context = log_record(3, "log").with_context(context("trace", "abc"));
     let context_bytes = record_with_context.context().bytes();
 
-    let mut state = TelemetrySinkState::new();
+    let mut state = TelemetrySinkState::new(instance("state-a"));
     let record_bytes = log_record(4, "log").material_bytes();
     assert_atomic_refusal(
         &mut state,
@@ -599,7 +604,7 @@ fn cardinality_and_retention_refuse_instead_of_evicting() {
         set.max_series = TelemetryLimit::Finite(1);
         set.max_pending_emits = TelemetryLimit::Finite(4);
     }));
-    let mut state = TelemetrySinkState::new();
+    let mut state = TelemetrySinkState::new(instance("state-a"));
     let first = log_record(1, "log")
         .with_labels(vec![label("region", "west")])
         .unwrap_or_else(|error| panic!("valid label: {error}"));
@@ -628,7 +633,7 @@ fn cardinality_and_retention_refuse_instead_of_evicting() {
     let retention = required_policy(limits_with(|set| {
         set.max_retention = TelemetryLimit::Finite(1);
     }));
-    let mut retained = TelemetrySinkState::new();
+    let mut retained = TelemetrySinkState::new(instance("state-a"));
     assert!(retained.retain(Some(&retention), &first).is_ok());
     let before = retained.clone();
     let error = refused(retained.retain(Some(&retention), &second), "full retention");
@@ -639,7 +644,7 @@ fn cardinality_and_retention_refuse_instead_of_evicting() {
     let zero_series = required_policy(limits_with(|set| {
         set.max_series = TelemetryLimit::Finite(0);
     }));
-    let mut denied = TelemetrySinkState::new();
+    let mut denied = TelemetrySinkState::new(instance("state-a"));
     assert_atomic_refusal(
         &mut denied,
         &zero_series,
@@ -654,7 +659,7 @@ fn required_delivery_completes_only_at_acknowledgement() {
     let policy = required_policy(limits_with(|set| {
         set.max_pending_emits = TelemetryLimit::Finite(2);
     }));
-    let mut state = TelemetrySinkState::new();
+    let mut state = TelemetrySinkState::new(instance("state-a"));
     let admission = state
         .admit(
             Some(&policy),
@@ -672,7 +677,9 @@ fn required_delivery_completes_only_at_acknowledgement() {
     assert_eq!(state.pending_emits(), 1);
     assert_eq!(state.acknowledged(), 0);
 
-    let settlement = emit.acknowledge(&mut state);
+    let settlement = emit
+        .acknowledge(&mut state)
+        .unwrap_or_else(|error| panic!("acknowledge: {error}"));
     assert!(settlement.clone().is_delivered());
     assert!(!settlement.clone().retry_permitted());
     assert_eq!(settlement.business_outcome(), None);
@@ -686,7 +693,7 @@ fn best_effort_reports_queued_or_dropped_and_never_delivers_on_enqueue() {
         set.max_queue = TelemetryLimit::Finite(1);
         set.max_pending_emits = TelemetryLimit::Finite(2);
     }));
-    let mut state = TelemetrySinkState::new();
+    let mut state = TelemetrySinkState::new(instance("state-a"));
     let admission = state
         .admit(
             Some(&policy),
@@ -734,7 +741,9 @@ fn best_effort_reports_queued_or_dropped_and_never_delivers_on_enqueue() {
     };
     assert_eq!(second_drop.dropped_total(), 2);
 
-    let settlement = first.acknowledge(&mut state);
+    let settlement = first
+        .acknowledge(&mut state)
+        .unwrap_or_else(|error| panic!("acknowledge: {error}"));
     assert!(settlement.is_delivered());
     assert_eq!(state.queued(), 0);
     assert_eq!(state.pending_emits(), 0);
@@ -743,7 +752,7 @@ fn best_effort_reports_queued_or_dropped_and_never_delivers_on_enqueue() {
     let zero_queue = best_effort_policy(limits_with(|set| {
         set.max_queue = TelemetryLimit::Finite(0);
     }));
-    let mut denied = TelemetrySinkState::new();
+    let mut denied = TelemetrySinkState::new(instance("state-a"));
     let dropped = match denied
         .admit(
             Some(&zero_queue),
@@ -780,7 +789,7 @@ fn protected_values_are_not_labels_or_series_and_need_destination_release() {
     );
 
     let no_release = required_policy(TelemetryLimits::declared());
-    let mut state = TelemetrySinkState::new();
+    let mut state = TelemetrySinkState::new(instance("state-a"));
     let before = state.clone();
     let error = refused(
         state.admit(
@@ -857,7 +866,7 @@ fn required_backpressure_is_bounded_and_settlements_are_terminal() {
     let policy = required_policy(limits_with(|set| {
         set.max_pending_emits = TelemetryLimit::Finite(1);
     }));
-    let mut state = TelemetrySinkState::new();
+    let mut state = TelemetrySinkState::new(instance("state-a"));
     let first = match state
         .admit(
             Some(&policy),
@@ -882,7 +891,9 @@ fn required_backpressure_is_bounded_and_settlements_are_terminal() {
     assert!(error.detail().contains('7'));
     assert_eq!(state, before);
 
-    let cancelled = first.cancel(&mut state);
+    let cancelled = first
+        .cancel(&mut state)
+        .unwrap_or_else(|error| panic!("cancel: {error}"));
     assert_eq!(cancelled.clone().sequence(), 1);
     assert!(!cancelled.clone().is_delivered());
     assert!(!cancelled.clone().retry_permitted());
@@ -901,7 +912,9 @@ fn required_backpressure_is_bounded_and_settlements_are_terminal() {
         TelemetryAdmission::Pending(emit) => emit,
         _ => panic!("a required admission is pending"),
     };
-    let ambiguous = second.ambiguous(&mut state);
+    let ambiguous = second
+        .ambiguous(&mut state)
+        .unwrap_or_else(|error| panic!("ambiguous: {error}"));
     assert_eq!(ambiguous.clone().sequence(), 3);
     assert!(!ambiguous.clone().retry_permitted());
     assert!(!ambiguous.is_delivered());
@@ -916,7 +929,7 @@ fn shutdown_is_bounded_and_reports_drained_and_abandoned_emits() {
         set.max_shutdown_drain = TelemetryLimit::Finite(1);
         set.max_shutdown_timeout_us = TelemetryLimit::Finite(5_000);
     }));
-    let mut state = TelemetrySinkState::new();
+    let mut state = TelemetrySinkState::new(instance("state-a"));
     for sequence in 1..=2 {
         let admission = state
             .admit(
@@ -966,13 +979,13 @@ fn shutdown_is_bounded_and_reports_drained_and_abandoned_emits() {
         TelemetryDiagnosticCode::ShutdownAlreadySettled
     );
 
-    let mut never = TelemetrySinkState::new();
+    let mut never = TelemetrySinkState::new(instance("state-a"));
     assert_eq!(
         refused(never.settle_shutdown(0), "settlement before shutdown").code(),
         TelemetryDiagnosticCode::SinkShutdown
     );
 
-    let mut impossible = TelemetrySinkState::new();
+    let mut impossible = TelemetrySinkState::new(instance("state-a"));
     let admission = impossible
         .admit(
             Some(&policy),
@@ -993,7 +1006,7 @@ fn shutdown_is_bounded_and_reports_drained_and_abandoned_emits() {
         set.max_shutdown_drain = TelemetryLimit::Finite(0);
         set.max_shutdown_timeout_us = TelemetryLimit::Finite(0);
     }));
-    let mut denied = TelemetrySinkState::new();
+    let mut denied = TelemetrySinkState::new(instance("state-a"));
     let admission = denied
         .admit(
             Some(&zero_drain),
@@ -1017,9 +1030,11 @@ fn shutdown_is_bounded_and_reports_drained_and_abandoned_emits() {
 #[test]
 fn sink_faults_poison_one_instance_and_redact_the_report() {
     let sink_a = sink("sink-a");
-    let mut poisoned = TelemetrySinkState::new();
+    let mut poisoned = TelemetrySinkState::new(instance("state-a"));
     let fault = TelemetrySinkFault::new(sink_a.clone(), TelemetryFaultClass::Panic);
-    let receipt = poisoned.poison(fault.clone());
+    let receipt = poisoned
+        .poison(fault.clone())
+        .unwrap_or_else(|error| panic!("poison: {error}"));
     assert_eq!(receipt.fault(), &fault);
     assert!(!receipt.business_outcome_changed());
     assert_eq!(fault.detail(), "<redacted>");
@@ -1053,7 +1068,7 @@ fn sink_faults_poison_one_instance_and_redact_the_report() {
         TelemetryDiagnosticCode::SinkPoisoned
     );
 
-    let mut healthy = TelemetrySinkState::new();
+    let mut healthy = TelemetrySinkState::new(instance("state-b"));
     let healthy_sink = sink("sink-b");
     let healthy_policy = policy(
         healthy_sink,
@@ -1078,7 +1093,7 @@ fn telemetry_is_never_section_12_semantic_evidence() {
     let record = log_record(1, "log");
     assert!(!record.is_section_12_evidence());
     let policy = required_policy(TelemetryLimits::declared());
-    let mut state = TelemetrySinkState::new();
+    let mut state = TelemetrySinkState::new(instance("state-a"));
     let emit = match state
         .admit(Some(&policy), Some(&TelemetryEmitGrant::granted()), &record)
         .unwrap_or_else(|error| panic!("the emit is admitted: {error}"))
@@ -1086,7 +1101,9 @@ fn telemetry_is_never_section_12_semantic_evidence() {
         TelemetryAdmission::Pending(emit) => emit,
         _ => panic!("a required admission is pending"),
     };
-    let settlement: TelemetrySettlement = emit.acknowledge(&mut state);
+    let settlement: TelemetrySettlement = emit
+        .acknowledge(&mut state)
+        .unwrap_or_else(|error| panic!("acknowledge: {error}"));
     assert_eq!(settlement.business_outcome(), None);
     assert!(
         specification().contains("Telemetry is never Section 12 semantic evidence"),
@@ -1097,7 +1114,7 @@ fn telemetry_is_never_section_12_semantic_evidence() {
 #[test]
 fn zero_dimensions_deny_their_dimension_without_mutation() {
     let record = log_record(1, "log");
-    let mut state = TelemetrySinkState::new();
+    let mut state = TelemetrySinkState::new(instance("state-a"));
     assert_atomic_refusal(
         &mut state,
         &required_policy(limits_with(|set| {
@@ -1123,4 +1140,230 @@ fn zero_dimensions_deny_their_dimension_without_mutation() {
         TelemetryDiagnosticCode::RetentionBound
     );
     assert_eq!(state, before);
+}
+
+#[test]
+fn release_projection_must_match_its_declared_class() {
+    let projection = ReleaseProjection::new(
+        ProjectionKind::Redacted,
+        ProtectedDataClass::SourceText,
+        ReleaseDestination::NullTelemetry,
+    );
+    let error = refused(
+        TelemetryDestinationRelease::new(sink("sink-a"))
+            .declare(ProtectedDataClass::RenderedPrompt, projection),
+        "a projection naming another protected class",
+    );
+    assert_eq!(error.code(), TelemetryDiagnosticCode::ReleaseClassMismatch);
+}
+
+#[test]
+fn settlements_are_bound_to_the_issuing_instance() {
+    let policy = required_policy(limits_with(|set| {
+        set.max_pending_emits = TelemetryLimit::Finite(2);
+    }));
+    let mut first = TelemetrySinkState::new(instance("state-a"));
+    let mut second = TelemetrySinkState::new(instance("state-b"));
+    let emit = match first
+        .admit(
+            Some(&policy),
+            Some(&TelemetryEmitGrant::granted()),
+            &log_record(1, "log"),
+        )
+        .unwrap_or_else(|error| panic!("the emit is admitted: {error}"))
+    {
+        TelemetryAdmission::Pending(emit) => emit,
+        _ => panic!("a required admission is pending"),
+    };
+    let before_second = second.clone();
+    let rejected = match emit.acknowledge(&mut second) {
+        Ok(_) => panic!("a foreign instance must refuse the settlement"),
+        Err(rejected) => rejected,
+    };
+    assert_eq!(
+        rejected.error().code(),
+        TelemetryDiagnosticCode::InvalidSettlement
+    );
+    assert_eq!(second, before_second);
+    let emit = rejected.into_emit();
+    let settlement = emit
+        .acknowledge(&mut first)
+        .unwrap_or_else(|error| panic!("the issuing instance accepts the emit: {error}"));
+    assert!(settlement.is_delivered());
+    assert_eq!(first.acknowledged(), 1);
+    assert_eq!(second.acknowledged(), 0);
+}
+
+#[test]
+fn aggregate_shutdown_retires_live_emits() {
+    let policy = required_policy(limits_with(|set| {
+        set.max_pending_emits = TelemetryLimit::Finite(1);
+        set.max_shutdown_drain = TelemetryLimit::Finite(1);
+    }));
+    let mut state = TelemetrySinkState::new(instance("state-a"));
+    let emit = match state
+        .admit(
+            Some(&policy),
+            Some(&TelemetryEmitGrant::granted()),
+            &log_record(1, "log"),
+        )
+        .unwrap_or_else(|error| panic!("the emit is admitted: {error}"))
+    {
+        TelemetryAdmission::Pending(emit) => emit,
+        _ => panic!("a required admission is pending"),
+    };
+    assert!(state.begin_shutdown(Some(&policy)).is_ok());
+    let settlement = state
+        .settle_shutdown(0)
+        .unwrap_or_else(|error| panic!("shutdown settles: {error}"));
+    assert_eq!(settlement.abandoned(), 1);
+    let before = state.clone();
+    let rejected = match emit.acknowledge(&mut state) {
+        Ok(_) => panic!("a retired emit must not settle after shutdown"),
+        Err(rejected) => rejected,
+    };
+    assert_eq!(
+        rejected.error().code(),
+        TelemetryDiagnosticCode::ShutdownAlreadySettled
+    );
+    assert_eq!(state, before);
+}
+
+#[test]
+fn sink_state_refuses_policy_replacement_and_foreign_faults() {
+    let first_policy = required_policy(limits_with(|set| {
+        set.max_pending_emits = TelemetryLimit::Finite(1);
+    }));
+    let replacement = required_policy(limits_with(|set| {
+        set.max_pending_emits = TelemetryLimit::Finite(2);
+    }));
+    let mut state = TelemetrySinkState::new(instance("state-a"));
+    let admission = state
+        .admit(
+            Some(&first_policy),
+            Some(&TelemetryEmitGrant::granted()),
+            &log_record(1, "log"),
+        )
+        .unwrap_or_else(|error| panic!("the first policy binds: {error}"));
+    assert!(admission.is_pending());
+    let before = state.clone();
+    let error = refused(
+        state.admit(
+            Some(&replacement),
+            Some(&TelemetryEmitGrant::granted()),
+            &log_record(2, "log"),
+        ),
+        "a replacement policy",
+    );
+    assert_eq!(error.code(), TelemetryDiagnosticCode::PolicyMismatch);
+    assert_eq!(state, before);
+
+    let fault = TelemetrySinkFault::new(sink("sink-b"), TelemetryFaultClass::Panic);
+    let before = state.clone();
+    let error = refused(state.poison(fault), "a foreign fault");
+    assert_eq!(error.code(), TelemetryDiagnosticCode::SinkMismatch);
+    assert_eq!(state, before);
+}
+
+#[test]
+fn shutdown_drain_budget_is_enforced_for_aggregate_and_live_settlements() {
+    let policy = required_policy(limits_with(|set| {
+        set.max_pending_emits = TelemetryLimit::Finite(2);
+        set.max_shutdown_drain = TelemetryLimit::Finite(1);
+    }));
+    let mut aggregate = TelemetrySinkState::new(instance("state-a"));
+    for sequence in 1..=2 {
+        let admission = aggregate
+            .admit(
+                Some(&policy),
+                Some(&TelemetryEmitGrant::granted()),
+                &log_record(sequence, "log"),
+            )
+            .unwrap_or_else(|error| panic!("the emit is admitted: {error}"));
+        assert!(admission.is_pending());
+    }
+    assert!(aggregate.begin_shutdown(Some(&policy)).is_ok());
+    let before = aggregate.clone();
+    let error = refused(
+        aggregate.settle_shutdown(2),
+        "an over-budget aggregate drain",
+    );
+    assert_eq!(error.code(), TelemetryDiagnosticCode::InvalidSettlement);
+    assert_eq!(aggregate, before);
+    let settlement = aggregate
+        .settle_shutdown(1)
+        .unwrap_or_else(|error| panic!("the bounded drain settles: {error}"));
+    assert_eq!(settlement.drained(), 1);
+    assert_eq!(settlement.abandoned(), 1);
+
+    let mut live = TelemetrySinkState::new(instance("state-a"));
+    let mut emits = Vec::new();
+    for sequence in 1..=2 {
+        let admission = live
+            .admit(
+                Some(&policy),
+                Some(&TelemetryEmitGrant::granted()),
+                &log_record(sequence, "log"),
+            )
+            .unwrap_or_else(|error| panic!("the emit is admitted: {error}"));
+        emits.push(match admission {
+            TelemetryAdmission::Pending(emit) => emit,
+            _ => panic!("a required admission is pending"),
+        });
+    }
+    assert!(live.begin_shutdown(Some(&policy)).is_ok());
+    let first = emits.remove(0);
+    let second = emits.remove(0);
+    assert!(
+        first
+            .acknowledge(&mut live)
+            .unwrap_or_else(|error| panic!("the first drain settles: {error}"))
+            .is_delivered()
+    );
+    let before = live.clone();
+    let rejected = match second.acknowledge(&mut live) {
+        Ok(_) => panic!("the drain budget must refuse a second settlement"),
+        Err(rejected) => rejected,
+    };
+    assert_eq!(
+        rejected.error().code(),
+        TelemetryDiagnosticCode::BackpressureBound
+    );
+    assert_eq!(live, before);
+    assert_eq!(live.shutdown_drained(), 1);
+    let settlement = live
+        .settle_shutdown(0)
+        .unwrap_or_else(|error| panic!("shutdown settles: {error}"));
+    assert_eq!(settlement.drained(), 1);
+    assert_eq!(settlement.abandoned(), 1);
+}
+
+#[test]
+fn unicode_control_characters_are_refused() {
+    for control in ["\u{0085}", "\u{009b}"] {
+        assert_eq!(
+            TelemetryRecord::log(1, name("log"), control)
+                .err()
+                .map(|error| error.code()),
+            Some(TelemetryDiagnosticCode::InvalidRecord)
+        );
+        assert_eq!(
+            TelemetryField::new(name("field"), control)
+                .err()
+                .map(|error| error.code()),
+            Some(TelemetryDiagnosticCode::InvalidRecord)
+        );
+        assert_eq!(
+            TelemetryLabel::new(name("label"), control)
+                .err()
+                .map(|error| error.code()),
+            Some(TelemetryDiagnosticCode::InvalidRecord)
+        );
+        assert_eq!(
+            TelemetryContextEntry::new(name("context"), control)
+                .err()
+                .map(|error| error.code()),
+            Some(TelemetryDiagnosticCode::InvalidRecord)
+        );
+    }
 }

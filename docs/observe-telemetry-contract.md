@@ -20,7 +20,8 @@ message; a metric carries a signed or unsigned integer and an optional ordinary 
 carries a nanosecond duration and one status from `ok`, `error`, or `unset`. Every record also
 carries an ordinary name, an ordered field list, an ordered label list, one explicit context, and
 zero or more protected references. Fields and labels sort by name and refuse duplicates. Names are
-nonempty ASCII without whitespace or controls and within `TELEMETRY_NAME_LIMIT`.
+nonempty ASCII without whitespace or controls and within `TELEMETRY_NAME_LIMIT`; ordinary text
+rejects Unicode control characters as well as ASCII controls.
 
 `TelemetryContext` is exactly its declared entry list. There is no ambient, task, thread, process,
 environment, locale, or global context, and no global record sequence. The caller declares the
@@ -31,6 +32,9 @@ record sequence explicitly. A record is never a Section 12 event and is never se
 `TelemetrySinkPolicy` binds one ordinary sink identity, one delivery class, one `TelemetryLimits`
 value, one optional destination release, and one finite positive wait bound. It has no setter, no
 configuration fallback, and no implicit default. Absent policy refuses `telemetry-policy-absent`.
+One `TelemetrySinkState` binds one sink identity and one policy; a later policy that differs in
+sink, delivery class, limits, release, or wait bound refuses `telemetry-policy-mismatch` without
+mutating the state.
 
 `TelemetryLimitSet` requires all thirteen declarations. `TelemetryLimits` accepts only finite
 values; an `Unlimited` declaration refuses `telemetry-unlimited-policy`. A finite zero is a
@@ -72,8 +76,9 @@ protected-value identity and declared class; it carries no payload byte or paylo
 
 Before export queueing, every reference must be covered by `TelemetryDestinationRelease` for this
 exact sink and class, using the `GNT-15.10-release-operation` null telemetry destination and its
-accepted `ReleaseProjection`. A missing release refuses `telemetry-release-required`; another
-sink's release refuses `telemetry-release-destination-mismatch`; an undeclared class refuses
+accepted `ReleaseProjection`. A projection naming another class refuses
+`telemetry-release-class-mismatch`; a missing release refuses `telemetry-release-required`;
+another sink's release refuses `telemetry-release-destination-mismatch`; an undeclared class refuses
 `telemetry-release-class-not-declared`. The release check precedes series, queue, pending, and drop
 mutation.
 
@@ -87,7 +92,10 @@ Required delivery completes only at one declared sink acknowledgement. Admission
 pending, not delivery. Best-effort admission reports `queued` or `dropped`; queued is not delivered.
 `acknowledged`, `cancelled`, `ambiguous`, and `failed` are distinct terminal settlements.
 `TelemetryEmit` is affine and is consumed by exactly one settlement, so no emit is settled twice.
-An ambiguous write is terminal and is never silently retried. No settlement carries a business,
+An emit is bound to the exact sink instance that issued it; a foreign instance refuses
+`telemetry-invalid-settlement` and returns the unsettled emit, and an emit presented after aggregate
+shutdown settlement refuses `telemetry-shutdown-already-settled`. An ambiguous write is terminal
+and is never silently retried. No settlement carries a business,
 task, execution, or Section 12 outcome, and a delivery failure never rewrites a fixed outcome.
 
 ## Backpressure, cancellation, and shutdown
@@ -96,13 +104,17 @@ Required backpressure is bounded by the policy's finite positive wait bound and 
 unboundedly. Accepted cancellation settles once through the affine emit. `begin_shutdown` stops new
 admissions and retentions and returns a `TelemetryShutdownPlan` with the pending emits, finite drain
 bound, finite timeout, and whether the pending set fits the bound. `settle_shutdown` reports drained
-and abandoned counts and never silently discards a pending emit. The application owns the actual
-drain and flush; the model declares and accounts the bound only.
+and abandoned counts and never silently discards a pending emit. The declared drain bound is enforced
+for the aggregate settlement and for each terminal emit settlement during shutdown; an over-budget
+settlement refuses `telemetry-invalid-settlement` or `telemetry-backpressure-bound`, and a zero
+drain bound abandons all pending emits at aggregate settlement. The application owns the actual drain
+and flush; the model declares and accounts the bound only.
 
 ## Sink faults
 
 A fault poisons that exact sink instance only. Later admissions and retentions on it refuse
-`telemetry-sink-poisoned`; other sinks are unaffected. `TelemetrySinkFault` names the sink and one
+`telemetry-sink-poisoned`; other sinks are unaffected. A fault report naming another sink refuses
+`telemetry-sink-mismatch` without poisoning this instance. `TelemetrySinkFault` names the sink and one
 closed class of `panic`, `error`, or `protocol`, carries no payload or backtrace, and returns fixed
 redacted detail. It is not a telemetry record and cannot be recursively logged through the sink it
 describes. Poisoning is not repair, eviction, reuse, or a delivery-policy change.

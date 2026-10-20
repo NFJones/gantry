@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "cc428bbcf15f9f2f4d5142bf6f28c4fe020de169bd49f22b039b509a923b9071",
-  "byte_length": 1461901,
-  "line_count": 18457,
+  "specification_sha256": "f5af45332f858a5cf9962b176858d9d301ecd43c495d5818c0f8df142c867aa1",
+  "byte_length": 1462813,
+  "line_count": 18468,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9780,
-      "end_line": 18457,
-      "sha256": "4ccf46c9fae62a4ffadcaf26b189712534247c1686e7c0a8b9cf24a34ee55914",
+      "end_line": 18468,
+      "sha256": "db4ac994ba7c2159fdcaf2cdf89a427e639dfd9ef61994c8dbabc5c9937fa192",
       "rationale": null
     }
   ],
@@ -45991,12 +45991,12 @@
     {
       "id": "GNT-48.3-telemetry-sink-policy-and-finite-limits",
       "span_start_line": 18232,
-      "span_end_line": 18252,
-      "span_sha256": "4ec1453e151d0239d306bbf2252e1faf525ba5e6b2d3bc759d2c2b7d314a14ec",
+      "span_end_line": 18254,
+      "span_sha256": "2067344372c5adc6e0fa40aa429725cfc4598e4779a885149a0ec29438907563",
       "anchor_line": 18232,
       "body_start_line": 18233,
-      "body_end_line": 18251,
-      "body_sha256": "d382b5c9bebbd05e1e59bf0392296987b464479e64c028e30856967e1b59f178",
+      "body_end_line": 18253,
+      "body_sha256": "a3a0b12395cf2344885dda837a51df4cbc57ce931b8db6aadbbc1c39651344f1",
       "profiles": [
         "analyzer"
       ],
@@ -46008,7 +46008,7 @@
         {
           "key": "clause-001",
           "start_line": 18233,
-          "end_line": 18251,
+          "end_line": 18253,
           "profiles": [
             "analyzer"
           ],
@@ -46033,12 +46033,12 @@
     },
     {
       "id": "GNT-48.4-telemetry-atomic-admission-and-cardinality",
-      "span_start_line": 18253,
-      "span_end_line": 18273,
+      "span_start_line": 18255,
+      "span_end_line": 18275,
       "span_sha256": "95062ea9d1e0f52069cba4d7f23ddaab67f675dbe747a06b85687dbec8479a2f",
-      "anchor_line": 18253,
-      "body_start_line": 18254,
-      "body_end_line": 18272,
+      "anchor_line": 18255,
+      "body_start_line": 18256,
+      "body_end_line": 18274,
       "body_sha256": "f425c5f16ac2539945774b56fd9c8b1384f62ff9278665922b3ca9c20061865f",
       "profiles": [
         "analyzer"
@@ -46050,8 +46050,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18254,
-          "end_line": 18272,
+          "start_line": 18256,
+          "end_line": 18274,
           "profiles": [
             "analyzer"
           ],
@@ -46076,13 +46076,13 @@
     },
     {
       "id": "GNT-48.5-telemetry-protected-labels-identity-and-release",
-      "span_start_line": 18274,
-      "span_end_line": 18292,
-      "span_sha256": "65974ee87bf0f5e72f364ce4c03786c058824f18e2f60e14fd56fd48ee3a8909",
-      "anchor_line": 18274,
-      "body_start_line": 18275,
-      "body_end_line": 18291,
-      "body_sha256": "dfdfa5eb41f6b68e058f237b02c63216d046af63822938f8700aa9eba9f2d5d1",
+      "span_start_line": 18276,
+      "span_end_line": 18295,
+      "span_sha256": "b5980e15eee5919cb9925dd4bc7b1d02dcd21a332a81ce917df34fcc2e06ece9",
+      "anchor_line": 18276,
+      "body_start_line": 18277,
+      "body_end_line": 18294,
+      "body_sha256": "aeea8820675e81b568c34a7617ba2bad2624bfba102ad228af8b3daa10a512ed",
       "profiles": [
         "analyzer"
       ],
@@ -46093,8 +46093,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18275,
-          "end_line": 18291,
+          "start_line": 18277,
+          "end_line": 18294,
           "profiles": [
             "analyzer"
           ],
@@ -46117,13 +46117,13 @@
     },
     {
       "id": "GNT-48.6-telemetry-required-acknowledgement-and-best-effort",
-      "span_start_line": 18293,
-      "span_end_line": 18308,
-      "span_sha256": "7c5168dc97d02defa39e8f28a9793e242870b7089e3765d1b2a78212034f6ebe",
-      "anchor_line": 18293,
-      "body_start_line": 18294,
-      "body_end_line": 18307,
-      "body_sha256": "22bae64e766aceedf1afc2df4f55877a64c2649b279edcddebef8a4610cdc901",
+      "span_start_line": 18296,
+      "span_end_line": 18314,
+      "span_sha256": "8520a76d9354fac4aceef6e9a41fd0012093ba048cd59a3c3b6b78ab91cf2cfb",
+      "anchor_line": 18296,
+      "body_start_line": 18297,
+      "body_end_line": 18313,
+      "body_sha256": "d3a4d57977c37886d4b5556ec9c858fa7cfacade3f2cb01cd15378492fe3e983",
       "profiles": [
         "analyzer"
       ],
@@ -46134,8 +46134,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18294,
-          "end_line": 18307,
+          "start_line": 18297,
+          "end_line": 18313,
           "profiles": [
             "analyzer"
           ],
@@ -46159,13 +46159,13 @@
     },
     {
       "id": "GNT-48.7-telemetry-backpressure-cancellation-and-shutdown",
-      "span_start_line": 18309,
-      "span_end_line": 18323,
-      "span_sha256": "c34e27934811f3250386e3ca94b0863cd916136e92fb31b6b1cd67aa078d2d12",
-      "anchor_line": 18309,
-      "body_start_line": 18310,
-      "body_end_line": 18322,
-      "body_sha256": "cfc968b0472bb1f40d8c9c0db9fbee4d8aa5da09f2c9ec8ec504b545e08b1b4a",
+      "span_start_line": 18315,
+      "span_end_line": 18333,
+      "span_sha256": "74fc94af21a6e18b00d25f088ac6cd4f6bda74ef5e74446879933180f7622804",
+      "anchor_line": 18315,
+      "body_start_line": 18316,
+      "body_end_line": 18332,
+      "body_sha256": "5f619ff96ca5aeb5431eb188e580f66831743eb4524a1bfc6f837356197f1729",
       "profiles": [
         "analyzer"
       ],
@@ -46176,8 +46176,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18310,
-          "end_line": 18322,
+          "start_line": 18316,
+          "end_line": 18332,
           "profiles": [
             "analyzer"
           ],
@@ -46201,13 +46201,13 @@
     },
     {
       "id": "GNT-48.8-telemetry-sink-fault-containment",
-      "span_start_line": 18324,
-      "span_end_line": 18336,
-      "span_sha256": "090d3b63e212f78f702487cb573641f942a970bbd17a30b4904a45d418414277",
-      "anchor_line": 18324,
-      "body_start_line": 18325,
-      "body_end_line": 18335,
-      "body_sha256": "bbe68ef3d58f1479fb8a9aaa9955b25b7e327eb7781ccfd1345a1d628425ccb0",
+      "span_start_line": 18334,
+      "span_end_line": 18347,
+      "span_sha256": "682b364a4f8b2598455e39d63cf6deb2f0f7fb9ad66f3f6e8669280284b70f19",
+      "anchor_line": 18334,
+      "body_start_line": 18335,
+      "body_end_line": 18346,
+      "body_sha256": "01c0abc0946573e03ef7a03c515a72020f92038fcc82d95b41701528ecfc20b9",
       "profiles": [
         "analyzer"
       ],
@@ -46218,8 +46218,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18325,
-          "end_line": 18335,
+          "start_line": 18335,
+          "end_line": 18346,
           "profiles": [
             "analyzer"
           ],
@@ -46242,12 +46242,12 @@
     },
     {
       "id": "GNT-48.9-telemetry-evidence-separation-and-non-claims",
-      "span_start_line": 18337,
-      "span_end_line": 18350,
+      "span_start_line": 18348,
+      "span_end_line": 18361,
       "span_sha256": "5bcc6f46664525b0f030b285e72677d752bc793afe901348d5e4a4b87414a7e5",
-      "anchor_line": 18337,
-      "body_start_line": 18338,
-      "body_end_line": 18349,
+      "anchor_line": 18348,
+      "body_start_line": 18349,
+      "body_end_line": 18360,
       "body_sha256": "f690f1069d6d586f1226efdbfe2e5f01a77cb9aff010d5d313e95eac30cf15ab",
       "profiles": [
         "analyzer"
@@ -46259,8 +46259,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18338,
-          "end_line": 18349,
+          "start_line": 18349,
+          "end_line": 18360,
           "profiles": [
             "analyzer"
           ],
@@ -46284,12 +46284,12 @@
     },
     {
       "id": "GNT-49.0-environment-foundation-scope",
-      "span_start_line": 18351,
-      "span_end_line": 18363,
+      "span_start_line": 18362,
+      "span_end_line": 18374,
       "span_sha256": "e04738c92364d7893e7669658b5c626035b4a067de3b17a43dc9b06c581954aa",
-      "anchor_line": 18351,
-      "body_start_line": 18352,
-      "body_end_line": 18362,
+      "anchor_line": 18362,
+      "body_start_line": 18363,
+      "body_end_line": 18373,
       "body_sha256": "bce287bb2ca2b3cf288e1f7ab77eb06c0a589c6aa948e812883f5d8367c14789",
       "profiles": [
         "analyzer"
@@ -46301,8 +46301,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18352,
-          "end_line": 18362,
+          "start_line": 18363,
+          "end_line": 18373,
           "profiles": [
             "analyzer"
           ],
@@ -46325,12 +46325,12 @@
     },
     {
       "id": "GNT-49.1-environment-modules-and-item-rows",
-      "span_start_line": 18364,
-      "span_end_line": 18384,
+      "span_start_line": 18375,
+      "span_end_line": 18395,
       "span_sha256": "2c3cd704d467f8582fce448ac175796a6544351a95d1345a9a18e4786d2638b7",
-      "anchor_line": 18364,
-      "body_start_line": 18365,
-      "body_end_line": 18381,
+      "anchor_line": 18375,
+      "body_start_line": 18376,
+      "body_end_line": 18392,
       "body_sha256": "ee762baa2443624791cc568ad4f9566dc823097d53ff5b3d36216f9c8c1bcfaf",
       "profiles": [
         "analyzer"
@@ -46342,8 +46342,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18365,
-          "end_line": 18381,
+          "start_line": 18376,
+          "end_line": 18392,
           "profiles": [
             "analyzer"
           ],
@@ -46368,97 +46368,13 @@
     },
     {
       "id": "GNT-50.0-random-foundation-scope",
-      "span_start_line": 18385,
-      "span_end_line": 18388,
-      "span_sha256": "1385694482d7544fd53b94123892d3823899c6baee7f8bf2545e079569d48bc7",
-      "anchor_line": 18385,
-      "body_start_line": 18386,
-      "body_end_line": 18387,
-      "body_sha256": "8bc0c221ae1e1e3016d54186a87d61624d866fe014de05f5f3ba2ca3ceb778f6",
-      "profiles": [
-        "analyzer"
-      ],
-      "roles": [
-        "harness",
-        "implementation"
-      ],
-      "clauses": [
-        {
-          "key": "clause-001",
-          "start_line": 18386,
-          "end_line": 18387,
-          "profiles": [
-            "analyzer"
-          ],
-          "roles": [
-            "harness",
-            "implementation"
-          ],
-          "profile_reviews": [
-            {
-              "profile": "analyzer",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/stdlib_naming.rs#random_module_name_is_owned_by_its_own_scope_and_row_clauses",
-                "crates/gantry-conformance/tests/stdlib_naming.rs#every_declared_family_set_is_closed_and_refuses_without_mutation"
-              ],
-              "rationale": null
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "GNT-50.1-random-modules-and-item-rows",
-      "span_start_line": 18389,
-      "span_end_line": 18395,
-      "span_sha256": "89eeacd1b51b931c132c543654ca058b64f954e4c9b5aea81bc34d104b588337",
-      "anchor_line": 18389,
-      "body_start_line": 18390,
-      "body_end_line": 18391,
-      "body_sha256": "7379af9a8a6f9b029e2fac59d842dcabab389e36c063d6f50f5fe03c8b8f37f2",
-      "profiles": [
-        "analyzer"
-      ],
-      "roles": [
-        "harness",
-        "implementation"
-      ],
-      "clauses": [
-        {
-          "key": "clause-001",
-          "start_line": 18390,
-          "end_line": 18391,
-          "profiles": [
-            "analyzer"
-          ],
-          "roles": [
-            "harness",
-            "implementation"
-          ],
-          "profile_reviews": [
-            {
-              "profile": "analyzer",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/stdlib_naming.rs#random_module_name_is_owned_by_its_own_scope_and_row_clauses",
-                "crates/gantry-conformance/tests/stdlib_naming.rs#every_declared_family_set_is_closed_and_refuses_without_mutation"
-              ],
-              "rationale": null
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "GNT-51.0-time-foundation-scope",
       "span_start_line": 18396,
       "span_end_line": 18399,
-      "span_sha256": "55dd3aec03a10ed476f50838b3e48d565854056e23ac1e575cd45b681029f1ea",
+      "span_sha256": "1385694482d7544fd53b94123892d3823899c6baee7f8bf2545e079569d48bc7",
       "anchor_line": 18396,
       "body_start_line": 18397,
       "body_end_line": 18398,
-      "body_sha256": "e3e8b6d8ce5af346b8165a3b94fd72c8b751bd7531122f630418f81b83590c7a",
+      "body_sha256": "8bc0c221ae1e1e3016d54186a87d61624d866fe014de05f5f3ba2ca3ceb778f6",
       "profiles": [
         "analyzer"
       ],
@@ -46483,7 +46399,8 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
-                "crates/gantry-conformance/tests/time_foundation.rs#time_scope_is_declared_without_runtime_or_authority_claims"
+                "crates/gantry-conformance/tests/stdlib_naming.rs#random_module_name_is_owned_by_its_own_scope_and_row_clauses",
+                "crates/gantry-conformance/tests/stdlib_naming.rs#every_declared_family_set_is_closed_and_refuses_without_mutation"
               ],
               "rationale": null
             }
@@ -46492,14 +46409,14 @@
       ]
     },
     {
-      "id": "GNT-51.1-time-modules-and-item-rows",
+      "id": "GNT-50.1-random-modules-and-item-rows",
       "span_start_line": 18400,
-      "span_end_line": 18403,
-      "span_sha256": "c7162bd514889ed03cb86807d40d41c751feea5aa1965bacfdc5804940760494",
+      "span_end_line": 18406,
+      "span_sha256": "89eeacd1b51b931c132c543654ca058b64f954e4c9b5aea81bc34d104b588337",
       "anchor_line": 18400,
       "body_start_line": 18401,
       "body_end_line": 18402,
-      "body_sha256": "07b610b3c6ea9f9c64e19ca8a486a92c535068aebda2185f2e89e82ab83c3ed8",
+      "body_sha256": "7379af9a8a6f9b029e2fac59d842dcabab389e36c063d6f50f5fe03c8b8f37f2",
       "profiles": [
         "analyzer"
       ],
@@ -46512,6 +46429,89 @@
           "key": "clause-001",
           "start_line": 18401,
           "end_line": 18402,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/stdlib_naming.rs#random_module_name_is_owned_by_its_own_scope_and_row_clauses",
+                "crates/gantry-conformance/tests/stdlib_naming.rs#every_declared_family_set_is_closed_and_refuses_without_mutation"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-51.0-time-foundation-scope",
+      "span_start_line": 18407,
+      "span_end_line": 18410,
+      "span_sha256": "55dd3aec03a10ed476f50838b3e48d565854056e23ac1e575cd45b681029f1ea",
+      "anchor_line": 18407,
+      "body_start_line": 18408,
+      "body_end_line": 18409,
+      "body_sha256": "e3e8b6d8ce5af346b8165a3b94fd72c8b751bd7531122f630418f81b83590c7a",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18408,
+          "end_line": 18409,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/time_foundation.rs#time_scope_is_declared_without_runtime_or_authority_claims"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-51.1-time-modules-and-item-rows",
+      "span_start_line": 18411,
+      "span_end_line": 18414,
+      "span_sha256": "c7162bd514889ed03cb86807d40d41c751feea5aa1965bacfdc5804940760494",
+      "anchor_line": 18411,
+      "body_start_line": 18412,
+      "body_end_line": 18413,
+      "body_sha256": "07b610b3c6ea9f9c64e19ca8a486a92c535068aebda2185f2e89e82ab83c3ed8",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18412,
+          "end_line": 18413,
           "profiles": [
             "analyzer"
           ],
@@ -46537,12 +46537,12 @@
     },
     {
       "id": "GNT-51.2-time-declaration-non-claims",
-      "span_start_line": 18404,
-      "span_end_line": 18407,
+      "span_start_line": 18415,
+      "span_end_line": 18418,
       "span_sha256": "4f6d50fb5af2971fc69c2aabdb4f897d94ccc96204ae679597a908f79dc3238b",
-      "anchor_line": 18404,
-      "body_start_line": 18405,
-      "body_end_line": 18406,
+      "anchor_line": 18415,
+      "body_start_line": 18416,
+      "body_end_line": 18417,
       "body_sha256": "54230c238f35424167c32bbc30a49ea7f0cfe59c8b4602440d0c7ec5bd2dc8ce",
       "profiles": [
         "analyzer"
@@ -46554,8 +46554,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18405,
-          "end_line": 18406,
+          "start_line": 18416,
+          "end_line": 18417,
           "profiles": [
             "analyzer"
           ],
@@ -46579,12 +46579,12 @@
     },
     {
       "id": "GNT-51.3-injected-monotonic-clock",
-      "span_start_line": 18408,
-      "span_end_line": 18411,
+      "span_start_line": 18419,
+      "span_end_line": 18422,
       "span_sha256": "804c613db0ab174f183ae9988aa0541c9b80396be0aed58e27b23db49e543a02",
-      "anchor_line": 18408,
-      "body_start_line": 18409,
-      "body_end_line": 18410,
+      "anchor_line": 18419,
+      "body_start_line": 18420,
+      "body_end_line": 18421,
       "body_sha256": "3fef4da2bfba53766a6d143afdd8903b489c93d878e8b262f0236b80327124bc",
       "profiles": [
         "analyzer"
@@ -46596,8 +46596,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18409,
-          "end_line": 18410,
+          "start_line": 18420,
+          "end_line": 18421,
           "profiles": [
             "analyzer"
           ],
@@ -46624,12 +46624,12 @@
     },
     {
       "id": "GNT-51.4-one-shot-timer",
-      "span_start_line": 18412,
-      "span_end_line": 18418,
+      "span_start_line": 18423,
+      "span_end_line": 18429,
       "span_sha256": "132517592a333e7c64f3007f1b2f9fbec519d4a54fd5a65e8aca041288afeb9b",
-      "anchor_line": 18412,
-      "body_start_line": 18413,
-      "body_end_line": 18414,
+      "anchor_line": 18423,
+      "body_start_line": 18424,
+      "body_end_line": 18425,
       "body_sha256": "6a0561db1063ab2c0a8f646426c348e4549e16b3c220276f14abb18f20a5507a",
       "profiles": [
         "analyzer"
@@ -46641,8 +46641,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18413,
-          "end_line": 18414,
+          "start_line": 18424,
+          "end_line": 18425,
           "profiles": [
             "analyzer"
           ],
@@ -46674,12 +46674,12 @@
     },
     {
       "id": "GNT-52.0-native-directory-foundation-scope",
-      "span_start_line": 18419,
-      "span_end_line": 18422,
+      "span_start_line": 18430,
+      "span_end_line": 18433,
       "span_sha256": "03f20692d73848928e956f709000dce0d1d9fb6062548365f96a13d9ee2ded72",
-      "anchor_line": 18419,
-      "body_start_line": 18420,
-      "body_end_line": 18421,
+      "anchor_line": 18430,
+      "body_start_line": 18431,
+      "body_end_line": 18432,
       "body_sha256": "0a33dc4de11864b54341ec0a98ebde9455537e64f707f9f2f5731c4a57995d0b",
       "profiles": [
         "analyzer"
@@ -46691,8 +46691,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18420,
-          "end_line": 18421,
+          "start_line": 18431,
+          "end_line": 18432,
           "profiles": [
             "analyzer"
           ],
@@ -46715,12 +46715,12 @@
     },
     {
       "id": "GNT-52.1-native-directory-requirement-and-mapping-policy",
-      "span_start_line": 18423,
-      "span_end_line": 18426,
+      "span_start_line": 18434,
+      "span_end_line": 18437,
       "span_sha256": "a73845e76a861b5b66e13fa963c8b40b4be5d94af25574b05ff4f6a7f622ff7f",
-      "anchor_line": 18423,
-      "body_start_line": 18424,
-      "body_end_line": 18425,
+      "anchor_line": 18434,
+      "body_start_line": 18435,
+      "body_end_line": 18436,
       "body_sha256": "8a19a61f820e41a07a06d07a4233187e8aa43a08ce1e374aae96fb36a2c40426",
       "profiles": [
         "analyzer"
@@ -46732,8 +46732,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18424,
-          "end_line": 18425,
+          "start_line": 18435,
+          "end_line": 18436,
           "profiles": [
             "analyzer"
           ],
@@ -46759,12 +46759,12 @@
     },
     {
       "id": "GNT-52.2-native-directory-path-and-fact-binding",
-      "span_start_line": 18427,
-      "span_end_line": 18430,
+      "span_start_line": 18438,
+      "span_end_line": 18441,
       "span_sha256": "10884cec790e311397fa1151e32fa40ca2567f9ba4041ff7ced19ee6efe32786",
-      "anchor_line": 18427,
-      "body_start_line": 18428,
-      "body_end_line": 18429,
+      "anchor_line": 18438,
+      "body_start_line": 18439,
+      "body_end_line": 18440,
       "body_sha256": "1f0be0f5a167921d62f42b81bbecc6d7e166815fd7e682273d50729b12b029be",
       "profiles": [
         "analyzer"
@@ -46776,8 +46776,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18428,
-          "end_line": 18429,
+          "start_line": 18439,
+          "end_line": 18440,
           "profiles": [
             "analyzer"
           ],
@@ -46805,12 +46805,12 @@
     },
     {
       "id": "GNT-52.3-native-directory-exclusive-issuance-and-ownership",
-      "span_start_line": 18431,
-      "span_end_line": 18434,
+      "span_start_line": 18442,
+      "span_end_line": 18445,
       "span_sha256": "55622e3b3929ac2b77f40af4e84a16f7bf6904a9d0982f5af3a31889239ff519",
-      "anchor_line": 18431,
-      "body_start_line": 18432,
-      "body_end_line": 18433,
+      "anchor_line": 18442,
+      "body_start_line": 18443,
+      "body_end_line": 18444,
       "body_sha256": "4947d61fcf6f65a67b4f2261dfa9cc2766a41dd677a9b5d728b40202df538ff6",
       "profiles": [
         "analyzer"
@@ -46822,8 +46822,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18432,
-          "end_line": 18433,
+          "start_line": 18443,
+          "end_line": 18444,
           "profiles": [
             "analyzer"
           ],
@@ -46849,12 +46849,12 @@
     },
     {
       "id": "GNT-52.4-native-directory-revocation-fencing",
-      "span_start_line": 18435,
-      "span_end_line": 18438,
+      "span_start_line": 18446,
+      "span_end_line": 18449,
       "span_sha256": "53d588068443139f3f839a42ea3741c4854de5ed64fad24b5e01ea2714ebd45a",
-      "anchor_line": 18435,
-      "body_start_line": 18436,
-      "body_end_line": 18437,
+      "anchor_line": 18446,
+      "body_start_line": 18447,
+      "body_end_line": 18448,
       "body_sha256": "7eea16661d919b52f2f2a3f5dcccedb701b793a32ba6d3a4bf476872e0aeb13c",
       "profiles": [
         "analyzer"
@@ -46866,8 +46866,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18436,
-          "end_line": 18437,
+          "start_line": 18447,
+          "end_line": 18448,
           "profiles": [
             "analyzer"
           ],
@@ -46891,12 +46891,12 @@
     },
     {
       "id": "GNT-52.5-native-directory-completion-and-late-response",
-      "span_start_line": 18439,
-      "span_end_line": 18442,
+      "span_start_line": 18450,
+      "span_end_line": 18453,
       "span_sha256": "d7f15feca6a919d5b5d7c87eff1d98a11b59b407cc1da2d56bb6b01bd88f27de",
-      "anchor_line": 18439,
-      "body_start_line": 18440,
-      "body_end_line": 18441,
+      "anchor_line": 18450,
+      "body_start_line": 18451,
+      "body_end_line": 18452,
       "body_sha256": "67ab3c49d8c1829bc496ac066a93d65105b2ae4bb35cca79c8662f5cdf46592a",
       "profiles": [
         "analyzer"
@@ -46908,8 +46908,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18440,
-          "end_line": 18441,
+          "start_line": 18451,
+          "end_line": 18452,
           "profiles": [
             "analyzer"
           ],
@@ -46935,12 +46935,12 @@
     },
     {
       "id": "GNT-52.6-native-directory-durable-exclusion",
-      "span_start_line": 18443,
-      "span_end_line": 18446,
+      "span_start_line": 18454,
+      "span_end_line": 18457,
       "span_sha256": "abaf804fb4aa7a87cff7c0c8fc16ffce0be3e39eb999fe6b1046275346ad08c4",
-      "anchor_line": 18443,
-      "body_start_line": 18444,
-      "body_end_line": 18445,
+      "anchor_line": 18454,
+      "body_start_line": 18455,
+      "body_end_line": 18456,
       "body_sha256": "28aada85069b43f7a8bcf8cd600e82710b3cc9534027f134d0293ef1121134b5",
       "profiles": [
         "analyzer"
@@ -46952,8 +46952,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18444,
-          "end_line": 18445,
+          "start_line": 18455,
+          "end_line": 18456,
           "profiles": [
             "analyzer"
           ],
@@ -46976,12 +46976,12 @@
     },
     {
       "id": "GNT-52.7-native-directory-child-projection",
-      "span_start_line": 18447,
-      "span_end_line": 18450,
+      "span_start_line": 18458,
+      "span_end_line": 18461,
       "span_sha256": "8cdab1d3621c9bcbad2ce2d6e280455c80feee236c9a59c02b1623d0fc928f1b",
-      "anchor_line": 18447,
-      "body_start_line": 18448,
-      "body_end_line": 18449,
+      "anchor_line": 18458,
+      "body_start_line": 18459,
+      "body_end_line": 18460,
       "body_sha256": "3d2b09e21a4b572212af96e81a86b8f99c181b07fb732a9f995fd52f322817a9",
       "profiles": [
         "analyzer"
@@ -46993,8 +46993,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18448,
-          "end_line": 18449,
+          "start_line": 18459,
+          "end_line": 18460,
           "profiles": [
             "analyzer"
           ],
@@ -47018,12 +47018,12 @@
     },
     {
       "id": "GNT-52.8-native-directory-refusal-vocabulary",
-      "span_start_line": 18451,
-      "span_end_line": 18454,
+      "span_start_line": 18462,
+      "span_end_line": 18465,
       "span_sha256": "742943a0d2c7c0562f057ca7168c41d5445a3d4b32d12fc756aea9958cfc7c16",
-      "anchor_line": 18451,
-      "body_start_line": 18452,
-      "body_end_line": 18453,
+      "anchor_line": 18462,
+      "body_start_line": 18463,
+      "body_end_line": 18464,
       "body_sha256": "6f55373d1fe6ce4ea959ae2a78bbc6117c60db1325124bc4e4d159c5a198a982",
       "profiles": [
         "analyzer"
@@ -47035,8 +47035,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18452,
-          "end_line": 18453,
+          "start_line": 18463,
+          "end_line": 18464,
           "profiles": [
             "analyzer"
           ],
@@ -47059,12 +47059,12 @@
     },
     {
       "id": "GNT-52.9-native-directory-non-claims",
-      "span_start_line": 18455,
-      "span_end_line": 18457,
+      "span_start_line": 18466,
+      "span_end_line": 18468,
       "span_sha256": "c490841f582b0f934b20be58ac15c4122e0523440926c33a4d1695ed7197fdaa",
-      "anchor_line": 18455,
-      "body_start_line": 18456,
-      "body_end_line": 18457,
+      "anchor_line": 18466,
+      "body_start_line": 18467,
+      "body_end_line": 18468,
       "body_sha256": "7182b0fd78d29bbde20f1b63f45fd84893591e60c4ab4dde9c011d5c4876c51c",
       "profiles": [
         "analyzer"
@@ -47076,8 +47076,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18456,
-          "end_line": 18457,
+          "start_line": 18467,
+          "end_line": 18468,
           "profiles": [
             "analyzer"
           ],
