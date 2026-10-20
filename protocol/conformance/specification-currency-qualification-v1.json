@@ -279,7 +279,7 @@
     },
     {
       "path": "crates/gantry-runtime/src/console.rs",
-      "sha256": "14e0861a90123dcedd3a3ea2638f5c0ab48d16ca99c97a762f8b4f0603d861f5"
+      "sha256": "b43cb52c0942624040dfa24cae5b2dd0b3a283b660390f28e0aa39007b13034f"
     },
     {
       "path": "crates/gantry-runtime/src/console/tests.rs",
