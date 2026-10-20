@@ -1,9 +1,9 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "0d1d2fa009913f4d0154dc1e70072505abb23e93b6044db4c7319c17c836c302",
-  "byte_length": 1450547,
-  "line_count": 18316,
+  "specification_sha256": "cc428bbcf15f9f2f4d5142bf6f28c4fe020de169bd49f22b039b509a923b9071",
+  "byte_length": 1461901,
+  "line_count": 18457,
   "regions": [
     {
       "kind": "excluded",
@@ -43,8 +43,8 @@
     {
       "kind": "normative",
       "start_line": 9780,
-      "end_line": 18316,
-      "sha256": "f324c2cdcc81a3b988e289038aa4a502ec1570f6a8e0ff02931b97a9d2b48e1b",
+      "end_line": 18457,
+      "sha256": "4ccf46c9fae62a4ffadcaf26b189712534247c1686e7c0a8b9cf24a34ee55914",
       "rationale": null
     }
   ],
@@ -45865,12 +45865,12 @@
     {
       "id": "GNT-48.0-observe-foundation-scope",
       "span_start_line": 18176,
-      "span_end_line": 18189,
-      "span_sha256": "fb2bc9d0b86e9b3871ff91befd4d8a528d215a9dccdc4752b5f25e685c63fea7",
+      "span_end_line": 18190,
+      "span_sha256": "d0805d5e33991b46390b4f705223d7f7af9cd56566c6f057565d168249944c35",
       "anchor_line": 18176,
       "body_start_line": 18177,
       "body_end_line": 18189,
-      "body_sha256": "a6d069fef780cf7f241282dc102c1b88a58b4925a7dc7f21afae0ce54285a535",
+      "body_sha256": "978019a418942d396455ee80bf311fb92a8b35766e21cb584caff30e78e2d9e6",
       "profiles": [
         "analyzer"
       ],
@@ -45905,12 +45905,12 @@
     },
     {
       "id": "GNT-48.1-observe-modules-and-item-rows",
-      "span_start_line": 18190,
-      "span_end_line": 18209,
+      "span_start_line": 18191,
+      "span_end_line": 18210,
       "span_sha256": "5fee61f75c9859b9801aadf03f976714a0e3be5e9580022a4076d51ab4bb65ed",
-      "anchor_line": 18190,
-      "body_start_line": 18191,
-      "body_end_line": 18208,
+      "anchor_line": 18191,
+      "body_start_line": 18192,
+      "body_end_line": 18209,
       "body_sha256": "1d45d5de92cec4dcbd662e4025105f06b9516f1dd9550f317b3d294e045a707f",
       "profiles": [
         "analyzer"
@@ -45922,8 +45922,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18191,
-          "end_line": 18208,
+          "start_line": 18192,
+          "end_line": 18209,
           "profiles": [
             "analyzer"
           ],
@@ -45948,13 +45948,348 @@
       ]
     },
     {
+      "id": "GNT-48.2-telemetry-record-kinds-and-explicit-context",
+      "span_start_line": 18211,
+      "span_end_line": 18231,
+      "span_sha256": "87979572d50959665271914c185fc3e7843db9bf511432608b0821030a285b59",
+      "anchor_line": 18211,
+      "body_start_line": 18212,
+      "body_end_line": 18230,
+      "body_sha256": "4f42fcb519dffd5fb0f2cd7731101b67b2c08a976f1fd1ca503e7e67a5e21201",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18212,
+          "end_line": 18230,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/telemetry_policy.rs#typed_records_and_explicit_context_are_bounded_and_canonical"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-48.3-telemetry-sink-policy-and-finite-limits",
+      "span_start_line": 18232,
+      "span_end_line": 18252,
+      "span_sha256": "4ec1453e151d0239d306bbf2252e1faf525ba5e6b2d3bc759d2c2b7d314a14ec",
+      "anchor_line": 18232,
+      "body_start_line": 18233,
+      "body_end_line": 18251,
+      "body_sha256": "d382b5c9bebbd05e1e59bf0392296987b464479e64c028e30856967e1b59f178",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18233,
+          "end_line": 18251,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/telemetry_policy.rs#complete_finite_limits_are_required_and_zero_denies_a_dimension",
+                "crates/gantry-conformance/tests/telemetry_policy.rs#sink_policies_are_immutable_and_need_a_positive_bounded_wait",
+                "crates/gantry-conformance/tests/telemetry_policy.rs#missing_policy_and_withheld_grant_refuse_without_mutation"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-48.4-telemetry-atomic-admission-and-cardinality",
+      "span_start_line": 18253,
+      "span_end_line": 18273,
+      "span_sha256": "95062ea9d1e0f52069cba4d7f23ddaab67f675dbe747a06b85687dbec8479a2f",
+      "anchor_line": 18253,
+      "body_start_line": 18254,
+      "body_end_line": 18272,
+      "body_sha256": "f425c5f16ac2539945774b56fd9c8b1384f62ff9278665922b3ca9c20061865f",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18254,
+          "end_line": 18272,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/telemetry_policy.rs#record_field_label_and_context_bounds_refuse_atomically_without_truncation",
+                "crates/gantry-conformance/tests/telemetry_policy.rs#cardinality_and_retention_refuse_instead_of_evicting",
+                "crates/gantry-conformance/tests/telemetry_policy.rs#zero_dimensions_deny_their_dimension_without_mutation"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-48.5-telemetry-protected-labels-identity-and-release",
+      "span_start_line": 18274,
+      "span_end_line": 18292,
+      "span_sha256": "65974ee87bf0f5e72f364ce4c03786c058824f18e2f60e14fd56fd48ee3a8909",
+      "anchor_line": 18274,
+      "body_start_line": 18275,
+      "body_end_line": 18291,
+      "body_sha256": "dfdfa5eb41f6b68e058f237b02c63216d046af63822938f8700aa9eba9f2d5d1",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18275,
+          "end_line": 18291,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/telemetry_policy.rs#protected_values_are_not_labels_or_series_and_need_destination_release"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-48.6-telemetry-required-acknowledgement-and-best-effort",
+      "span_start_line": 18293,
+      "span_end_line": 18308,
+      "span_sha256": "7c5168dc97d02defa39e8f28a9793e242870b7089e3765d1b2a78212034f6ebe",
+      "anchor_line": 18293,
+      "body_start_line": 18294,
+      "body_end_line": 18307,
+      "body_sha256": "22bae64e766aceedf1afc2df4f55877a64c2649b279edcddebef8a4610cdc901",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18294,
+          "end_line": 18307,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/telemetry_policy.rs#required_delivery_completes_only_at_acknowledgement",
+                "crates/gantry-conformance/tests/telemetry_policy.rs#best_effort_reports_queued_or_dropped_and_never_delivers_on_enqueue"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-48.7-telemetry-backpressure-cancellation-and-shutdown",
+      "span_start_line": 18309,
+      "span_end_line": 18323,
+      "span_sha256": "c34e27934811f3250386e3ca94b0863cd916136e92fb31b6b1cd67aa078d2d12",
+      "anchor_line": 18309,
+      "body_start_line": 18310,
+      "body_end_line": 18322,
+      "body_sha256": "cfc968b0472bb1f40d8c9c0db9fbee4d8aa5da09f2c9ec8ec504b545e08b1b4a",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18310,
+          "end_line": 18322,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/telemetry_policy.rs#required_backpressure_is_bounded_and_settlements_are_terminal",
+                "crates/gantry-conformance/tests/telemetry_policy.rs#shutdown_is_bounded_and_reports_drained_and_abandoned_emits"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-48.8-telemetry-sink-fault-containment",
+      "span_start_line": 18324,
+      "span_end_line": 18336,
+      "span_sha256": "090d3b63e212f78f702487cb573641f942a970bbd17a30b4904a45d418414277",
+      "anchor_line": 18324,
+      "body_start_line": 18325,
+      "body_end_line": 18335,
+      "body_sha256": "bbe68ef3d58f1479fb8a9aaa9955b25b7e327eb7781ccfd1345a1d628425ccb0",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18325,
+          "end_line": 18335,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/telemetry_policy.rs#sink_faults_poison_one_instance_and_redact_the_report"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-48.9-telemetry-evidence-separation-and-non-claims",
+      "span_start_line": 18337,
+      "span_end_line": 18350,
+      "span_sha256": "5bcc6f46664525b0f030b285e72677d752bc793afe901348d5e4a4b87414a7e5",
+      "anchor_line": 18337,
+      "body_start_line": 18338,
+      "body_end_line": 18349,
+      "body_sha256": "f690f1069d6d586f1226efdbfe2e5f01a77cb9aff010d5d313e95eac30cf15ab",
+      "profiles": [
+        "analyzer"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 18338,
+          "end_line": 18349,
+          "profiles": [
+            "analyzer"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/telemetry_policy.rs#telemetry_is_never_section_12_semantic_evidence",
+                "crates/gantry-conformance/tests/telemetry_policy.rs#telemetry_clauses_and_closed_vocabularies_are_published"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "GNT-49.0-environment-foundation-scope",
-      "span_start_line": 18210,
-      "span_end_line": 18222,
+      "span_start_line": 18351,
+      "span_end_line": 18363,
       "span_sha256": "e04738c92364d7893e7669658b5c626035b4a067de3b17a43dc9b06c581954aa",
-      "anchor_line": 18210,
-      "body_start_line": 18211,
-      "body_end_line": 18221,
+      "anchor_line": 18351,
+      "body_start_line": 18352,
+      "body_end_line": 18362,
       "body_sha256": "bce287bb2ca2b3cf288e1f7ab77eb06c0a589c6aa948e812883f5d8367c14789",
       "profiles": [
         "analyzer"
@@ -45966,8 +46301,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18211,
-          "end_line": 18221,
+          "start_line": 18352,
+          "end_line": 18362,
           "profiles": [
             "analyzer"
           ],
@@ -45990,12 +46325,12 @@
     },
     {
       "id": "GNT-49.1-environment-modules-and-item-rows",
-      "span_start_line": 18223,
-      "span_end_line": 18243,
+      "span_start_line": 18364,
+      "span_end_line": 18384,
       "span_sha256": "2c3cd704d467f8582fce448ac175796a6544351a95d1345a9a18e4786d2638b7",
-      "anchor_line": 18223,
-      "body_start_line": 18224,
-      "body_end_line": 18240,
+      "anchor_line": 18364,
+      "body_start_line": 18365,
+      "body_end_line": 18381,
       "body_sha256": "ee762baa2443624791cc568ad4f9566dc823097d53ff5b3d36216f9c8c1bcfaf",
       "profiles": [
         "analyzer"
@@ -46007,8 +46342,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18224,
-          "end_line": 18240,
+          "start_line": 18365,
+          "end_line": 18381,
           "profiles": [
             "analyzer"
           ],
@@ -46033,12 +46368,12 @@
     },
     {
       "id": "GNT-50.0-random-foundation-scope",
-      "span_start_line": 18244,
-      "span_end_line": 18247,
+      "span_start_line": 18385,
+      "span_end_line": 18388,
       "span_sha256": "1385694482d7544fd53b94123892d3823899c6baee7f8bf2545e079569d48bc7",
-      "anchor_line": 18244,
-      "body_start_line": 18245,
-      "body_end_line": 18246,
+      "anchor_line": 18385,
+      "body_start_line": 18386,
+      "body_end_line": 18387,
       "body_sha256": "8bc0c221ae1e1e3016d54186a87d61624d866fe014de05f5f3ba2ca3ceb778f6",
       "profiles": [
         "analyzer"
@@ -46050,8 +46385,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18245,
-          "end_line": 18246,
+          "start_line": 18386,
+          "end_line": 18387,
           "profiles": [
             "analyzer"
           ],
@@ -46075,12 +46410,12 @@
     },
     {
       "id": "GNT-50.1-random-modules-and-item-rows",
-      "span_start_line": 18248,
-      "span_end_line": 18254,
+      "span_start_line": 18389,
+      "span_end_line": 18395,
       "span_sha256": "89eeacd1b51b931c132c543654ca058b64f954e4c9b5aea81bc34d104b588337",
-      "anchor_line": 18248,
-      "body_start_line": 18249,
-      "body_end_line": 18250,
+      "anchor_line": 18389,
+      "body_start_line": 18390,
+      "body_end_line": 18391,
       "body_sha256": "7379af9a8a6f9b029e2fac59d842dcabab389e36c063d6f50f5fe03c8b8f37f2",
       "profiles": [
         "analyzer"
@@ -46092,8 +46427,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18249,
-          "end_line": 18250,
+          "start_line": 18390,
+          "end_line": 18391,
           "profiles": [
             "analyzer"
           ],
@@ -46117,12 +46452,12 @@
     },
     {
       "id": "GNT-51.0-time-foundation-scope",
-      "span_start_line": 18255,
-      "span_end_line": 18258,
+      "span_start_line": 18396,
+      "span_end_line": 18399,
       "span_sha256": "55dd3aec03a10ed476f50838b3e48d565854056e23ac1e575cd45b681029f1ea",
-      "anchor_line": 18255,
-      "body_start_line": 18256,
-      "body_end_line": 18257,
+      "anchor_line": 18396,
+      "body_start_line": 18397,
+      "body_end_line": 18398,
       "body_sha256": "e3e8b6d8ce5af346b8165a3b94fd72c8b751bd7531122f630418f81b83590c7a",
       "profiles": [
         "analyzer"
@@ -46134,8 +46469,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18256,
-          "end_line": 18257,
+          "start_line": 18397,
+          "end_line": 18398,
           "profiles": [
             "analyzer"
           ],
@@ -46158,12 +46493,12 @@
     },
     {
       "id": "GNT-51.1-time-modules-and-item-rows",
-      "span_start_line": 18259,
-      "span_end_line": 18262,
+      "span_start_line": 18400,
+      "span_end_line": 18403,
       "span_sha256": "c7162bd514889ed03cb86807d40d41c751feea5aa1965bacfdc5804940760494",
-      "anchor_line": 18259,
-      "body_start_line": 18260,
-      "body_end_line": 18261,
+      "anchor_line": 18400,
+      "body_start_line": 18401,
+      "body_end_line": 18402,
       "body_sha256": "07b610b3c6ea9f9c64e19ca8a486a92c535068aebda2185f2e89e82ab83c3ed8",
       "profiles": [
         "analyzer"
@@ -46175,8 +46510,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18260,
-          "end_line": 18261,
+          "start_line": 18401,
+          "end_line": 18402,
           "profiles": [
             "analyzer"
           ],
@@ -46202,12 +46537,12 @@
     },
     {
       "id": "GNT-51.2-time-declaration-non-claims",
-      "span_start_line": 18263,
-      "span_end_line": 18266,
+      "span_start_line": 18404,
+      "span_end_line": 18407,
       "span_sha256": "4f6d50fb5af2971fc69c2aabdb4f897d94ccc96204ae679597a908f79dc3238b",
-      "anchor_line": 18263,
-      "body_start_line": 18264,
-      "body_end_line": 18265,
+      "anchor_line": 18404,
+      "body_start_line": 18405,
+      "body_end_line": 18406,
       "body_sha256": "54230c238f35424167c32bbc30a49ea7f0cfe59c8b4602440d0c7ec5bd2dc8ce",
       "profiles": [
         "analyzer"
@@ -46219,8 +46554,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18264,
-          "end_line": 18265,
+          "start_line": 18405,
+          "end_line": 18406,
           "profiles": [
             "analyzer"
           ],
@@ -46244,12 +46579,12 @@
     },
     {
       "id": "GNT-51.3-injected-monotonic-clock",
-      "span_start_line": 18267,
-      "span_end_line": 18270,
+      "span_start_line": 18408,
+      "span_end_line": 18411,
       "span_sha256": "804c613db0ab174f183ae9988aa0541c9b80396be0aed58e27b23db49e543a02",
-      "anchor_line": 18267,
-      "body_start_line": 18268,
-      "body_end_line": 18269,
+      "anchor_line": 18408,
+      "body_start_line": 18409,
+      "body_end_line": 18410,
       "body_sha256": "3fef4da2bfba53766a6d143afdd8903b489c93d878e8b262f0236b80327124bc",
       "profiles": [
         "analyzer"
@@ -46261,8 +46596,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18268,
-          "end_line": 18269,
+          "start_line": 18409,
+          "end_line": 18410,
           "profiles": [
             "analyzer"
           ],
@@ -46289,12 +46624,12 @@
     },
     {
       "id": "GNT-51.4-one-shot-timer",
-      "span_start_line": 18271,
-      "span_end_line": 18277,
+      "span_start_line": 18412,
+      "span_end_line": 18418,
       "span_sha256": "132517592a333e7c64f3007f1b2f9fbec519d4a54fd5a65e8aca041288afeb9b",
-      "anchor_line": 18271,
-      "body_start_line": 18272,
-      "body_end_line": 18273,
+      "anchor_line": 18412,
+      "body_start_line": 18413,
+      "body_end_line": 18414,
       "body_sha256": "6a0561db1063ab2c0a8f646426c348e4549e16b3c220276f14abb18f20a5507a",
       "profiles": [
         "analyzer"
@@ -46306,8 +46641,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18272,
-          "end_line": 18273,
+          "start_line": 18413,
+          "end_line": 18414,
           "profiles": [
             "analyzer"
           ],
@@ -46339,12 +46674,12 @@
     },
     {
       "id": "GNT-52.0-native-directory-foundation-scope",
-      "span_start_line": 18278,
-      "span_end_line": 18281,
+      "span_start_line": 18419,
+      "span_end_line": 18422,
       "span_sha256": "03f20692d73848928e956f709000dce0d1d9fb6062548365f96a13d9ee2ded72",
-      "anchor_line": 18278,
-      "body_start_line": 18279,
-      "body_end_line": 18280,
+      "anchor_line": 18419,
+      "body_start_line": 18420,
+      "body_end_line": 18421,
       "body_sha256": "0a33dc4de11864b54341ec0a98ebde9455537e64f707f9f2f5731c4a57995d0b",
       "profiles": [
         "analyzer"
@@ -46356,8 +46691,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18279,
-          "end_line": 18280,
+          "start_line": 18420,
+          "end_line": 18421,
           "profiles": [
             "analyzer"
           ],
@@ -46380,12 +46715,12 @@
     },
     {
       "id": "GNT-52.1-native-directory-requirement-and-mapping-policy",
-      "span_start_line": 18282,
-      "span_end_line": 18285,
+      "span_start_line": 18423,
+      "span_end_line": 18426,
       "span_sha256": "a73845e76a861b5b66e13fa963c8b40b4be5d94af25574b05ff4f6a7f622ff7f",
-      "anchor_line": 18282,
-      "body_start_line": 18283,
-      "body_end_line": 18284,
+      "anchor_line": 18423,
+      "body_start_line": 18424,
+      "body_end_line": 18425,
       "body_sha256": "8a19a61f820e41a07a06d07a4233187e8aa43a08ce1e374aae96fb36a2c40426",
       "profiles": [
         "analyzer"
@@ -46397,8 +46732,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18283,
-          "end_line": 18284,
+          "start_line": 18424,
+          "end_line": 18425,
           "profiles": [
             "analyzer"
           ],
@@ -46424,12 +46759,12 @@
     },
     {
       "id": "GNT-52.2-native-directory-path-and-fact-binding",
-      "span_start_line": 18286,
-      "span_end_line": 18289,
+      "span_start_line": 18427,
+      "span_end_line": 18430,
       "span_sha256": "10884cec790e311397fa1151e32fa40ca2567f9ba4041ff7ced19ee6efe32786",
-      "anchor_line": 18286,
-      "body_start_line": 18287,
-      "body_end_line": 18288,
+      "anchor_line": 18427,
+      "body_start_line": 18428,
+      "body_end_line": 18429,
       "body_sha256": "1f0be0f5a167921d62f42b81bbecc6d7e166815fd7e682273d50729b12b029be",
       "profiles": [
         "analyzer"
@@ -46441,8 +46776,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18287,
-          "end_line": 18288,
+          "start_line": 18428,
+          "end_line": 18429,
           "profiles": [
             "analyzer"
           ],
@@ -46470,12 +46805,12 @@
     },
     {
       "id": "GNT-52.3-native-directory-exclusive-issuance-and-ownership",
-      "span_start_line": 18290,
-      "span_end_line": 18293,
+      "span_start_line": 18431,
+      "span_end_line": 18434,
       "span_sha256": "55622e3b3929ac2b77f40af4e84a16f7bf6904a9d0982f5af3a31889239ff519",
-      "anchor_line": 18290,
-      "body_start_line": 18291,
-      "body_end_line": 18292,
+      "anchor_line": 18431,
+      "body_start_line": 18432,
+      "body_end_line": 18433,
       "body_sha256": "4947d61fcf6f65a67b4f2261dfa9cc2766a41dd677a9b5d728b40202df538ff6",
       "profiles": [
         "analyzer"
@@ -46487,8 +46822,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18291,
-          "end_line": 18292,
+          "start_line": 18432,
+          "end_line": 18433,
           "profiles": [
             "analyzer"
           ],
@@ -46514,12 +46849,12 @@
     },
     {
       "id": "GNT-52.4-native-directory-revocation-fencing",
-      "span_start_line": 18294,
-      "span_end_line": 18297,
+      "span_start_line": 18435,
+      "span_end_line": 18438,
       "span_sha256": "53d588068443139f3f839a42ea3741c4854de5ed64fad24b5e01ea2714ebd45a",
-      "anchor_line": 18294,
-      "body_start_line": 18295,
-      "body_end_line": 18296,
+      "anchor_line": 18435,
+      "body_start_line": 18436,
+      "body_end_line": 18437,
       "body_sha256": "7eea16661d919b52f2f2a3f5dcccedb701b793a32ba6d3a4bf476872e0aeb13c",
       "profiles": [
         "analyzer"
@@ -46531,8 +46866,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18295,
-          "end_line": 18296,
+          "start_line": 18436,
+          "end_line": 18437,
           "profiles": [
             "analyzer"
           ],
@@ -46556,12 +46891,12 @@
     },
     {
       "id": "GNT-52.5-native-directory-completion-and-late-response",
-      "span_start_line": 18298,
-      "span_end_line": 18301,
+      "span_start_line": 18439,
+      "span_end_line": 18442,
       "span_sha256": "d7f15feca6a919d5b5d7c87eff1d98a11b59b407cc1da2d56bb6b01bd88f27de",
-      "anchor_line": 18298,
-      "body_start_line": 18299,
-      "body_end_line": 18300,
+      "anchor_line": 18439,
+      "body_start_line": 18440,
+      "body_end_line": 18441,
       "body_sha256": "67ab3c49d8c1829bc496ac066a93d65105b2ae4bb35cca79c8662f5cdf46592a",
       "profiles": [
         "analyzer"
@@ -46573,8 +46908,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18299,
-          "end_line": 18300,
+          "start_line": 18440,
+          "end_line": 18441,
           "profiles": [
             "analyzer"
           ],
@@ -46600,12 +46935,12 @@
     },
     {
       "id": "GNT-52.6-native-directory-durable-exclusion",
-      "span_start_line": 18302,
-      "span_end_line": 18305,
+      "span_start_line": 18443,
+      "span_end_line": 18446,
       "span_sha256": "abaf804fb4aa7a87cff7c0c8fc16ffce0be3e39eb999fe6b1046275346ad08c4",
-      "anchor_line": 18302,
-      "body_start_line": 18303,
-      "body_end_line": 18304,
+      "anchor_line": 18443,
+      "body_start_line": 18444,
+      "body_end_line": 18445,
       "body_sha256": "28aada85069b43f7a8bcf8cd600e82710b3cc9534027f134d0293ef1121134b5",
       "profiles": [
         "analyzer"
@@ -46617,8 +46952,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18303,
-          "end_line": 18304,
+          "start_line": 18444,
+          "end_line": 18445,
           "profiles": [
             "analyzer"
           ],
@@ -46641,12 +46976,12 @@
     },
     {
       "id": "GNT-52.7-native-directory-child-projection",
-      "span_start_line": 18306,
-      "span_end_line": 18309,
+      "span_start_line": 18447,
+      "span_end_line": 18450,
       "span_sha256": "8cdab1d3621c9bcbad2ce2d6e280455c80feee236c9a59c02b1623d0fc928f1b",
-      "anchor_line": 18306,
-      "body_start_line": 18307,
-      "body_end_line": 18308,
+      "anchor_line": 18447,
+      "body_start_line": 18448,
+      "body_end_line": 18449,
       "body_sha256": "3d2b09e21a4b572212af96e81a86b8f99c181b07fb732a9f995fd52f322817a9",
       "profiles": [
         "analyzer"
@@ -46658,8 +46993,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18307,
-          "end_line": 18308,
+          "start_line": 18448,
+          "end_line": 18449,
           "profiles": [
             "analyzer"
           ],
@@ -46683,12 +47018,12 @@
     },
     {
       "id": "GNT-52.8-native-directory-refusal-vocabulary",
-      "span_start_line": 18310,
-      "span_end_line": 18313,
+      "span_start_line": 18451,
+      "span_end_line": 18454,
       "span_sha256": "742943a0d2c7c0562f057ca7168c41d5445a3d4b32d12fc756aea9958cfc7c16",
-      "anchor_line": 18310,
-      "body_start_line": 18311,
-      "body_end_line": 18312,
+      "anchor_line": 18451,
+      "body_start_line": 18452,
+      "body_end_line": 18453,
       "body_sha256": "6f55373d1fe6ce4ea959ae2a78bbc6117c60db1325124bc4e4d159c5a198a982",
       "profiles": [
         "analyzer"
@@ -46700,8 +47035,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18311,
-          "end_line": 18312,
+          "start_line": 18452,
+          "end_line": 18453,
           "profiles": [
             "analyzer"
           ],
@@ -46724,12 +47059,12 @@
     },
     {
       "id": "GNT-52.9-native-directory-non-claims",
-      "span_start_line": 18314,
-      "span_end_line": 18316,
+      "span_start_line": 18455,
+      "span_end_line": 18457,
       "span_sha256": "c490841f582b0f934b20be58ac15c4122e0523440926c33a4d1695ed7197fdaa",
-      "anchor_line": 18314,
-      "body_start_line": 18315,
-      "body_end_line": 18316,
+      "anchor_line": 18455,
+      "body_start_line": 18456,
+      "body_end_line": 18457,
       "body_sha256": "7182b0fd78d29bbde20f1b63f45fd84893591e60c4ab4dde9c011d5c4876c51c",
       "profiles": [
         "analyzer"
@@ -46741,8 +47076,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 18315,
-          "end_line": 18316,
+          "start_line": 18456,
+          "end_line": 18457,
           "profiles": [
             "analyzer"
           ],

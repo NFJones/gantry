@@ -18180,8 +18180,9 @@ declaration surface of the capability-backed `std.observe` family of
 `GNT-34.1-canonical-hierarchy-and-package-names`, for source-emitted logs, metrics, and traces.
 Source telemetry is an explicit external effect and is distinct from the protected runtime events
 of Section 12 and the protected-data release contract of Section 15. This section declares only
-the family identity, its closed module rows, and their applicability; it does not implement
-telemetry emission, sink delivery, protected-data release, or runtime availability. No event of
+the family identity, its closed module rows, their applicability, and the bounded telemetry
+policy/admission model of `GNT-48.2` through `GNT-48.9`; it does not implement telemetry emission,
+sink delivery, protected-data release, or runtime availability. No event of
 Section 12 is a source-emitted telemetry record, and no telemetry record is semantic evidence that
 a business operation occurred. The section creates no sink, adapter, host trait, capability grant,
 queue, or delivery policy, and no clause of this section may be read as publishing a facility it
@@ -18206,6 +18207,146 @@ redaction or release permission, backpressure, delivery policy, cancellation or 
 sink failure behavior, runtime event, telemetry operation, adapter, or runtime availability. It
 does not change Section 12's event contract or Section 15's protection and release rules, and it
 claims no performance, storage layout, or physical representation.
+
+<a id="GNT-48.2-telemetry-record-kinds-and-explicit-context"></a>
+
+**[GNT-48.2-telemetry-record-kinds-and-explicit-context] Telemetry record kinds and explicit
+context.** This clause declares exactly three typed record kinds — log, metric, and trace — in the
+canonical order the model's `TelemetryRecordKind` publishes. A log body carries one ordinary
+message; a metric body carries one signed or unsigned integer value and an optional ordinary unit;
+a trace body carries one duration in nanoseconds and one status from the closed `ok`, `error`, and
+`unset` set. Every record additionally carries one ordinary record name, an explicit ordered field
+list, an explicit ordered label list, one explicit context, and zero or more protected references.
+Fields, labels, names, and context entries are validated ordinary text: an empty or control-bearing
+text, a duplicate field name, and a duplicate label name are refused rather than truncated,
+rewritten, or repaired. The context is exactly the declared entry list. No ambient, task, thread,
+process, environment, locale, or global context is read, inherited, or implied, and the empty list
+is the declared root. Every record carries a caller-declared sequence; no global sequence, ambient
+record store, or source-global context exists. The model publishes `TelemetryRecord`,
+`TelemetryRecordBody`, `TelemetryContext`, and `TelemetrySeriesKey`; a record is not a Section 12
+event and is never semantic evidence. A malformed ordinary name refuses
+`telemetry-invalid-identity`; a malformed record, a duplicate field or label name, or a duplicate
+protected identity refuses `telemetry-invalid-record`. This clause declares no wire encoding, sink,
+adapter, queue, background task, or runtime availability.
+
+<a id="GNT-48.3-telemetry-sink-policy-and-finite-limits"></a>
+
+**[GNT-48.3-telemetry-sink-policy-and-finite-limits] Telemetry sink policy and finite limits.**
+Every declared telemetry sink carries exactly one immutable policy. The policy names one ordinary
+sink identity, one delivery class of `required` or `best-effort`, and a complete finite limit set
+for declared record material bytes, field count and field bytes, label count and label bytes,
+context depth and context bytes, active-series cardinality, best-effort queue depth, retention,
+pending emits, shutdown drain, and shutdown timeout, together with one finite positive
+required-backpressure wait bound. Every dimension is present: the model's `TelemetryLimitSet`
+carries all thirteen declarations and `TelemetryLimits` admits them only as finite values. An
+`unlimited` declaration refuses with `telemetry-unlimited-policy`; an absent policy refuses with
+`telemetry-policy-absent`; a finite zero is a declared denial of that dimension, never an unbounded
+or default value. The policy has no setter, no configuration fallback, and no implicit ambient
+default, so later admission uses exactly the declared values. Sink identity is validated ordinary
+metadata and is never a protected value, a label, or a payload encoding. A `TelemetryEmitGrant`
+admits an emit attempt only: it is not a release grant, never satisfies a protected destination
+release, and never declassifies protected data. A withheld or absent emit grant refuses
+`telemetry-emit-not-granted`. This clause publishes `TelemetrySinkPolicy` and
+`TelemetryLimits`; it declares no sink, adapter, queue implementation, host trait, capability
+grant, or runtime availability.
+
+<a id="GNT-48.4-telemetry-atomic-admission-and-cardinality"></a>
+
+**[GNT-48.4-telemetry-atomic-admission-and-cardinality] Atomic bounded admission, cardinality,
+retention, and no eviction.** Admission is one atomic decision over one explicit policy, one
+explicit emit grant, one record, and one declared sink state. A refusal leaves the queue, pending
+emits, retention count, active-series set, drop count, and every settlement count exactly as it
+was. Over-bound record material, field count, field bytes, label count, label bytes, and context
+depth or bytes refuse without truncation, a partial record, a synthesized overflow label, or any
+repair. A new active series at the declared cardinality bound refuses rather than evicting an
+older series; an existing series is reused and never duplicated. Retention at its bound refuses
+rather than evicting a retained record. Required delivery at the pending-emit bound returns the
+bounded backpressure descriptor of `GNT-48.7`, not an enqueue. Best-effort delivery at the queue
+or pending-emit bound drops the newest whole record and reports one bounded cumulative drop count;
+it never evicts an older record, trims a record, or adds an overflow label. A queued record is not
+delivered. A zero dimension denies that dimension. The model publishes
+`TelemetrySinkState::admit`, `TelemetrySinkState::retain`, and the refusal codes
+`telemetry-record-bound`, `telemetry-field-count-bound`, `telemetry-field-byte-bound`,
+`telemetry-label-count-bound`, `telemetry-label-byte-bound`, `telemetry-context-bound`,
+`telemetry-series-bound`, and `telemetry-retention-bound`. This clause declares no queue or
+retention implementation and no hidden eviction policy.
+
+<a id="GNT-48.5-telemetry-protected-labels-identity-and-release"></a>
+
+**[GNT-48.5-telemetry-protected-labels-identity-and-release] Protected values, labels, identity,
+and destination release.** A protected value is never a telemetry label, record name, field value,
+context entry, series identity, sink identity, drop or acknowledgement receipt, or fault identity.
+A record may reference protected values only as `TelemetryProtectedReference` values carrying the
+canonical protected-value identity and declared class; it carries no payload byte, payload
+encoding, or payload-derived digest. Before any export queueing, every reference must be covered
+by a destination-specific release for this exact sink and class, declared by
+`TelemetryDestinationRelease` with the `GNT-15.10-release-operation` null telemetry destination and
+its accepted `ReleaseProjection`. A missing release refuses `telemetry-release-required`; a release
+for another sink refuses `telemetry-release-destination-mismatch`; an undeclared class refuses
+`telemetry-release-class-not-declared`. The release decision precedes series, queue, pending, and
+drop mutation, so no protected reference reaches export accounting without it. A telemetry emit
+grant or operation authority never substitutes for release, and a telemetry-destination release
+never declassifies: the reference remains protected, no ordinary conversion exists, and a further
+destination is a new Section 15.10 release requiring its own declaration and authority. Rejections
+are selected from ordinary declarations and ordinary accounting and carry no protected bit.
+
+<a id="GNT-48.6-telemetry-required-acknowledgement-and-best-effort"></a>
+
+**[GNT-48.6-telemetry-required-acknowledgement-and-best-effort] Required acknowledgement and
+best-effort outcomes.** Required delivery completes only at one declared sink acknowledgement;
+admission and enqueue are pending and are not delivery. Best-effort admission reports `queued` or
+`dropped`; a queued record is not delivered, and a drop is the newest whole record with bounded
+accounting. `acknowledged`, `cancelled`, `ambiguous`, and `failed` are distinct terminal
+settlements. `TelemetryEmit` is affine and is consumed by exactly one settlement, so no emit is
+settled twice. An ambiguous settlement is terminal and reports no retry permission: an ambiguous
+write is never silently retried, and no later settlement silently reclassifies it as delivered.
+Every settlement carries the record sequence and exact sink identity and no business, task,
+execution, or Section 12 outcome; a delivery failure or acknowledgement never rewrites a fixed
+business outcome. Acknowledgement is scoped to the one declared sink and emit, and this clause
+claims no durable, cross-sink, or global exactly-once delivery. The model publishes
+`TelemetryEmit`, `TelemetrySettlement`, and `TelemetryAdmission`.
+
+<a id="GNT-48.7-telemetry-backpressure-cancellation-and-shutdown"></a>
+
+**[GNT-48.7-telemetry-backpressure-cancellation-and-shutdown] Bounded backpressure,
+cancellation, and shutdown.** Required backpressure is bounded by the policy's finite positive
+wait bound; a full pending set refuses `telemetry-backpressure-bound` and never blocks
+unboundedly. Accepted cancellation settles exactly once through the affine emit. Shutdown begins
+explicitly: `begin_shutdown` refuses new admissions and retentions and returns a
+`TelemetryShutdownPlan` carrying the pending emits, the finite drain bound, the finite timeout,
+and whether the pending set fits the bound. `settle_shutdown` reports drained and abandoned counts
+and never silently discards a pending emit; a second settlement refuses. The application owns
+drain and flush, and this clause and model declare and account the bound only. An impossible
+settlement count, a second settlement, and a new admission after shutdown begin refuse with
+`telemetry-invalid-settlement`, `telemetry-shutdown-already-settled`, or `telemetry-sink-shutdown`.
+This clause declares no timer, wait implementation, drain loop, or shutdown service.
+
+<a id="GNT-48.8-telemetry-sink-fault-containment"></a>
+
+**[GNT-48.8-telemetry-sink-fault-containment] Sink fault containment.** A sink fault poisons that
+exact declared sink instance only. After poisoning, every admission and retention refuses with
+`telemetry-sink-poisoned`, and other sink instances are unaffected. The fault report names the sink
+identity and one closed class of `panic`, `error`, or `protocol`, and carries no payload byte, no
+backtrace, no protected content, and no payload-derived digest; its detail is fixed redacted text.
+A fault report is not a telemetry record and cannot be recursively logged through the sink it
+describes; recursive fault logging is not declared. Poisoning is not repair, eviction, reuse, or a
+delivery-policy change, and a fault receipt never changes a fixed business outcome. The model
+publishes `TelemetrySinkFault`, `TelemetryFaultReceipt`, and `TelemetrySinkState::poison`. This
+clause declares no panic hook, adapter, supervisor, or recovery procedure.
+
+<a id="GNT-48.9-telemetry-evidence-separation-and-non-claims"></a>
+
+**[GNT-48.9-telemetry-evidence-separation-and-non-claims] Telemetry evidence separation and
+non-claims.** Telemetry is never Section 12 semantic evidence, durable evidence, a business
+result, or proof that an operation occurred. Section 12's events remain the only semantic evidence,
+and telemetry may be sampled or dropped without changing a source-visible outcome. No clause of
+this section declares a telemetry sink, adapter, host trait, capability grant, queue
+implementation, retention store, background task, timer, wire schema, durable record, cross-sink
+ordering, exactly-once delivery, source-global context or sequence, or runtime availability; the
+model is a pure declaration and admission decision over explicit inputs. Stable module
+compatibility is not stable-edition status or runtime availability. This clause claims no
+performance, storage layout, or physical representation, changes no Section 12 or Section 15 rule,
+and no telemetry record may satisfy any Section 12 evidence obligation.
 
 <a id="GNT-49.0-environment-foundation-scope"></a>
 

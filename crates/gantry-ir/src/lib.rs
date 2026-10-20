@@ -62,6 +62,7 @@ mod signature;
 mod std_hierarchy;
 mod stdlib;
 mod target;
+mod telemetry;
 mod test_support;
 mod text;
 mod time;
@@ -245,6 +246,19 @@ pub use fs::{
 pub use observe::{
     OBSERVE_CLAUSES, OBSERVE_ITEMS, OBSERVE_SURFACE_MODES, OBSERVE_SURFACE_TARGETS, ObserveItemRow,
     admit_observe_surface, declare_observe_surface,
+};
+// Section 48 publishes the pure bounded telemetry policy and admission model. It adds no sink,
+// adapter, queue, or runtime telemetry availability.
+pub use telemetry::{
+    TELEMETRY_CLAUSES, TELEMETRY_NAME_LIMIT, TelemetryAdmission, TelemetryContext,
+    TelemetryContextEntry, TelemetryDeliveryClass, TelemetryDestinationRelease,
+    TelemetryDiagnosticCode, TelemetryDropReceipt, TelemetryEmit, TelemetryEmitGrant,
+    TelemetryError, TelemetryFaultClass, TelemetryFaultReceipt, TelemetryField, TelemetryLabel,
+    TelemetryLimit, TelemetryLimitDimension, TelemetryLimitSet, TelemetryLimits,
+    TelemetryMetricValue, TelemetryName, TelemetryProtectedReference, TelemetryRecord,
+    TelemetryRecordBody, TelemetryRecordKind, TelemetrySeriesKey, TelemetrySettlement,
+    TelemetryShutdownPlan, TelemetryShutdownSettlement, TelemetrySinkFault, TelemetrySinkId,
+    TelemetrySinkPolicy, TelemetrySinkState, TelemetryTraceStatus, telemetry_is_semantic_evidence,
 };
 // Section 49 publishes the declared `std.env` module surface beside the bounded launch-value model
 // of Sections 30.2 and 30.3. It adds no host access or runtime environment behavior.

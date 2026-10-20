@@ -102,3 +102,9 @@ argument is documented in
 The reference SQLite journal adapter's ownership, fencing, effective durability
 settings, restart evidence, and deliberately unqualified power-loss boundary
 are documented in [`sqlite-journal-storage.md`](sqlite-journal-storage.md).
+
+The first bounded `std.observe` telemetry policy and admission slice, including
+typed records, explicit context, immutable finite per-sink limits, atomic
+admission, destination-specific protected release, required versus best-effort
+delivery, bounded shutdown, and sink-fault containment, is documented in
+[`observe-telemetry-contract.md`](observe-telemetry-contract.md).
