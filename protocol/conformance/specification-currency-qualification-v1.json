@@ -6,10 +6,10 @@
   "superseded_specification_sha256": "0d1d2fa009913f4d0154dc1e70072505abb23e93b6044db4c7319c17c836c302",
   "candidate": {
     "base_commit": "754fa86700255696542d059f3bfd97b9d963b319",
-    "currency_repair_parent_commit": "dd5b8bb9a67d4d00547764652224a4b3ff272954",
-    "reviewed_through_commit": "dd5b8bb9a67d4d00547764652224a4b3ff272954",
+    "currency_repair_parent_commit": "e717ecf833502045b2c68e06ae52b99a6a5ad0b1",
+    "reviewed_through_commit": "e717ecf833502045b2c68e06ae52b99a6a5ad0b1",
     "since_commit": "754fa86700255696542d059f3bfd97b9d963b319",
-    "tree_sha": "16e8931ce8af608953f82a9b6c9496b09e25847d",
+    "tree_sha": "0c8dd12d64319d1bcc636f530afe4ffbfe780809",
     "identity_note": "Content identity is the reviewed candidate tree plus the exact input digests. The record commit is not part of its own identity; it changes only the self-referential conformance publication, manifest, index, verification report, and this record, and the governed generator recomputes those bytes to a fixpoint before the record is committed.",
     "toolchain": "rustc 1.97.1 (8bab26f4f 2026-07-14) with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
     "inputs": [
@@ -40,7 +40,7 @@
     ]
   },
   "drift_review": {
-    "specification_commits_reviewed": 1,
+    "specification_commits_reviewed": 2,
     "requirements_before": {
       "count": 654,
       "clauses": 938
@@ -119,7 +119,7 @@
         "after_covered": 603,
         "after_not_applicable": 190,
         "after_planned": 0,
-        "outcome": "The added Section 48 clauses are covered at the analyzer profile; no other profile review changed state."
+        "outcome": "The added Section 48 clauses remain covered at the analyzer profile; the review repair adds no clause states."
       },
       {
         "profile": "concurrent-evaluator",
@@ -128,7 +128,7 @@
         "after_covered": 330,
         "after_not_applicable": 9,
         "after_planned": 0,
-        "outcome": "No added clause changes this profile's reviewed applicability."
+        "outcome": "No added or repaired clause changes this profile's reviewed applicability."
       },
       {
         "profile": "durable-runtime",
@@ -137,7 +137,7 @@
         "after_covered": 363,
         "after_not_applicable": 16,
         "after_planned": 0,
-        "outcome": "No added clause changes this profile's reviewed applicability."
+        "outcome": "No added or repaired clause changes this profile's reviewed applicability."
       },
       {
         "profile": "embedding",
@@ -146,7 +146,7 @@
         "after_covered": 307,
         "after_not_applicable": 51,
         "after_planned": 0,
-        "outcome": "No added clause changes this profile's reviewed applicability."
+        "outcome": "No added or repaired clause changes this profile's reviewed applicability."
       },
       {
         "profile": "evaluator",
@@ -155,7 +155,7 @@
         "after_covered": 323,
         "after_not_applicable": 16,
         "after_planned": 0,
-        "outcome": "No added clause changes this profile's reviewed applicability."
+        "outcome": "No added or repaired clause changes this profile's reviewed applicability."
       },
       {
         "profile": "frontend",
@@ -164,7 +164,7 @@
         "after_covered": 59,
         "after_not_applicable": 16,
         "after_planned": 0,
-        "outcome": "No added clause changes this profile's reviewed applicability."
+        "outcome": "No added or repaired clause changes this profile's reviewed applicability."
       }
     ],
     "reviewed_categories": [
@@ -177,7 +177,7 @@
       "sink-fault poisoning, redacted diagnostics, and non-recursive logging",
       "telemetry evidence separation from Section 12 semantic evidence"
     ],
-    "outcome": "The only specification change in the reviewed window is the bounded Section 48 telemetry policy and admission slice. The eight added clauses are covered by the telemetry_policy conformance lane; GNT-48.0 is rescoped so its non-claim remains true. No requirement was removed, no other body changed, and no profile other than analyzer gains review state."
+    "outcome": "The reviewed window adds the eight bounded Section 48 telemetry clauses and repairs GNT-48.0 plus the five policy, release, acknowledgement, shutdown, and fault clauses so the model matches their stated ownership and drain boundaries. All eight added clauses remain analyzer-covered; no requirement is removed and no unrelated body changes."
   },
   "section14_review": {
     "excerpt_count_before": 51,
@@ -189,7 +189,7 @@
     "outcome": "Every retained Section 14 excerpt remains covered with executable evidence; the revision adds no excerpt and removes none."
   },
   "qualification": {
-    "scope": "Bounded Section 48 telemetry policy and admission candidate: typed log, metric, and trace records, explicit context, immutable finite per-sink limits, atomic admission with no truncation or eviction, protected destination release before export queueing, required acknowledgement versus best-effort queued or dropped outcomes, bounded backpressure and cancellation, shutdown drain accounting, and one-instance sink-fault containment. No sink, adapter, queue implementation, runtime emission, source-global context, durable delivery, or Section 12 evidence use is claimed.",
+    "scope": "Repaired bounded Section 48 telemetry policy and admission candidate: typed log, metric, and trace records, explicit context, immutable per-sink identity and policy binding, finite limits with zero denial, atomic admission without truncation or eviction, projection-class and destination release before export queueing, required acknowledgement versus best-effort queued or dropped outcomes, instance-bound settlement with post-shutdown retirement, bounded backpressure and drain budgets, Unicode-control refusal, and one-instance sink-fault containment. No sink, adapter, queue implementation, runtime emission, source-global context, durable delivery, or Section 12 evidence use is claimed.",
     "lanes": [
       {
         "lane": "telemetry_policy",
@@ -227,7 +227,7 @@
       },
       {
         "command": "cargo run --locked -p xtask -- generate requirements",
-        "result": "requirement inventory already current at 662 records and 946 clauses"
+        "result": "requirement inventory current at 662 records and 946 clauses"
       },
       {
         "command": "cargo run --locked -p xtask -- generate protocol",
@@ -247,11 +247,7 @@
       },
       {
         "command": "cargo test --locked -p gantry-conformance --test telemetry_policy",
-        "result": "15 of 15 telemetry policy lanes pass"
-      },
-      {
-        "command": "cargo test --locked -p gantry-conformance --test observe_foundation",
-        "result": "6 of 6 declaration lanes pass"
+        "result": "21 of 21 telemetry lanes pass, including all seven repair regressions"
       },
       {
         "command": "cargo test --locked -p gantry-conformance --test publication_set",
@@ -264,8 +260,8 @@
     ],
     "publication": {
       "member_count": 7,
-      "identity_at_currency_repair_parent": "b46fea68e06eacf8fcf0e1a8a3cd0ed6c906816b2dc51fccee60c9d4e16f3e98",
-      "identity_note": "The publication identity at the base is recorded from the candidate this slice was based on; this recut changes the conformance bundle, manifest, index, and verification report because the candidate source, clause, and documentation bytes changed, and the governed generator recomputed them to a fixpoint before the record was committed.",
+      "identity_at_currency_repair_parent": "fdb2c8c4bd52c22a90393bad3448533c6baea3ed1c75e3da62d714348f9a9dc8",
+      "identity_note": "The publication identity is recomputed from the named repair parent commit, not from the older base. The record commit changes only the self-referential conformance manifest, this record, the publication index, the conformance bundle, and the verification report, and the governed generator recomputes them to a fixpoint.",
       "verification": "protocol/publication/verification-v1.json verifies the seven-artifact set after regeneration"
     }
   },
@@ -273,7 +269,8 @@
     "This slice is a pure declaration and admission model: no telemetry sink, adapter, queue implementation, retention store, background task, durable record, or runtime emission is delivered.",
     "No source-global context, implicit sink discovery, cross-sink ordering, durable or global exactly-once delivery, or Section 12 evidence use is claimed.",
     "The inherited general_purpose_preregistration lane still requires the gitignored docs/reference/general-purpose-refactor-issue-plan.md fixture; no telemetry claim depends on it.",
-    "Release declarations are modeled for the null telemetry destination only; other Section 15.10 destinations and operational disclosure budgets remain with their owning contracts."
+    "Release declarations are modeled for the null telemetry destination only; other Section 15.10 destinations and operational disclosure budgets remain with their owning contracts.",
+    "The repair lanes cover cross-instance settlement ownership, policy replacement, projection-class mismatch, stale handles after aggregate shutdown, over-budget drain, and Unicode controls; they do not claim a runtime sink or adapter."
   ],
   "successors": [
     {
