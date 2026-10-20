@@ -186,12 +186,17 @@ Delivered:
 - **One completion.** A cancellation observed before admission refuses without a dispatch; a
   cancellation during dispatch settles once as cancelled with the accepted prefix withheld as
   protected evidence; a late, foreign, or over-accepted completion is a contained fault that
-  publishes no octet; and a duplicate presentation is refused without a second call. Nothing is
-  retried, replayed, or deduplicated.
+  publishes no octet; and a second presentation of the one pending occurrence the grantor already
+  settled is refused before any dispatch under the landed duplicate-settlement refusal, even
+  through a separately admitted account. Nothing is retried, replayed, or deduplicated.
 - **Grantor-owned shutdown.** `ConsoleOutputAccess::settle_shutdown` is the only route to a
-  final-flush settlement, and it consumes the access, so no requester route outlives it. It returns
-  the fixed task outcome by value, unchanged, beside a flush-only settlement, so a failed flush
-  never rewrites that outcome.
+  final-flush settlement, and it consumes the access together with every bound output account, so
+  nothing outlives it. Each account is finalized once through the landed account finalization: it
+  leaves the active lifetime, its carrier value is disposed once, and it admits no later call. A
+  refused finalization refuses the shutdown and withholds the flush settlement. The fixed task
+  outcome is returned by value, unchanged, beside a flush-only settlement, and the console holds no
+  octet, so the flush it publishes is the completion of empty console-owned state with no
+  caller-supplied verdict.
 
 Deliberately not delivered, and refused rather than simulated:
 
@@ -206,8 +211,8 @@ Deliberately not delivered, and refused rather than simulated:
   `BoundedIoEndpoint` carrier the requester arranged. It introduces no console-specific adapter,
   host trait, descriptor access, or package dependency, and `std.console` depends on no adapter.
 - **No carrier flush.** The console retains no octet between calls, so it holds nothing of its own
-  to flush: the carrier flush belongs to the grantor that owns the carrier, and this slice publishes
-  that outcome instead of claiming a flush of its own.
+  to flush: the carrier flush belongs to the grantor that owns the carrier, and this slice performs
+  none, accepts no caller-supplied verdict, and claims none.
 - **No target qualification.** The slice contains no target-specific work, so it claims no macOS
   or other target-specific delivery and refuses nothing by target: attached-terminal delivery is
   undelivered on every host this crate builds for.

@@ -650,13 +650,14 @@ fn cancellation_during_dispatch_settles_once_and_withholds_the_prefix() {
     );
     assert_eq!(call.accepted_prefix(), None);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
-    let second = route
-        .write(ConsoleOutputSink::Redirected(&mut instance), b"abcde")
-        .unwrap_or_else(|error| panic!("fixture second write: {error}"));
-    assert!(
-        matches!(second.outcome(), IoCallOutcome::Refused(_)),
-        "a cancelled account must refuse a later call, observed {:?}",
-        second.outcome()
+    assert_eq!(
+        route
+            .write(ConsoleOutputSink::Redirected(&mut instance), b"abcde")
+            .err(),
+        Some(ConsoleRuntimeRefusal::Settlement(
+            IoRefusal::DuplicateSettlement
+        )),
+        "a settled occurrence must be refused before any second dispatch"
     );
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
@@ -739,33 +740,90 @@ fn a_duplicate_presentation_is_refused_without_a_second_dispatch() {
         .write(ConsoleOutputSink::Redirected(&mut instance), b"ab")
         .unwrap_or_else(|error| panic!("fixture write: {error}"));
     assert!(matches!(first.outcome(), IoCallOutcome::Settled(_)));
-    let second = route
-        .write(ConsoleOutputSink::Redirected(&mut instance), b"ab")
-        .unwrap_or_else(|error| panic!("fixture second write: {error}"));
-    assert!(
-        matches!(second.outcome(), IoCallOutcome::Refused(_)),
-        "a second presentation must be refused, observed {:?}",
-        second.outcome()
+    assert_eq!(
+        route
+            .write(ConsoleOutputSink::Redirected(&mut instance), b"ab")
+            .err(),
+        Some(ConsoleRuntimeRefusal::Settlement(
+            IoRefusal::DuplicateSettlement
+        )),
+        "a settled occurrence must be refused before any second dispatch"
     );
     assert_eq!(handle.calls(), 1);
     assert_eq!(handle.retained(), b"ab".to_vec());
 }
 
-/// The grantor-owned shutdown publishes the flush alone and returns the task outcome unchanged.
+/// The grantor-owned shutdown finalizes the bound account and returns the task outcome unchanged.
 #[test]
-fn shutdown_publishes_flush_only_and_returns_the_fixed_task_outcome() {
-    let failed_access = access(vec![output_grant()]);
-    let (task_outcome, settlement) =
-        failed_access.settle_shutdown("task:ok", ConsoleFlushOutcome::Failed);
+fn shutdown_finalizes_the_bound_account_and_returns_the_fixed_task_outcome() {
+    let fixture = Fixture::new();
+    let calls = Arc::new(AtomicU64::new(0));
+    let instance = fixture.bind(ConsoleRedirectedSink::new(DeclaredCarrier {
+        accepted: 0,
+        calls,
+    }));
+    let access = access(vec![output_grant()]);
+    let (task_outcome, settlement) = access
+        .settle_shutdown(vec![instance], "task:ok", 11)
+        .unwrap_or_else(|error| panic!("fixture shutdown: {error}"));
     assert_eq!(task_outcome, "task:ok");
-    assert!(settlement.flush_failed());
-    assert!(!settlement.task_outcome_rewritten());
-
-    let flushed_access = access(vec![output_grant()]);
-    let (task_outcome, settlement) =
-        flushed_access.settle_shutdown(7_u8, ConsoleFlushOutcome::Flushed);
-    assert_eq!(task_outcome, 7);
     assert!(!settlement.flush_failed());
     assert!(!settlement.task_outcome_rewritten());
     assert_eq!(settlement.flush(), ConsoleFlushOutcome::Flushed);
+}
+
+/// A shutdown that cannot finalize its account refuses and withholds the flush settlement.
+#[test]
+fn shutdown_refuses_an_account_it_cannot_finalize() {
+    let fixture = Fixture::new();
+    let calls = Arc::new(AtomicU64::new(0));
+    let mut instance = fixture.bind(ConsoleRedirectedSink::new(CancellingCarrier {
+        accepted: 2,
+        lease: fixture.lease(),
+        calls: Arc::clone(&calls),
+    }));
+    let access = access(vec![output_grant()]);
+    let route = fixture.route(&access, output_grant());
+    let call = route
+        .write(ConsoleOutputSink::Redirected(&mut instance), b"ab")
+        .unwrap_or_else(|error| panic!("fixture write: {error}"));
+    assert!(matches!(call.outcome(), IoCallOutcome::Cancelled(_)));
+    drop(route);
+    let refused = access.settle_shutdown(vec![instance], "task:ok", 12);
+    assert!(
+        matches!(refused, Err(ConsoleRuntimeRefusal::Transport(_))),
+        "a poisoned account must refuse shutdown, observed {refused:?}"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+/// Two independently admitted accounts cannot settle one machine occurrence.
+#[test]
+fn two_independently_admitted_instances_cannot_settle_one_occurrence() {
+    let fixture = Fixture::new();
+    let calls = Arc::new(AtomicU64::new(0));
+    let mut first = fixture.bind(ConsoleRedirectedSink::new(DeclaredCarrier {
+        accepted: 2,
+        calls: Arc::clone(&calls),
+    }));
+    let mut second = fixture.bind(ConsoleRedirectedSink::new(DeclaredCarrier {
+        accepted: 2,
+        calls: Arc::clone(&calls),
+    }));
+    let access = access(vec![output_grant()]);
+    let route = fixture.route(&access, output_grant());
+    let one = route
+        .write(ConsoleOutputSink::Redirected(&mut first), b"ab")
+        .unwrap_or_else(|error| panic!("fixture write: {error}"));
+    assert!(matches!(one.outcome(), IoCallOutcome::Settled(_)));
+    assert_eq!(
+        route
+            .write(ConsoleOutputSink::Redirected(&mut second), b"ab")
+            .err(),
+        Some(ConsoleRuntimeRefusal::Settlement(
+            IoRefusal::DuplicateSettlement
+        )),
+        "a second account of the same occurrence must be refused before dispatch"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
 }

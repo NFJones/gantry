@@ -532,13 +532,14 @@ fn duplicate_presentation_is_refused_without_a_second_dispatch() {
         .write(ConsoleOutputSink::Redirected(&mut instance), b"ab")
         .unwrap_or_else(|error| panic!("fixture write: {error}"));
     assert!(matches!(first.outcome(), IoCallOutcome::Settled(_)));
-    let second = route
-        .write(ConsoleOutputSink::Redirected(&mut instance), b"ab")
-        .unwrap_or_else(|error| panic!("fixture second write: {error}"));
-    assert!(
-        matches!(second.outcome(), IoCallOutcome::Refused(_)),
-        "a second presentation must be refused, observed {:?}",
-        second.outcome()
+    assert_eq!(
+        route
+            .write(ConsoleOutputSink::Redirected(&mut instance), b"ab")
+            .err(),
+        Some(ConsoleRuntimeRefusal::Settlement(
+            IoRefusal::DuplicateSettlement
+        )),
+        "a settled occurrence must be refused before any second dispatch"
     );
     assert_eq!(handle.calls(), 1);
     assert_eq!(handle.retained(), b"ab".to_vec());
@@ -577,20 +578,56 @@ fn an_over_accepting_carrier_is_a_contained_fault() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
-/// The grantor-owned shutdown publishes the flush alone and returns the task outcome unchanged.
+/// The grantor-owned shutdown finalizes the bound account and returns the task outcome unchanged.
 #[test]
-fn grantor_shutdown_publishes_flush_only_and_keeps_the_task_outcome() {
-    let failed = access(vec![output_grant()]);
-    let (task_outcome, settlement) = failed.settle_shutdown("task:ok", ConsoleFlushOutcome::Failed);
+fn grantor_shutdown_finalizes_the_account_and_keeps_the_task_outcome() {
+    let fixture = Fixture::new();
+    let calls = Arc::new(AtomicU64::new(0));
+    let instance = fixture.bind(ConsoleRedirectedSink::new(CountingCarrier {
+        accepted: 0,
+        calls,
+    }));
+    let boundary = access(vec![output_grant()]);
+    let (task_outcome, settlement) = boundary
+        .settle_shutdown(vec![instance], "task:ok", 11)
+        .unwrap_or_else(|error| panic!("fixture shutdown: {error}"));
     assert_eq!(task_outcome, "task:ok");
-    assert!(settlement.flush_failed());
-    assert!(!settlement.task_outcome_rewritten());
-
-    let flushed = access(vec![output_grant()]);
-    let (task_outcome, settlement) = flushed.settle_shutdown(7_u8, ConsoleFlushOutcome::Flushed);
-    assert_eq!(task_outcome, 7);
     assert!(!settlement.flush_failed());
     assert!(!settlement.task_outcome_rewritten());
+    assert_eq!(settlement.flush(), ConsoleFlushOutcome::Flushed);
+}
+
+/// Two independently admitted accounts cannot settle one machine occurrence.
+#[test]
+fn two_independently_admitted_accounts_cannot_settle_one_occurrence() {
+    let fixture = Fixture::new();
+    let calls = Arc::new(AtomicU64::new(0));
+    let mut first = fixture.bind(ConsoleRedirectedSink::new(CountingCarrier {
+        accepted: 2,
+        calls: Arc::clone(&calls),
+    }));
+    let mut second = fixture.bind(ConsoleRedirectedSink::new(CountingCarrier {
+        accepted: 2,
+        calls: Arc::clone(&calls),
+    }));
+    let boundary = access(vec![output_grant()]);
+    let route = fixture
+        .route(&boundary, ConsoleAccessIdentity::Injected(output_grant()))
+        .unwrap_or_else(|error| panic!("fixture route: {error}"));
+    let one = route
+        .write(ConsoleOutputSink::Redirected(&mut first), b"ab")
+        .unwrap_or_else(|error| panic!("fixture write: {error}"));
+    assert!(matches!(one.outcome(), IoCallOutcome::Settled(_)));
+    assert_eq!(
+        route
+            .write(ConsoleOutputSink::Redirected(&mut second), b"ab")
+            .err(),
+        Some(ConsoleRuntimeRefusal::Settlement(
+            IoRefusal::DuplicateSettlement
+        )),
+        "a second account of the same occurrence must be refused before dispatch"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
 /// The published specification still declares the boundary this slice consumes.
