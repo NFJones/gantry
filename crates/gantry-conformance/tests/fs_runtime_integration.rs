@@ -23,10 +23,11 @@ use gantry::ir::{
 };
 use gantry::portable::IdentityKind;
 use gantry::runtime::{
-    AdmittedResource, BoundedIoEndpoint, FsHostTarget, FsReadOnlyGrant, FsReadOnlySettlement,
-    FsRootDirectory, FsRuntimeRefusal, FsTargetMapping, IoCallBinding, IoCallOutcome, IoEvidence,
-    IoHostCompletion, IoOccurrence, IoOperationalFault, Machine, MachineLimits, OwnedHostResource,
-    close_read_only, decode_resource_reconstruction_record, encode_resource_reconstruction_record,
+    AdmittedResource, BoundedIoEndpoint, FsHostTarget, FsOpenInstance, FsReadOnlyGrant,
+    FsReadOnlyInstance, FsReadOnlySettlement, FsRootDirectory, FsRuntimeRefusal, FsTargetMapping,
+    IoCallBinding, IoCallOutcome, IoEvidence, IoHostCompletion, IoOccurrence, IoOperationalFault,
+    Machine, MachineLimits, close_read_only, decode_resource_reconstruction_record,
+    encode_resource_reconstruction_record,
 };
 use gantry::value::DEFAULT_VALUE_LIMITS;
 
@@ -146,14 +147,14 @@ impl Fixture {
     }
 
     /// Admits one fresh account and binds one physical endpoint to it.
-    fn bind<T: BoundedIoEndpoint>(&self, endpoint: T) -> OwnedHostResource<T> {
+    fn bind<T: FsOpenInstance + BoundedIoEndpoint>(&self, endpoint: T) -> FsReadOnlyInstance<T> {
         let account = AdmittedResource::admit(
             ResourceCarrier::ReconstructionRecord,
             self.record.clone(),
             self.subject.clone(),
         )
         .unwrap_or_else(|error| panic!("fixture account: {error:?}"));
-        OwnedHostResource::bind(account, endpoint)
+        FsReadOnlyInstance::bind(account, endpoint)
             .unwrap_or_else(|_| panic!("fixture physical binding"))
     }
 
@@ -443,6 +444,17 @@ fn a_write_request_is_refused_before_dispatch() {
         })
     );
     assert_eq!(resource.account().durable_record(), record);
+    // The account admits exactly one settlement, so a read that still settles proves the refused
+    // write never reached dispatch, charge, or settlement.
+    let read = IoRequest::read(16).unwrap_or_else(|error| panic!("fixture request: {error:?}"));
+    let outcome = fixture
+        .settlement(&grant)
+        .read(&mut resource, &receipt, read)
+        .unwrap_or_else(|error| panic!("fixture read: {error:?}"));
+    assert!(
+        matches!(outcome, IoCallOutcome::Settled(_)),
+        "the refused write must leave the one admitted read available, observed {outcome:?}"
+    );
 }
 
 /// A declared path value cannot escape its mounted root through a reserved component or a link.
@@ -849,23 +861,30 @@ fn accounting_records_carry_no_live_handle_or_path_spelling() {
     assert_eq!(record, resource.account().durable_record());
 }
 
-/// The delivered target mappings agree and an unmapped target refuses before execution.
+/// Only the Linux mapping is delivered, and every other target refuses before execution.
+///
+/// macOS is refused because no effect-free no-follow acquisition method for it is established: an
+/// `O_EVTONLY` probe still reaches FIFO reader wait and device `d_open`, so claiming delivery would
+/// claim an equivalence this slice cannot test.
 #[test]
-fn the_delivered_targets_agree_and_an_unmapped_target_refuses() {
+fn only_the_linux_mapping_is_delivered_and_other_targets_refuse() {
     let linux = FsHostTarget::Linux
         .walk_policy()
         .unwrap_or_else(|| panic!("the linux mapping must be delivered"));
-    let macos = FsHostTarget::MacOs
-        .walk_policy()
-        .unwrap_or_else(|| panic!("the macos mapping must be delivered"));
-    assert_eq!(
-        linux, macos,
-        "the two delivered targets must not diverge in semantics"
-    );
     assert!(linux.no_follow_components());
     assert!(linux.directory_components());
     assert!(linux.close_on_exec());
     assert_eq!(linux.resolution_count(), FS_RESOLUTION_COUNT);
+    assert!(
+        FsHostTarget::MacOs.walk_policy().is_none(),
+        "macos must not claim a delivered mapping without an effect-free acquisition"
+    );
+    assert_eq!(
+        FsTargetMapping::admit(FsHostTarget::MacOs).err(),
+        Some(FsRuntimeRefusal::UnsupportedTarget {
+            target: FsHostTarget::MacOs,
+        })
+    );
     assert!(FsHostTarget::Unsupported.walk_policy().is_none());
     assert_eq!(
         FsTargetMapping::admit(FsHostTarget::Unsupported).err(),
@@ -878,6 +897,10 @@ fn the_delivered_targets_agree_and_an_unmapped_target_refuses() {
     }
     if cfg!(target_os = "macos") {
         assert_eq!(FsHostTarget::current(), FsHostTarget::MacOs);
+        assert!(
+            FsTargetMapping::for_current().is_err(),
+            "the macos process target must be refused before acquisition"
+        );
     }
 }
 
@@ -911,12 +934,14 @@ fn close_releases_the_instance_once_and_refuses_later_calls() {
         "a finished instance must not close twice"
     );
     let request = IoRequest::read(4).unwrap_or_else(|error| panic!("fixture request: {error:?}"));
-    assert_eq!(
-        fixture
-            .settlement(&grant)
-            .read(&mut resource, &receipt, request),
-        Err(FsRuntimeRefusal::Transport(
-            gantry::runtime::HostResourceError::Disposed
-        ))
+    let record = resource.account().durable_record();
+    let refused = fixture
+        .settlement(&grant)
+        .read(&mut resource, &receipt, request)
+        .unwrap_or_else(|error| panic!("fixture refusal: {error:?}"));
+    assert!(
+        matches!(refused, IoCallOutcome::Refused(_)),
+        "a closed account must refuse a later call, observed {refused:?}"
     );
+    assert_eq!(resource.account().durable_record(), record);
 }

@@ -13,13 +13,14 @@
 //! One mounted root directory supplies the declared root name and issues every grant, so a grant
 //! cannot be forged from a spelling and is refused against another mounted instance. `open`
 //! resolves the declared segments one component at a time from the pinned root descriptor with a
-//! no-follow walk, probes the final object through an effect-free pinned descriptor, and returns one
-//! endpoint with an open-instance receipt. `read` settles exactly one bounded call through
+//! no-follow walk, probes the final object through an effect-free `O_PATH` descriptor, and returns
+//! one endpoint with an open-instance receipt. `read` settles exactly one bounded call through
 //! [`crate::IoSettlementService`] after the read-only and instance preflight of
 //! [`FsReadOnlySettlement`], and publishes exactly the initialized octets that call returned. A
 //! positive short read stays short progress; only a zero-octet read observes end of stream. `close`
-//! requires the issuing grant and the receipt, inspects the bound endpoint before accounting moves,
-//! releases the descriptor once, and after it the account admits no call and cannot be reopened.
+//! requires the issuing grant and the presented receipt, compares both with the receipt the bound
+//! instance was issued, releases the descriptor once, and after it the account admits no call and
+//! cannot be reopened.
 //!
 //! # Read-only denial
 //!
@@ -32,10 +33,11 @@
 //! # Symlink race resistance
 //!
 //! Every resolved directory component is opened relative to the previous component descriptor with
-//! no-follow, directory-only, and close-on-exec flags. The final object is first probed through an
-//! effect-free pinned descriptor on the delivered target, its type is verified from that descriptor,
-//! and only then is a readable descriptor obtained from the pinned vnode through the descriptor
-//! namespace. A symbolic link, junction, or reparse point at any position is refused at that
+//! no-follow, directory-only, and close-on-exec flags. The final object is first probed through a
+//! pinned `O_PATH` descriptor, which names the vnode without opening a data channel and therefore
+//! invokes no device or pipe open, its type is verified from that descriptor, and only then is a
+//! readable descriptor obtained from exactly that pinned vnode through the descriptor namespace. A
+//! symbolic link, junction, or reparse point at any position is refused at that
 //! position and is never followed, so concurrently replacing an already resolved component cannot
 //! redirect the walk, and reads never re-resolve the declared path value. The walk resolves exactly
 //! once, as `GNT-47.8-filesystem-link-policy` declares.
@@ -51,15 +53,30 @@
 //!
 //! # Targets
 //!
-//! Linux and macOS are both delivered through the same semantic walk, expressed as one
-//! [`FsWalkPolicy`], so neither target has a divergent refusal, progress, or publication rule. A
-//! target with no real mapping is refused before any descriptor is opened.
+//! Linux is the one delivered acquisition mapping of this slice, expressed as one [`FsWalkPolicy`]
+//! that fixes its refusal, progress, and publication rules.
+//!
+//! macOS is refused at target scope, before a root, a grant, or a descriptor exists, and this slice
+//! claims no macOS delivery. `O_EVTONLY` is not an `O_PATH` equivalent: the XNU open call chain
+//! still reaches a FIFO reader wait and a device `d_open`, so probing a final component that way is
+//! not effect-free and can block or invoke device open behavior before the type is verified. XNU
+//! exposes no documented descriptor acquisition that names a vnode without its open entry point,
+//! and this slice establishes no reviewed substitute, so the honest target scope is an explicit
+//! refusal rather than an untested equivalence claim. [`FsTargetMapping::admit`] therefore refuses
+//! [`FsHostTarget::MacOs`] exactly as it refuses a target it does not name, and no descriptor is
+//! opened on that target.
+//!
+//! The declaration contract is unaffected: `SPEC.md` Section 47 publishes no runtime availability
+//! for any target, so refusing one target acquisition here neither narrows nor widens a declared
+//! clause. Delivering macOS acquisition requires a reviewed effect-free no-follow acquisition
+//! contract first; until then, refusing is the only consistent behavior.
 //!
 //! Still owed to `GNT-GP-FS-001`: writes, replacement, receipts, locks, watch, short-write
 //! prefixes, poisoning, revocation, quotas, adapter fault containment, and durable rejection of a
 //! live handle beyond the shapes this module already refuses.
 
 use std::fmt;
+#[cfg(target_os = "linux")]
 use std::os::fd::AsRawFd;
 use std::path::Path;
 use std::sync::Arc;
@@ -73,9 +90,9 @@ use rustix::fs::{AtFlags, FileType, Mode, OFlags, fstat, open, openat, statat};
 use rustix::io::{Errno, read};
 
 use crate::{
-    BoundedIoEndpoint, HostResourceError, IoCallBinding, IoCallOutcome, IoHostCompletion,
-    IoHostResponse, IoNativeDiagnostic, IoOperationalFault, IoRefusal, IoSettlementService,
-    Machine, OwnedHostResource,
+    AdmittedResource, BoundedIoEndpoint, HostResourceError, IoCallBinding, IoCallOutcome,
+    IoHostCompletion, IoHostResponse, IoNativeDiagnostic, IoOperationalFault, IoRefusal,
+    IoSettlementService, Machine, OwnedHostResource,
 };
 
 #[cfg(test)]
@@ -88,38 +105,26 @@ const DIRECTORY_FLAGS: OFlags = OFlags::RDONLY
     .union(OFlags::CLOEXEC);
 
 /// The exact flags of the readable descriptor of one resolved regular file.
+#[cfg(target_os = "linux")]
 const FILE_FLAGS: OFlags = OFlags::RDONLY
     .union(OFlags::CLOEXEC)
     .union(OFlags::NONBLOCK)
     .union(OFlags::NOCTTY);
 
-/// The macOS `O_EVTONLY` flag, which opens a vnode for event notification only.
+/// The effect-free `O_PATH` probe flags of one final component on the delivered Linux mapping.
 ///
-/// The published `rustix` flag set does not name this flag, so the delivered macOS mapping carries
-/// its documented `<fcntl.h>` value. It is used only to probe a final component without invoking a
-/// device or pipe data open; the readable descriptor is then obtained from the pinned vnode.
-#[cfg(target_os = "macos")]
-const MACOS_EVTONLY: u32 = 0x8000;
-
-/// The effect-free probe flags of one final component on Linux.
+/// `O_PATH` obtains a descriptor that names the vnode without opening a data channel, so no device
+/// or pipe open entry point is invoked to classify the object. No other target has an equivalent
+/// acquisition this slice can establish, so no other target defines probe flags:
+/// [`FsTargetMapping::admit`] refuses such a target before a descriptor exists.
 #[cfg(target_os = "linux")]
 const PROBE_FLAGS: OFlags = OFlags::PATH.union(OFlags::NOFOLLOW).union(OFlags::CLOEXEC);
 
-/// The effect-free probe flags of one final component on macOS.
-#[cfg(target_os = "macos")]
-const PROBE_FLAGS: OFlags = OFlags::from_bits_retain(MACOS_EVTONLY)
-    .union(OFlags::NOFOLLOW)
-    .union(OFlags::CLOEXEC);
-
-/// The effect-free probe flags of one final component on an unmapped host.
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-const PROBE_FLAGS: OFlags = OFlags::empty();
-
 /// The semantic descriptor walk one delivered host target uses.
 ///
-/// The policy is the same value for Linux and macOS: both targets resolve the same way, refuse the
-/// same objects, and publish the same settlement facts. It describes delivered behavior; it is not
-/// a capability, not a target name, and not a grant.
+/// One policy value fixes how a delivered target resolves a declared path value, which objects it
+/// refuses, and which settlement facts it publishes. It describes delivered behavior; it is not a
+/// capability, not a target name, and not a grant.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FsWalkPolicy {
     no_follow_components: bool,
@@ -154,12 +159,16 @@ impl FsWalkPolicy {
     }
 }
 
-/// One real host target this runtime maps declared filesystem values onto.
+/// One named host target a caller may ask this runtime to map declared filesystem values onto.
+///
+/// A name is not a delivery claim: [`Self::walk_policy`] publishes which target this slice actually
+/// delivers, and every other name is refused before a descriptor is opened.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum FsHostTarget {
-    /// The Linux mapping.
+    /// The Linux mapping, which this slice delivers.
     Linux,
-    /// The macOS mapping.
+    /// The macOS target, which this slice refuses at target scope until an effect-free no-follow
+    /// acquisition method for it is established and reviewed.
     MacOs,
     /// A target with no delivered mapping; every operation is refused before execution.
     Unsupported,
@@ -168,8 +177,10 @@ pub enum FsHostTarget {
 impl FsHostTarget {
     /// Returns the target this process runs on.
     ///
-    /// A process on any other operating system receives [`Self::Unsupported`], so the refusal is
-    /// produced before a descriptor, a path resolution, or an effect.
+    /// This names the process target and never grants it: a process on a target this slice does not
+    /// deliver still receives that target name, and [`FsTargetMapping::for_current`] refuses it
+    /// before a descriptor, a path resolution, or an effect. A process on an operating system this
+    /// runtime does not name receives [`Self::Unsupported`].
     #[must_use]
     pub const fn current() -> Self {
         if cfg!(target_os = "linux") {
@@ -181,17 +192,22 @@ impl FsHostTarget {
         }
     }
 
-    /// Returns the semantic walk policy of this target, or `None` when it has no mapping.
+    /// Returns the semantic walk policy of this target, or `None` when this slice does not deliver
+    /// it.
+    ///
+    /// Linux is delivered. macOS returns `None` because no effect-free no-follow acquisition method
+    /// for it is established, so it is refused at target scope rather than delivered with an
+    /// unverified probe.
     #[must_use]
     pub const fn walk_policy(self) -> Option<FsWalkPolicy> {
         match self {
-            Self::Linux | Self::MacOs => Some(FsWalkPolicy {
+            Self::Linux => Some(FsWalkPolicy {
                 no_follow_components: true,
                 directory_components: true,
                 close_on_exec: true,
                 resolution_count: FS_RESOLUTION_COUNT,
             }),
-            Self::Unsupported => None,
+            Self::MacOs | Self::Unsupported => None,
         }
     }
 }
@@ -305,7 +321,9 @@ pub enum FsRuntimeRefusal {
         /// The undelivered operation.
         operation: FsResourceOperation,
     },
-    /// The host target has no real mapping in this runtime.
+    /// The host target has no delivered acquisition mapping in this runtime.
+    ///
+    /// The refusal is produced before a root, a grant, a path resolution, or a descriptor exists.
     UnsupportedTarget {
         /// The unmapped target.
         target: FsHostTarget,
@@ -750,39 +768,7 @@ impl FsRootDirectory {
         }
         let position = directories.len() as u32;
         let parent = current.as_ref().unwrap_or(&self.descriptor);
-        let probe = match openat(parent, last_name.as_str(), probe_flags(), Mode::empty()) {
-            Ok(probe) => probe,
-            Err(error) => return Err(map_component_errno(error, position)),
-        };
-        let probe_stat = match fstat(&probe) {
-            Ok(stat) => stat,
-            Err(error) => return Err(map_component_errno(error, position)),
-        };
-        let probe_type = FileType::from_raw_mode(probe_stat.st_mode);
-        if probe_type == FileType::Symlink {
-            return Err(FsRuntimeRefusal::LinkRefused { position });
-        }
-        if probe_type != FileType::RegularFile {
-            return Err(FsRuntimeRefusal::NotRegularFile { position });
-        }
-        let readable = reopen_path(probe.as_raw_fd());
-        let descriptor = match open(readable.as_str(), FILE_FLAGS, Mode::empty()) {
-            Ok(descriptor) => descriptor,
-            Err(error) => return Err(map_component_errno(error, position)),
-        };
-        drop(probe);
-        let stat = match fstat(&descriptor) {
-            Ok(stat) => stat,
-            Err(error) => return Err(map_component_errno(error, position)),
-        };
-        if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile
-            || stat.st_dev != probe_stat.st_dev
-            || stat.st_ino != probe_stat.st_ino
-        {
-            return Err(FsRuntimeRefusal::Native {
-                class: FsNativeClass::StaleDescriptor,
-            });
-        }
+        let descriptor = acquire_regular_file(parent, last_name.as_str(), position)?;
         Ok(FsReadOnlyEndpoint {
             receipt: FsOpenReceipt {
                 root_identity: Arc::clone(&self.identity),
@@ -941,11 +927,92 @@ impl BoundedIoEndpoint for FsReadOnlyEndpoint {
     }
 }
 
+/// The sealed marker admitting one type as a filesystem open endpoint.
+mod sealed {
+    /// Implemented only inside this crate, so a foreign endpoint cannot declare a receipt.
+    pub trait FsOpenInstanceSealed {}
+}
+
+/// One endpoint that can report the receipt of the open instance it belongs to.
+///
+/// The trait is sealed: it is implemented for [`FsReadOnlyEndpoint`] and, inside this crate only, by
+/// the runtime test endpoints. No implementation outside this crate is possible, so a caller cannot
+/// present an endpoint of its own type claiming another instance receipt, and the association
+/// between an endpoint and its receipt cannot be forged through this trait.
+pub trait FsOpenInstance: sealed::FsOpenInstanceSealed {
+    /// Returns the receipt of the open instance this endpoint belongs to.
+    #[must_use]
+    fn open_receipt(&self) -> FsOpenReceipt;
+}
+
+impl sealed::FsOpenInstanceSealed for FsReadOnlyEndpoint {}
+
+impl FsOpenInstance for FsReadOnlyEndpoint {
+    fn open_receipt(&self) -> FsOpenReceipt {
+        self.receipt()
+    }
+}
+
+/// One bound read-only instance together with the receipt its endpoint was issued with.
+///
+/// The pair is what makes the endpoint, receipt, and grant association checkable without a transport
+/// route that lends the host value out: [`Self::bind`] reads the receipt from the endpoint before the
+/// endpoint moves into the landed transport, so the recorded receipt and the bound endpoint always
+/// name the same open instance, and no caller-supplied endpoint can be paired with another receipt.
+/// The fields are private and no route replaces the bound resource, so the pairing survives every
+/// route of this module.
+pub struct FsReadOnlyInstance<T> {
+    resource: OwnedHostResource<T>,
+    receipt: FsOpenReceipt,
+}
+
+impl<T: FsOpenInstance + BoundedIoEndpoint> FsReadOnlyInstance<T> {
+    /// Binds one open endpoint to one admitted account and records the receipt it was issued with.
+    ///
+    /// The receipt is read from the endpoint itself before the landed transport takes ownership, so
+    /// binding never inspects a bound host value and never lends one out. Refusal returns both owned
+    /// inputs unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns the landed transport refusal with both owned inputs in the returned tuple.
+    pub fn bind(
+        account: AdmittedResource,
+        endpoint: T,
+    ) -> Result<Self, Box<(HostResourceError, AdmittedResource, T)>> {
+        let receipt = endpoint.open_receipt();
+        let resource = OwnedHostResource::bind(account, endpoint)?;
+        Ok(Self { resource, receipt })
+    }
+
+    /// Returns the receipt of the open instance this bound endpoint belongs to.
+    #[must_use]
+    pub const fn receipt(&self) -> &FsOpenReceipt {
+        &self.receipt
+    }
+
+    /// Returns immutable accounting facts only, never the host value.
+    #[must_use]
+    pub const fn account(&self) -> &AdmittedResource {
+        self.resource.account()
+    }
+
+    /// Returns the bound transport owner for the crate own settlement lanes.
+    ///
+    /// This accessor is crate-visible only: it lets this module own tests drive the landed common
+    /// settlement service directly, and it is absent from every external build, so no external
+    /// caller gains a route to the host value through it.
+    #[cfg(test)]
+    pub(crate) fn resource_mut(&mut self) -> &mut OwnedHostResource<T> {
+        &mut self.resource
+    }
+}
+
 /// Closes one bound read-only instance through the landed account finalization.
 ///
 /// The declared `close` operation and the exact issuing grant are checked first: the grant must admit
-/// `close`, it must cover the presented receipt, and the bound endpoint must carry that same receipt.
-/// Every one of those checks is a read-only inspection, so a mismatch is refused as
+/// `close`, it must cover the presented receipt, and the bound instance must have been issued that
+/// same receipt. Every one of those checks reads recorded values only, so a mismatch is refused as
 /// [`FsRuntimeRefusal::ForeignInstance`] before any accounting transition and the account stays active
 /// and physically owned. Finalization then releases the descriptor exactly once through the
 /// contained physical disposal of the landed transport: the account moves from active to finished, no
@@ -956,24 +1023,19 @@ impl BoundedIoEndpoint for FsReadOnlyEndpoint {
 /// Returns the grant refusal of the declared `close` operation, [`FsRuntimeRefusal::ForeignInstance`]
 /// when the grant, receipt, or bound endpoint does not name the same instance, and
 /// [`FsRuntimeRefusal::Transport`] when the landed transport refuses the finalization.
-pub fn close_read_only(
-    resource: &mut OwnedHostResource<FsReadOnlyEndpoint>,
+pub fn close_read_only<T: FsOpenInstance + BoundedIoEndpoint>(
+    instance: &mut FsReadOnlyInstance<T>,
     grant: &FsReadOnlyGrant,
     receipt: &FsOpenReceipt,
     owner: OwnerGeneration,
     settled_at_us: u64,
 ) -> Result<ResourceLifetimeState, FsRuntimeRefusal> {
     grant.authorize(FsResourceOperation::Close)?;
-    if !grant.covers(receipt) {
+    if !grant.covers(receipt) || instance.receipt() != receipt {
         return Err(FsRuntimeRefusal::ForeignInstance);
     }
-    let bound = resource
-        .inspect(|endpoint| endpoint.receipt())
-        .map_err(FsRuntimeRefusal::Transport)?;
-    if bound != *receipt {
-        return Err(FsRuntimeRefusal::ForeignInstance);
-    }
-    resource
+    instance
+        .resource
         .finish(owner, settled_at_us, |_endpoint| Ok(()))
         .map_err(FsRuntimeRefusal::Transport)
 }
@@ -1022,32 +1084,27 @@ impl<'a> FsReadOnlySettlement<'a> {
     /// Settles exactly one bounded read after the read-only and instance preflight.
     ///
     /// The grant must admit the declared read operation, it must cover the presented receipt, and
-    /// the bound endpoint must carry that same receipt. Every check is read-only, so a foreign
-    /// grant, receipt, or endpoint is refused before any loan, charge, settlement, or dispatch.
+    /// the bound instance must have been issued that same receipt. Every check reads recorded values
+    /// only, so a foreign grant, receipt, or instance is refused before any loan, charge, settlement,
+    /// or dispatch.
     ///
     /// # Errors
     ///
     /// Returns [`FsRuntimeRefusal::ReadOnlyGrantDenied`] for a content-mutating request,
     /// [`FsRuntimeRefusal::Undelivered`] for an undelivered request kind,
-    /// [`FsRuntimeRefusal::ForeignInstance`] when the grant, receipt, or bound endpoint does not name
-    /// the same instance, and [`FsRuntimeRefusal::Settlement`] when the landed service refuses
+    /// [`FsRuntimeRefusal::ForeignInstance`] when the grant or the presented receipt does not name
+    /// the bound instance, and [`FsRuntimeRefusal::Settlement`] when the landed service refuses
     /// admission. Every refusal precedes any endpoint call, settlement, charge, or accounting
     /// transition.
-    pub fn read(
+    pub fn read<T: FsOpenInstance + BoundedIoEndpoint>(
         &self,
-        resource: &mut OwnedHostResource<FsReadOnlyEndpoint>,
+        instance: &mut FsReadOnlyInstance<T>,
         receipt: &FsOpenReceipt,
         request: IoRequest,
     ) -> Result<IoCallOutcome, FsRuntimeRefusal> {
         self.grant.admit_request(&request)?;
         self.grant.authorize(FsResourceOperation::Read)?;
-        if !self.grant.covers(receipt) {
-            return Err(FsRuntimeRefusal::ForeignInstance);
-        }
-        let bound = resource
-            .inspect(|endpoint| endpoint.receipt())
-            .map_err(FsRuntimeRefusal::Transport)?;
-        if bound != *receipt {
+        if !self.grant.covers(receipt) || instance.receipt() != receipt {
             return Err(FsRuntimeRefusal::ForeignInstance);
         }
         let mut service = IoSettlementService::new(
@@ -1059,7 +1116,7 @@ impl<'a> FsReadOnlySettlement<'a> {
             self.settled_at_us,
         )
         .map_err(FsRuntimeRefusal::Settlement)?;
-        Ok(service.attempt(resource, request, &[]))
+        Ok(service.attempt(&mut instance.resource, request, &[]))
     }
 }
 
@@ -1084,9 +1141,70 @@ fn component_refusal(parent: &OwnedFd, name: &str, position: u32) -> Option<FsRu
     }
 }
 
-/// Returns the effect-free probe flags of one final component.
-const fn probe_flags() -> OFlags {
-    PROBE_FLAGS
+/// Acquires the readable descriptor of one verified regular file from one pinned `O_PATH` probe.
+///
+/// The probe names the final vnode without opening a data channel, so no device or pipe open entry
+/// point is invoked to classify it. Its type is verified from the pinned descriptor, and the
+/// readable descriptor is then obtained from exactly that vnode through the descriptor namespace,
+/// so no later path resolution can substitute another object. Linux is the only target this slice
+/// delivers, and no other target reaches this function because [`FsTargetMapping::admit`] refuses
+/// it before a root or a grant exists.
+#[cfg(target_os = "linux")]
+fn acquire_regular_file(
+    parent: &OwnedFd,
+    name: &str,
+    position: u32,
+) -> Result<OwnedFd, FsRuntimeRefusal> {
+    let probe = match openat(parent, name, PROBE_FLAGS, Mode::empty()) {
+        Ok(probe) => probe,
+        Err(error) => return Err(map_component_errno(error, position)),
+    };
+    let probe_stat = match fstat(&probe) {
+        Ok(stat) => stat,
+        Err(error) => return Err(map_component_errno(error, position)),
+    };
+    let probe_type = FileType::from_raw_mode(probe_stat.st_mode);
+    if probe_type == FileType::Symlink {
+        return Err(FsRuntimeRefusal::LinkRefused { position });
+    }
+    if probe_type != FileType::RegularFile {
+        return Err(FsRuntimeRefusal::NotRegularFile { position });
+    }
+    let readable = reopen_path(probe.as_raw_fd());
+    let descriptor = match open(readable.as_str(), FILE_FLAGS, Mode::empty()) {
+        Ok(descriptor) => descriptor,
+        Err(error) => return Err(map_component_errno(error, position)),
+    };
+    drop(probe);
+    let stat = match fstat(&descriptor) {
+        Ok(stat) => stat,
+        Err(error) => return Err(map_component_errno(error, position)),
+    };
+    if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile
+        || stat.st_dev != probe_stat.st_dev
+        || stat.st_ino != probe_stat.st_ino
+    {
+        return Err(FsRuntimeRefusal::Native {
+            class: FsNativeClass::StaleDescriptor,
+        });
+    }
+    Ok(descriptor)
+}
+
+/// Refuses acquisition on every target this slice does not deliver.
+///
+/// The refusal is unreachable through [`FsRootDirectory::mount`], which admits only the process
+/// target mapping, but the target scope is stated here rather than left as a compiled fallback that
+/// a reader could mistake for delivered behavior.
+#[cfg(not(target_os = "linux"))]
+fn acquire_regular_file(
+    _parent: &OwnedFd,
+    _name: &str,
+    _position: u32,
+) -> Result<OwnedFd, FsRuntimeRefusal> {
+    Err(FsRuntimeRefusal::UnsupportedTarget {
+        target: FsHostTarget::current(),
+    })
 }
 
 /// Returns the descriptor-namespace path that reopens one pinned probe descriptor.
@@ -1094,20 +1212,9 @@ const fn probe_flags() -> OFlags {
 /// The probe descriptor pins the exact vnode without invoking a device or pipe data open. Reopening
 /// through the descriptor namespace resolves that same vnode, so no later path resolution can
 /// substitute another object before the readable descriptor exists.
+#[cfg(target_os = "linux")]
 fn reopen_path(descriptor: i32) -> String {
-    #[cfg(target_os = "linux")]
-    {
-        format!("/proc/self/fd/{descriptor}")
-    }
-    #[cfg(target_os = "macos")]
-    {
-        format!("/dev/fd/{descriptor}")
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    {
-        let _ = descriptor;
-        String::new()
-    }
+    format!("/proc/self/fd/{descriptor}")
 }
 
 /// Maps one native refusal of the mounted root descriptor.

@@ -86,9 +86,9 @@ pub use event::{
     concurrent_spawn_event, concurrent_task_cancellation_event, concurrent_terminal_event,
 };
 pub use fs::{
-    FsHostTarget, FsNativeClass, FsOpenReceipt, FsReadOnlyEndpoint, FsReadOnlyGrant,
-    FsReadOnlySettlement, FsRootDirectory, FsRuntimeRefusal, FsTargetMapping, FsWalkPolicy,
-    close_read_only,
+    FsHostTarget, FsNativeClass, FsOpenInstance, FsOpenReceipt, FsReadOnlyEndpoint,
+    FsReadOnlyGrant, FsReadOnlyInstance, FsReadOnlySettlement, FsRootDirectory, FsRuntimeRefusal,
+    FsTargetMapping, FsWalkPolicy, close_read_only,
 };
 pub use gantry_host::containment::{
     AdapterPoison, BoundaryFailure, PanicOrigin, catch_gantry, catch_integration,

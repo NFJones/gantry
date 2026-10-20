@@ -157,14 +157,14 @@ impl Fixture {
     }
 
     /// Admits one fresh account and binds one physical endpoint to it.
-    fn bind<T: BoundedIoEndpoint>(&self, endpoint: T) -> OwnedHostResource<T> {
+    fn bind<T: FsOpenInstance + BoundedIoEndpoint>(&self, endpoint: T) -> FsReadOnlyInstance<T> {
         let account = AdmittedResource::admit(
             ResourceCarrier::ReconstructionRecord,
             self.record.clone(),
             self.subject.clone(),
         )
         .unwrap_or_else(|error| panic!("fixture account: {error:?}"));
-        OwnedHostResource::bind(account, endpoint)
+        FsReadOnlyInstance::bind(account, endpoint)
             .unwrap_or_else(|_| panic!("fixture physical binding"))
     }
 
@@ -229,6 +229,14 @@ impl BoundedIoEndpoint for CountingEndpoint {
     }
 }
 
+impl super::sealed::FsOpenInstanceSealed for CountingEndpoint {}
+
+impl FsOpenInstance for CountingEndpoint {
+    fn open_receipt(&self) -> FsOpenReceipt {
+        self.inner.receipt()
+    }
+}
+
 /// One endpoint that reports cancellation on the account lease while the call is in flight.
 struct CancellingEndpoint {
     inner: FsReadOnlyEndpoint,
@@ -246,6 +254,14 @@ impl BoundedIoEndpoint for CancellingEndpoint {
     }
 }
 
+impl super::sealed::FsOpenInstanceSealed for CancellingEndpoint {}
+
+impl FsOpenInstance for CancellingEndpoint {
+    fn open_receipt(&self) -> FsOpenReceipt {
+        self.inner.receipt()
+    }
+}
+
 /// One endpoint that answers a later call with the completion of an earlier one.
 struct StaleEndpoint {
     inner: FsReadOnlyEndpoint,
@@ -258,6 +274,14 @@ impl BoundedIoEndpoint for StaleEndpoint {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let response = self.inner.attempt(call, provided);
         IoHostResponse::new(self.stale.clone(), response.completion().clone())
+    }
+}
+
+impl super::sealed::FsOpenInstanceSealed for StaleEndpoint {}
+
+impl FsOpenInstance for StaleEndpoint {
+    fn open_receipt(&self) -> FsOpenReceipt {
+        self.inner.receipt()
     }
 }
 
@@ -311,7 +335,7 @@ fn cancellation_before_admission_refuses_without_a_read() {
     let mut service = fixture.service(IoOperation::Read);
     let request = IoRequest::read(4).unwrap_or_else(|error| panic!("fixture request: {error:?}"));
     assert_eq!(
-        service.attempt(&mut resource, request, &[]),
+        service.attempt(resource.resource_mut(), request, &[]),
         IoCallOutcome::Refused(IoRefusal::CancelledBeforeAdmission)
     );
     assert_eq!(calls.load(Ordering::SeqCst), 0);
@@ -338,7 +362,7 @@ fn cancellation_during_dispatch_settles_once_and_withholds_the_octets() {
     });
     let mut service = fixture.service(IoOperation::Read);
     let request = IoRequest::read(16).unwrap_or_else(|error| panic!("fixture request: {error:?}"));
-    let outcome = service.attempt(&mut resource, request.clone(), &[]);
+    let outcome = service.attempt(resource.resource_mut(), request.clone(), &[]);
     let IoCallOutcome::Cancelled(cancelled) = outcome else {
         panic!("cancellation during dispatch must settle as cancelled, observed {outcome:?}");
     };
@@ -356,7 +380,7 @@ fn cancellation_during_dispatch_settles_once_and_withholds_the_octets() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     let record = resource.account().durable_record();
     let mut second = fixture.service(IoOperation::Read);
-    let refused = second.attempt(&mut resource, request, &[]);
+    let refused = second.attempt(resource.resource_mut(), request, &[]);
     assert!(
         matches!(refused, IoCallOutcome::Refused(_)),
         "a cancelled account must refuse a later call, observed {refused:?}"
@@ -382,7 +406,7 @@ fn a_stale_completion_cannot_publish_or_settle_twice() {
     });
     let mut service = fixture.service(IoOperation::Read);
     let request = IoRequest::read(16).unwrap_or_else(|error| panic!("fixture request: {error:?}"));
-    let outcome = service.attempt(&mut resource, request.clone(), &[]);
+    let outcome = service.attempt(resource.resource_mut(), request.clone(), &[]);
     let IoCallOutcome::Failed(failed) = outcome else {
         panic!("a stale completion must fail, observed {outcome:?}");
     };
@@ -398,7 +422,7 @@ fn a_stale_completion_cannot_publish_or_settle_twice() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     let record = resource.account().durable_record();
     let mut second = fixture.service(IoOperation::Read);
-    let refused = second.attempt(&mut resource, request, &[]);
+    let refused = second.attempt(resource.resource_mut(), request, &[]);
     assert!(
         matches!(refused, IoCallOutcome::Refused(_)),
         "a contained account must refuse a later call, observed {refused:?}"
@@ -420,7 +444,7 @@ fn a_closed_instance_refuses_later_calls_and_never_reopens() {
     let mut resource = fixture.bind(endpoint);
     let mut service = fixture.service(IoOperation::Read);
     let request = IoRequest::read(16).unwrap_or_else(|error| panic!("fixture request: {error:?}"));
-    let outcome = service.attempt(&mut resource, request.clone(), &[]);
+    let outcome = service.attempt(resource.resource_mut(), request.clone(), &[]);
     let IoCallOutcome::Settled(settlement) = outcome else {
         panic!("the first read must settle, observed {outcome:?}");
     };
@@ -441,7 +465,7 @@ fn a_closed_instance_refuses_later_calls_and_never_reopens() {
         ResourceLifetimeState::Finished
     );
     let mut second = fixture.service(IoOperation::Read);
-    let refused = second.attempt(&mut resource, request, &[]);
+    let refused = second.attempt(resource.resource_mut(), request, &[]);
     assert!(
         matches!(refused, IoCallOutcome::Refused(_)),
         "a closed account must refuse a later call, observed {refused:?}"
@@ -486,4 +510,83 @@ fn a_named_pipe_is_refused_without_blocking() {
         root.open_read_only(&grant).err(),
         Some(FsRuntimeRefusal::NotRegularFile { position: 0 })
     );
+}
+
+/// A write request is refused by the read-only grant before any endpoint dispatch.
+///
+/// The endpoint counts every dispatched call, so a zero count proves the refusal happened in the
+/// grant preflight rather than in a host call. The durable record is compared before and after so no
+/// accounting fact moved either, which is the property the earlier defect violated.
+#[test]
+fn a_write_request_is_refused_without_dispatch_or_accounting_movement() {
+    let tree = TempTree::new();
+    let (root, grant) = tree.endpoint_fixture();
+    let fixture = Fixture::new();
+    let calls = Arc::new(AtomicU64::new(0));
+    let endpoint = root
+        .open_read_only(&grant)
+        .unwrap_or_else(|error| panic!("fixture open: {error:?}"));
+    let receipt = endpoint.receipt();
+    let mut instance = fixture.bind(CountingEndpoint {
+        inner: endpoint,
+        calls: Arc::clone(&calls),
+    });
+    let record = instance.account().durable_record();
+    let settlement = FsReadOnlySettlement::new(
+        &grant,
+        &fixture.machine,
+        fixture.owner,
+        allowance(8),
+        Vec::new(),
+        5,
+    )
+    .unwrap_or_else(|error| panic!("fixture settlement: {error:?}"));
+    let request = IoRequest::write(4).unwrap_or_else(|error| panic!("fixture request: {error:?}"));
+    assert_eq!(
+        settlement.read(&mut instance, &receipt, request),
+        Err(FsRuntimeRefusal::ReadOnlyGrantDenied {
+            operation: FsResourceOperation::Write,
+        })
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(instance.account().durable_record(), record);
+    assert_eq!(
+        instance.account().ledger().lifetime(),
+        ResourceLifetimeState::Active
+    );
+}
+
+/// A close presenting another open instance receipt is refused and preserves the account.
+///
+/// The second open names the same root, path, and mapping, so only the open-instance identity
+/// differs. The refusal must precede accounting, leaving the first instance active with an identical
+/// durable record rather than stranding it in a finishing state.
+#[test]
+fn a_wrong_instance_close_is_refused_and_preserves_the_account() {
+    let tree = TempTree::new();
+    let (root, grant) = tree.endpoint_fixture();
+    let fixture = Fixture::new();
+    let first = root
+        .open_read_only(&grant)
+        .unwrap_or_else(|error| panic!("fixture open: {error:?}"));
+    let first_receipt = first.receipt();
+    let second = root
+        .open_read_only(&grant)
+        .unwrap_or_else(|error| panic!("fixture open: {error:?}"));
+    let second_receipt = second.receipt();
+    drop(second);
+    let mut instance = fixture.bind(first);
+    let record = instance.account().durable_record();
+    assert_eq!(
+        close_read_only(&mut instance, &grant, &second_receipt, fixture.owner, 11),
+        Err(FsRuntimeRefusal::ForeignInstance)
+    );
+    assert_eq!(
+        instance.account().ledger().lifetime(),
+        ResourceLifetimeState::Active
+    );
+    assert_eq!(instance.account().durable_record(), record);
+    let lifetime = close_read_only(&mut instance, &grant, &first_receipt, fixture.owner, 12)
+        .unwrap_or_else(|error| panic!("fixture close: {error:?}"));
+    assert_eq!(lifetime, ResourceLifetimeState::Finished);
 }
