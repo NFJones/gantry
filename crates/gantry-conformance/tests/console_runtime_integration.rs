@@ -626,6 +626,30 @@ fn an_over_accepting_carrier_is_a_contained_fault() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
+/// An instance issued by another granting access is refused before any dispatch.
+#[test]
+fn a_foreign_granting_access_cannot_write_an_instance() {
+    let fixture = Fixture::new();
+    let calls = Arc::new(AtomicU64::new(0));
+    let issuer = access(Vec::new());
+    let mut instance = fixture.bind(
+        &issuer,
+        ConsoleRedirectedSink::new(CountingCarrier {
+            accepted: 2,
+            calls: Arc::clone(&calls),
+        }),
+    );
+    let granted = access(vec![output_grant()]);
+    let route = fixture
+        .route(&granted, ConsoleAccessIdentity::Injected(output_grant()))
+        .unwrap_or_else(|error| panic!("fixture route: {error}"));
+    assert_eq!(
+        route.write(ConsoleOutputSink::Redirected(&mut instance), b"ab"),
+        Err(ConsoleRuntimeRefusal::ForeignGrantingAccess)
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
 /// Shutdown refuses while a bound instance was not finished, and keeps the task outcome.
 #[test]
 fn shutdown_refuses_an_unfinished_output_instance() {

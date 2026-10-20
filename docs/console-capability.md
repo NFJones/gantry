@@ -178,7 +178,9 @@ Delivered:
   `ConsoleOutputAccess::bind` binds one such sink to one admitted account. The returned instance
   borrows its granting access, so no other access can write, finish, or shut it down, and the landed
   transport authenticates the pending occurrence's operation identity, resource generation, owner
-  generation, and receiver kind when the one call borrows its receiver loan.
+  generation, and receiver kind when the one call borrows its receiver loan. The write route
+  authenticates the issuing access by identity before any dispatch, so an instance issued by another
+  access is refused even when the presenting route holds a valid grant.
 - **One admitted bounded request and exact progress.** A write consumes exactly one request whose
   declared quantity is the presented octet count, presents only the declared initialized octets,
   and settles exactly one call. The published accepted prefix is that settlement's own evidence,
@@ -189,10 +191,12 @@ Delivered:
   protected evidence; a late, foreign, or over-accepted completion is a contained fault that
   publishes no octet; and a second attempt on the occurrence a grant already reserved is refused
   before any dispatch under the landed duplicate-settlement refusal, even through a separately
-  admitted account. The reservation is taken atomically before dispatch and released only when the
-  attempt dispatched nothing. Nothing is retried, replayed, or deduplicated. Exclusivity across two
-  independently constructed grant values is not claimed: one launch injects one grant per group, and
-  the landed machine occurrence and registry carrier issuance own the cross-grant fact.
+  admitted account or across an interleaved attempt for another occurrence. The reservation is taken
+  atomically before dispatch, kept as a winner once the attempt dispatched anything, and released
+  only when the attempt dispatched nothing, so a winner is never evicted. Nothing is retried,
+  replayed, or deduplicated. Exclusivity across two independently constructed grant values is not
+  claimed: one launch injects one grant per group, and the landed machine occurrence and registry
+  carrier issuance own the cross-grant fact.
 - **Grantor-owned shutdown.** `ConsoleOutputInstance::finish` is the one end-of-access route for one
   bound account, and it finalizes through the landed account finalization: the account leaves the
   active lifetime, its carrier value is disposed once, and it admits no later call.

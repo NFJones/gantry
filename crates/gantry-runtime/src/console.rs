@@ -34,11 +34,13 @@
 //! # One settlement per occurrence inside one grant
 //!
 //! A console write consumes one machine-issued occurrence, and `GNT-20` allows one resource
-//! generation exactly one settlement. The grantor-owned access reserves the occurrence atomically
-//! **before** dispatch and releases the reservation only when nothing was dispatched, so two
-//! attempts admitted under one grant - including two separately admitted accounts and two attempts
-//! that overlap - cannot both settle it: the second is refused under the landed
-//! `duplicate-settlement` refusal. The record is one occurrence identity and no octet, it holds no
+//! generation exactly one settlement. The grantor-owned access takes the occurrence atomically
+//! **before** dispatch and keeps it as a winner once the attempt dispatched anything, so two
+//! attempts admitted under one grant - including two separately admitted accounts, two attempts that
+//! overlap, and an interleaved attempt for another occurrence - cannot both settle it: a second
+//! attempt on a kept winner is refused under the landed `duplicate-settlement` refusal. A winner is
+//! never evicted by a different occurrence, and only an attempt that dispatched nothing releases its
+//! own outstanding reservation. The record is occurrence identities and no octet, it holds no
 //! output, and it is dropped with the access.
 //!
 //! One launch injects one grant per requirement group of `GNT-46.8`, so one run admits one
@@ -66,9 +68,10 @@
 //!
 //! Every output instance is borrowed from the access that issued it, so no output instance can
 //! outlive its granting access, and no other access can finish, write, or shut down an instance it
-//! did not issue. [`ConsoleOutputInstance::finish`] is the one end-of-access route for one bound
-//! account: it finalizes through the landed account finalization, so the account leaves the active
-//! lifetime once, its carrier value is disposed once, and it admits no later call.
+//! did not issue: [`ConsoleOutputSettlement::write`] authenticates the granting access by identity
+//! before any dispatch, and [`ConsoleOutputInstance::finish`] is the one end-of-access route for one
+//! bound account. Finalization goes through the landed account finalization, so the account leaves
+//! the active lifetime once, its carrier value is disposed once, and it admits no later call.
 //!
 //! The owner that granted the access owns the final flush and the shutdown. Consuming
 //! [`ConsoleOutputAccess`] through [`ConsoleOutputAccess::settle_shutdown`] is the only route that
@@ -116,6 +119,16 @@ use crate::{
     ResourceSubjectBinding,
 };
 
+/// The outcome of one attempt to reserve a machine occurrence for one grantor.
+enum Reservation {
+    /// This attempt owns the occurrence until it settles or releases it.
+    Reserved,
+    /// Another attempt under this grant is outstanding.
+    Busy,
+    /// This grantor already settled the occurrence.
+    AlreadySettled,
+}
+
 /// The grantor-owned console output access of one launch.
 ///
 /// The only constructor presents exactly one launch injection, so the value that owns the injected
@@ -128,7 +141,8 @@ use crate::{
 /// buffered output.
 pub struct ConsoleOutputAccess {
     injection: ConsoleAccessInjection,
-    reserved: Mutex<Option<ResourceSubjectBinding>>,
+    winners: Mutex<Vec<ResourceSubjectBinding>>,
+    inflight: Mutex<Option<ResourceSubjectBinding>>,
     open: AtomicUsize,
 }
 
@@ -142,7 +156,8 @@ impl ConsoleOutputAccess {
     pub fn from_launch(grantor: &'static str, grants: Vec<ConsoleGrant>) -> Self {
         Self {
             injection: ConsoleAccessInjection::from_launch(grantor, grants),
-            reserved: Mutex::new(None),
+            winners: Mutex::new(Vec::new()),
+            inflight: Mutex::new(None),
             open: AtomicUsize::new(0),
         }
     }
@@ -220,27 +235,48 @@ impl ConsoleOutputAccess {
 
     /// Reserves the presented occurrence atomically for this grantor.
     ///
-    /// Returns `false` when this grantor already reserved that exact occurrence, so a second attempt
-    /// cannot reach dispatch. An unreadable record refuses conservatively.
-    fn reserve(&self, subject: &ResourceSubjectBinding) -> bool {
-        match self.reserved.lock() {
-            Ok(mut reserved) => {
-                if reserved.as_ref() == Some(subject) {
-                    return false;
-                }
-                *reserved = Some(subject.clone());
-                true
-            }
-            Err(_) => false,
+    /// A kept winner refuses immediately, and one outstanding attempt at a time is admitted, so two
+    /// attempts under this grant cannot both reach dispatch. An unreadable record refuses
+    /// conservatively.
+    fn reserve(&self, subject: &ResourceSubjectBinding) -> Reservation {
+        let winners = match self.winners.lock() {
+            Ok(winners) => winners,
+            Err(_) => return Reservation::Busy,
+        };
+        if winners.iter().any(|winner| winner == subject) {
+            return Reservation::AlreadySettled;
         }
+        let mut inflight = match self.inflight.lock() {
+            Ok(inflight) => inflight,
+            Err(_) => return Reservation::Busy,
+        };
+        if inflight.is_some() {
+            return Reservation::Busy;
+        }
+        *inflight = Some(subject.clone());
+        drop(inflight);
+        drop(winners);
+        Reservation::Reserved
     }
 
-    /// Releases a reservation whose attempt dispatched nothing.
-    fn release(&self, subject: &ResourceSubjectBinding) {
-        if let Ok(mut reserved) = self.reserved.lock()
-            && reserved.as_ref() == Some(subject)
+    /// Keeps the presented occurrence as a winner and clears its outstanding reservation.
+    fn record_settled(&self, subject: &ResourceSubjectBinding) {
+        if let Ok(mut winners) = self.winners.lock()
+            && !winners.iter().any(|winner| winner == subject)
         {
-            *reserved = None;
+            winners.push(subject.clone());
+        }
+        self.clear_inflight(subject);
+    }
+
+    /// Releases one outstanding reservation whose attempt dispatched nothing.
+    ///
+    /// A kept winner is never released here, so an interleaved occurrence can never evict one.
+    fn clear_inflight(&self, subject: &ResourceSubjectBinding) {
+        if let Ok(mut inflight) = self.inflight.lock()
+            && inflight.as_ref() == Some(subject)
+        {
+            *inflight = None;
         }
     }
 
@@ -446,6 +482,8 @@ pub enum ConsoleRuntimeRefusal {
     },
     /// This output instance already finished.
     AlreadyFinished,
+    /// The presented output instance was issued by another granting access.
+    ForeignGrantingAccess,
 }
 
 impl fmt::Display for ConsoleRuntimeRefusal {
@@ -476,6 +514,10 @@ impl fmt::Display for ConsoleRuntimeRefusal {
             Self::AlreadyFinished => {
                 write!(formatter, "this output instance already finished")
             }
+            Self::ForeignGrantingAccess => write!(
+                formatter,
+                "this output instance was issued by another granting access"
+            ),
         }
     }
 }
@@ -555,6 +597,9 @@ impl<'a> ConsoleOutputSettlement<'a> {
     /// `duplicate-settlement` refusal. A reservation is released when the attempt dispatched
     /// nothing, so an unattempted occurrence stays available.
     ///
+    /// The presented instance must have been issued by this route own granting access: a foreign
+    /// instance is refused by identity before any dispatch, whatever grant this route presents.
+    ///
     /// # Errors
     ///
     /// Returns [`ConsoleRuntimeRefusal::Request`] for a refused request,
@@ -562,8 +607,9 @@ impl<'a> ConsoleOutputSettlement<'a> {
     /// byte-preserving control-bearing refusal and the unsupported-sink refusal,
     /// [`ConsoleRuntimeRefusal::AttachedTerminalUndelivered`] for the declared attached terminal this
     /// slice does not deliver, and [`ConsoleRuntimeRefusal::Settlement`] when the landed service
-    /// refuses admission or this occurrence already settled. Every one of those refusals precedes any
-    /// dispatch.
+    /// refuses admission or this occurrence already settled, and
+    /// [`ConsoleRuntimeRefusal::ForeignGrantingAccess`] for an instance issued by another access.
+    /// Every one of those refusals precedes any dispatch.
     pub fn write<T: BoundedIoEndpoint>(
         &self,
         sink: ConsoleOutputSink<'_, '_, T>,
@@ -587,16 +633,22 @@ impl<'a> ConsoleOutputSettlement<'a> {
                 preserved_octets: octets.to_vec(),
             });
         };
+        if !std::ptr::eq(instance.access, self.access) {
+            return Err(ConsoleRuntimeRefusal::ForeignGrantingAccess);
+        }
         let subject =
             self.machine
                 .pending_resource_subject()
                 .ok_or(ConsoleRuntimeRefusal::Settlement(
                     IoRefusal::NoPendingOccurrence,
                 ))?;
-        if !self.access.reserve(&subject) {
-            return Err(ConsoleRuntimeRefusal::Settlement(
-                IoRefusal::DuplicateSettlement,
-            ));
+        match self.access.reserve(&subject) {
+            Reservation::Reserved => {}
+            Reservation::Busy | Reservation::AlreadySettled => {
+                return Err(ConsoleRuntimeRefusal::Settlement(
+                    IoRefusal::DuplicateSettlement,
+                ));
+            }
         }
         let mut service = match IoSettlementService::new(
             self.machine,
@@ -608,13 +660,15 @@ impl<'a> ConsoleOutputSettlement<'a> {
         ) {
             Ok(service) => service,
             Err(refusal) => {
-                self.access.release(&subject);
+                self.access.clear_inflight(&subject);
                 return Err(ConsoleRuntimeRefusal::Settlement(refusal));
             }
         };
         let outcome = service.attempt(&mut instance.resource, request, octets);
         if matches!(&outcome, IoCallOutcome::Refused(_)) {
-            self.access.release(&subject);
+            self.access.clear_inflight(&subject);
+        } else {
+            self.access.record_settled(&subject);
         }
         Ok(ConsoleWriteCall { admission, outcome })
     }

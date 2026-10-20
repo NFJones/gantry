@@ -92,10 +92,10 @@ fn live_operation() -> ExecutableOperation {
     }
 }
 
-/// One machine prepared at exactly one pending live-resource occurrence.
-fn live_machine() -> Machine {
+/// One machine at the declared workflow prepared at exactly one pending live-resource occurrence.
+fn live_machine(workflow_path: &str) -> Machine {
     let workflow = Workflow {
-        path: path("crate::main"),
+        path: path(workflow_path),
         parameters: Vec::new(),
         result: TypeDescriptor::UNIT,
         effects: EffectSet::default(),
@@ -114,7 +114,7 @@ fn live_machine() -> Machine {
         .unwrap_or_else(|| panic!("fixture limits"));
     let mut machine = Machine::new(
         Arc::new(program),
-        &path("crate::main"),
+        &path(workflow_path),
         Vec::new(),
         execution(),
         limits,
@@ -158,7 +158,12 @@ struct Fixture {
 impl Fixture {
     /// Builds one fixture whose ledger retains the resource and loan liveness roots.
     fn new() -> Self {
-        let machine = live_machine();
+        Self::named("crate::main")
+    }
+
+    /// Builds one fixture at the declared workflow, so two named fixtures hold distinct subjects.
+    fn named(workflow_path: &str) -> Self {
+        let machine = live_machine(workflow_path);
         let subject = machine
             .pending_resource_subject()
             .unwrap_or_else(|| panic!("the fixture machine must prepare one pending subject"));
@@ -937,4 +942,139 @@ fn an_output_instance_finishes_only_once() {
     let (task_outcome, settlement) = access.settle_shutdown("task:ok");
     assert_eq!(task_outcome, "task:ok");
     assert!(settlement.is_ok());
+}
+
+/// An instance issued by another granting access is refused before any dispatch.
+#[test]
+fn a_foreign_granting_access_cannot_write_an_instance() {
+    let fixture = Fixture::new();
+    let calls = Arc::new(AtomicU64::new(0));
+    // The issuing access holds no grant at all; the route access is the only granted one.
+    let issuer = access(Vec::new());
+    let mut instance = fixture.bind(
+        &issuer,
+        ConsoleRedirectedSink::new(DeclaredCarrier {
+            accepted: 2,
+            calls: Arc::clone(&calls),
+        }),
+    );
+    let granted = access(vec![output_grant()]);
+    let route = fixture.route(&granted, output_grant());
+    assert_eq!(
+        route.write(ConsoleOutputSink::Redirected(&mut instance), b"ab"),
+        Err(ConsoleRuntimeRefusal::ForeignGrantingAccess)
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+/// A second occurrence cannot evict the occurrence a grant already settled.
+#[test]
+fn a_second_occurrence_cannot_evict_a_kept_winner() {
+    let first = Fixture::new();
+    let second = Fixture::named("crate::other");
+    let calls = Arc::new(AtomicU64::new(0));
+    let access = access(vec![output_grant()]);
+    let mut a1 = first.bind(
+        &access,
+        ConsoleRedirectedSink::new(DeclaredCarrier {
+            accepted: 2,
+            calls: Arc::clone(&calls),
+        }),
+    );
+    let mut a2 = first.bind(
+        &access,
+        ConsoleRedirectedSink::new(DeclaredCarrier {
+            accepted: 2,
+            calls: Arc::clone(&calls),
+        }),
+    );
+    let mut b = second.bind(
+        &access,
+        ConsoleRedirectedSink::new(DeclaredCarrier {
+            accepted: 2,
+            calls: Arc::clone(&calls),
+        }),
+    );
+    let route_a = first.route(&access, output_grant());
+    let route_b = second.route(&access, output_grant());
+    let settled_a = route_a
+        .write(ConsoleOutputSink::Redirected(&mut a1), b"ab")
+        .unwrap_or_else(|error| panic!("fixture write: {error}"));
+    assert!(matches!(settled_a.outcome(), IoCallOutcome::Settled(_)));
+    let settled_b = route_b
+        .write(ConsoleOutputSink::Redirected(&mut b), b"ab")
+        .unwrap_or_else(|error| panic!("fixture second occurrence: {error}"));
+    assert!(matches!(settled_b.outcome(), IoCallOutcome::Settled(_)));
+    assert_eq!(
+        route_a
+            .write(ConsoleOutputSink::Redirected(&mut a2), b"ab")
+            .err(),
+        Some(ConsoleRuntimeRefusal::Settlement(
+            IoRefusal::DuplicateSettlement
+        )),
+        "an interleaved occurrence must not evict a kept winner"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
+/// A refused attempt for another occurrence cannot evict a kept winner either.
+#[test]
+fn a_refused_attempt_cannot_evict_a_kept_winner() {
+    let first = Fixture::new();
+    let second = Fixture::named("crate::other");
+    let calls = Arc::new(AtomicU64::new(0));
+    let access = access(vec![output_grant()]);
+    let mut a1 = first.bind(
+        &access,
+        ConsoleRedirectedSink::new(DeclaredCarrier {
+            accepted: 2,
+            calls: Arc::clone(&calls),
+        }),
+    );
+    let mut a2 = first.bind(
+        &access,
+        ConsoleRedirectedSink::new(DeclaredCarrier {
+            accepted: 2,
+            calls: Arc::clone(&calls),
+        }),
+    );
+    let mut b = second.bind(
+        &access,
+        ConsoleRedirectedSink::new(DeclaredCarrier {
+            accepted: 2,
+            calls: Arc::clone(&calls),
+        }),
+    );
+    let route_a = first.route(&access, output_grant());
+    let settled_a = route_a
+        .write(ConsoleOutputSink::Redirected(&mut a1), b"ab")
+        .unwrap_or_else(|error| panic!("fixture write: {error}"));
+    assert!(matches!(settled_a.outcome(), IoCallOutcome::Settled(_)));
+    let exhausted = ConsoleOutputSettlement::new(
+        &access,
+        ConsoleAccessIdentity::Injected(output_grant()),
+        &second.machine,
+        second.owner,
+        allowance(0),
+        Vec::new(),
+        7,
+    )
+    .unwrap_or_else(|error| panic!("fixture route: {error}"));
+    assert!(
+        matches!(
+            exhausted.write(ConsoleOutputSink::Redirected(&mut b), b"ab"),
+            Err(ConsoleRuntimeRefusal::Settlement(_))
+        ),
+        "an exhausted allowance must refuse the other occurrence before dispatch"
+    );
+    assert_eq!(
+        route_a
+            .write(ConsoleOutputSink::Redirected(&mut a2), b"ab")
+            .err(),
+        Some(ConsoleRuntimeRefusal::Settlement(
+            IoRefusal::DuplicateSettlement
+        )),
+        "a refused attempt must not evict a kept winner"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
