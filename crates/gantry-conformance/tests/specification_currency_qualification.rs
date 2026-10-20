@@ -743,7 +743,8 @@ fn validate_successor_digests(root: &Path, successors: &[Successor]) -> Result<(
             }
             continue;
         }
-        let bytes = fs::read(root.join(&successor.path)).map_err(io_error)?;
+        let bytes = fs::read(root.join(&successor.path))
+            .map_err(|error| format!("could not read successor {}: {error}", successor.path))?;
         if successor.sha256 != sha256(&bytes) {
             return Err(format!("successor digest differs: {}", successor.path));
         }
@@ -823,10 +824,14 @@ impl TemporaryDirectory {
         &self.root
     }
 
-    /// Writes one file the caller names again explicitly.
+    /// Writes one file the caller names again explicitly, creating its parent directories.
     fn file(&self, name: &str, bytes: &[u8]) {
-        fs::write(self.root.join(name), bytes)
-            .unwrap_or_else(|error| panic!("temporary file: {error}"));
+        let target = self.root.join(name);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)
+                .unwrap_or_else(|error| panic!("temporary file parent: {error}"));
+        }
+        fs::write(&target, bytes).unwrap_or_else(|error| panic!("temporary file: {error}"));
     }
 }
 
@@ -863,6 +868,47 @@ fn qualification_validator_rejects_successor_and_dirty_input_counterexamples() {
     let mut unpinned = control.clone();
     unpinned.sha256.clear();
     assert!(validate_successor_digests(temporary.path(), std::slice::from_ref(&unpinned)).is_err());
+
+    // A pinned successor whose file is absent is refused with the exact path in the error, so a
+    // vanished file is never mistaken for a digest mismatch or silently accepted.
+    let absent = Successor {
+        path: "absent-successor.json".to_owned(),
+        sha256: sha256(&body),
+    };
+    match validate_successor_digests(temporary.path(), std::slice::from_ref(&absent)) {
+        Ok(()) => panic!("an absent successor file must not verify"),
+        Err(error) => assert!(
+            error.starts_with("could not read successor absent-successor.json: "),
+            "unexpected absent-successor error: {error}"
+        ),
+    }
+
+    // A self-referential record may omit its own digest, accepts a matching pin, and is still
+    // refused when it pins a digest its bytes do not carry.
+    let self_bytes = b"self-referential record bytes";
+    temporary.file(RECORD_PATH, self_bytes);
+    let empty_self = Successor {
+        path: RECORD_PATH.to_owned(),
+        sha256: String::new(),
+    };
+    assert_eq!(
+        validate_successor_digests(temporary.path(), std::slice::from_ref(&empty_self)),
+        Ok(())
+    );
+    let pinned_self = Successor {
+        path: RECORD_PATH.to_owned(),
+        sha256: sha256(self_bytes),
+    };
+    assert_eq!(
+        validate_successor_digests(temporary.path(), std::slice::from_ref(&pinned_self)),
+        Ok(())
+    );
+    let mut wrongly_pinned_self = pinned_self.clone();
+    wrongly_pinned_self.sha256 = "0".repeat(64);
+    assert_eq!(
+        validate_successor_digests(temporary.path(), std::slice::from_ref(&wrongly_pinned_self)),
+        Err(format!("successor digest differs: {RECORD_PATH}"))
+    );
 
     // The live record keeps its exact shape invariants: the recorded successor set is the candidate
     // descendant set, and only a self-referential record may leave its digest empty.
