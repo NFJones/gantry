@@ -100,8 +100,45 @@ use crate::{
     IoSettlementService, Machine, OwnedHostResource,
 };
 
-#[cfg(test)]
+/// The acquisition lanes need the one delivered target mapping.
+#[cfg(all(test, target_os = "linux"))]
 mod tests;
+
+/// Target-scope lanes that hold on every named host this repository supports.
+#[cfg(test)]
+mod target_tests {
+    /// A Linux process delivers the mapping it runs on.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_delivers_the_process_mapping() {
+        use super::{FsHostTarget, FsTargetMapping};
+
+        assert_eq!(FsHostTarget::current(), FsHostTarget::Linux);
+        assert!(FsTargetMapping::for_current().is_ok());
+    }
+
+    /// A macOS process refuses the mapping and a mount before any acquisition.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_refuses_the_mapping_and_a_mount_before_acquisition() {
+        use super::{FsHostTarget, FsRootDirectory, FsRuntimeRefusal, FsTargetMapping};
+
+        assert_eq!(FsHostTarget::current(), FsHostTarget::MacOs);
+        assert!(FsHostTarget::MacOs.walk_policy().is_none());
+        assert_eq!(
+            FsTargetMapping::for_current().err(),
+            Some(FsRuntimeRefusal::UnsupportedTarget {
+                target: FsHostTarget::MacOs,
+            })
+        );
+        assert_eq!(
+            FsRootDirectory::mount("data", std::path::Path::new("/")).err(),
+            Some(FsRuntimeRefusal::UnsupportedTarget {
+                target: FsHostTarget::MacOs,
+            })
+        );
+    }
+}
 
 /// The exact flags of one resolved directory component.
 const DIRECTORY_FLAGS: OFlags = OFlags::RDONLY

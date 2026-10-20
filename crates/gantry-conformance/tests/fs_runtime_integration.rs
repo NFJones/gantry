@@ -4,7 +4,12 @@
 //! one declared path value, one read-only grant, one bounded read settled through the public
 //! settlement service, one close, and the refusals of the declaration model. They cover path escape,
 //! link refusal, a concurrent link swap, read-only denial, short reads and end of stream, the
-//! delivered target mappings, and the fact that accounting never reconstructs a live descriptor.
+//! target policy, and the fact that accounting never reconstructs a live descriptor.
+//!
+//! These lanes need the one delivered Linux acquisition mapping, so they compile only there; the
+//! target-scope refusals that must hold on every named host live in `fs_target_policy`.
+
+#![cfg(target_os = "linux")]
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -14,19 +19,19 @@ use gantry::identity::ProtocolIdentity;
 use gantry::ir::generated::{OperationSiteKind, RecoveryClass};
 use gantry::ir::{
     CanonicalPath, CanonicalSignature, DisclosureCharge, EffectSet, ExecutableAction,
-    ExecutableOperation, ExternalOutcome, FS_RESOLUTION_COUNT, FsAction, FsDiagnosticCode, FsPath,
-    FsResourceOperation, Instruction, InstructionKind, IoOperation, IoRequest, LivenessRoot,
-    LoanId, LogicalOperationId, MachineProgram, ObservationAllowance, OperationAbi, OperationKind,
-    OwnerGeneration, ProgressObservation, ReceiverOwnership, ResourceCarrier, ResourceGenerationId,
-    ResourceLedger, ResourceLifetimeState, ResourceState, StaticSiteId, StructuralPosition,
-    TypeDescriptor, Workflow, fs_durable_carrier_is_admissible,
+    ExecutableOperation, ExternalOutcome, FsAction, FsDiagnosticCode, FsPath, FsResourceOperation,
+    Instruction, InstructionKind, IoOperation, IoRequest, LivenessRoot, LoanId, LogicalOperationId,
+    MachineProgram, ObservationAllowance, OperationAbi, OperationKind, OwnerGeneration,
+    ProgressObservation, ReceiverOwnership, ResourceCarrier, ResourceGenerationId, ResourceLedger,
+    ResourceLifetimeState, ResourceState, StaticSiteId, StructuralPosition, TypeDescriptor,
+    Workflow, fs_durable_carrier_is_admissible,
 };
 use gantry::portable::IdentityKind;
 use gantry::runtime::{
     AdmittedResource, BoundedIoEndpoint, FsHostTarget, FsOpenInstance, FsReadOnlyGrant,
-    FsReadOnlyInstance, FsReadOnlySettlement, FsRootDirectory, FsRuntimeRefusal, FsTargetMapping,
-    IoCallBinding, IoCallOutcome, IoEvidence, IoHostCompletion, IoOccurrence, IoOperationalFault,
-    Machine, MachineLimits, close_read_only, decode_resource_reconstruction_record,
+    FsReadOnlyInstance, FsReadOnlySettlement, FsRootDirectory, FsRuntimeRefusal, IoCallBinding,
+    IoCallOutcome, IoEvidence, IoHostCompletion, IoOccurrence, IoOperationalFault, Machine,
+    MachineLimits, close_read_only, decode_resource_reconstruction_record,
     encode_resource_reconstruction_record,
 };
 use gantry::value::DEFAULT_VALUE_LIMITS;
@@ -870,50 +875,6 @@ fn accounting_records_carry_no_live_handle_or_path_spelling() {
         .unwrap_or_else(|error| panic!("fixture decode: {error:?}"));
     assert_eq!(decoded, record);
     assert_eq!(record, resource.account().durable_record());
-}
-
-/// Only the Linux mapping is delivered, and every other target refuses before execution.
-///
-/// macOS is refused because no effect-free no-follow acquisition method for it is established: an
-/// `O_EVTONLY` probe still reaches FIFO reader wait and device `d_open`, so claiming delivery would
-/// claim an equivalence this slice cannot test. The refusal is an initial runtime availability
-/// limit of this slice, recorded as a typed preflight outcome before any descriptor exists.
-#[test]
-fn only_the_linux_mapping_is_delivered_and_other_targets_refuse() {
-    let linux = FsHostTarget::Linux
-        .walk_policy()
-        .unwrap_or_else(|| panic!("the linux mapping must be delivered"));
-    assert!(linux.no_follow_components());
-    assert!(linux.directory_components());
-    assert!(linux.close_on_exec());
-    assert_eq!(linux.resolution_count(), FS_RESOLUTION_COUNT);
-    assert!(
-        FsHostTarget::MacOs.walk_policy().is_none(),
-        "macos must not claim a delivered mapping without an effect-free acquisition"
-    );
-    assert_eq!(
-        FsTargetMapping::admit(FsHostTarget::MacOs).err(),
-        Some(FsRuntimeRefusal::UnsupportedTarget {
-            target: FsHostTarget::MacOs,
-        })
-    );
-    assert!(FsHostTarget::Unsupported.walk_policy().is_none());
-    assert_eq!(
-        FsTargetMapping::admit(FsHostTarget::Unsupported).err(),
-        Some(FsRuntimeRefusal::UnsupportedTarget {
-            target: FsHostTarget::Unsupported,
-        })
-    );
-    if cfg!(target_os = "linux") {
-        assert_eq!(FsHostTarget::current(), FsHostTarget::Linux);
-    }
-    if cfg!(target_os = "macos") {
-        assert_eq!(FsHostTarget::current(), FsHostTarget::MacOs);
-        assert!(
-            FsTargetMapping::for_current().is_err(),
-            "the macos process target must be refused before acquisition"
-        );
-    }
 }
 
 /// Closing an instance releases it once, and no later call is admitted.
