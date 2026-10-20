@@ -3,15 +3,15 @@
   "issue": "be47045e-93fb-473b-af7a-2d459aae091c",
   "status": "verified",
   "specification_sha256": "cc428bbcf15f9f2f4d5142bf6f28c4fe020de169bd49f22b039b509a923b9071",
-  "superseded_specification_sha256": "49c3fe100b4109ba227f9d48cd083a6f32753d7ae881afbbb67b3c40273b0cbf",
+  "superseded_specification_sha256": "0d1d2fa009913f4d0154dc1e70072505abb23e93b6044db4c7319c17c836c302",
   "candidate": {
-    "base_commit": "677776c73b1abbffbc05195be814fb422c4a6868",
-    "currency_repair_parent_commit": "677776c73b1abbffbc05195be814fb422c4a6868",
-    "reviewed_through_commit": "a3ef7029f3d30829b5edb2888e1b5da38c92e5a0",
-    "since_commit": "c52dee4df0cb31b707efee842bd0d9e96d793c99",
-    "tree_sha": "c0210a187f53510871b6d50849201436050ecfc1",
-    "identity_note": "Content identity is the candidate input digest set plus the candidate tree hash. The record names the reviewed-through filesystem runtime candidate committed before it, so the tree hash and every input digest are recomputed from the exact bytes that candidate carries; the record commit is not part of its own identity.",
-    "toolchain": "1.97.1 minimal with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
+    "base_commit": "754fa86700255696542d059f3bfd97b9d963b319",
+    "currency_repair_parent_commit": "dd5b8bb9a67d4d00547764652224a4b3ff272954",
+    "reviewed_through_commit": "dd5b8bb9a67d4d00547764652224a4b3ff272954",
+    "since_commit": "754fa86700255696542d059f3bfd97b9d963b319",
+    "tree_sha": "16e8931ce8af608953f82a9b6c9496b09e25847d",
+    "identity_note": "Content identity is the reviewed candidate tree plus the exact input digests. The record commit is not part of its own identity; it changes only the self-referential conformance publication, manifest, index, verification report, and this record, and the governed generator recomputes those bytes to a fixpoint before the record is committed.",
+    "toolchain": "rustc 1.97.1 (8bab26f4f 2026-07-14) with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
     "inputs": [
       {
         "path": "SPEC.md",
@@ -40,81 +40,67 @@
     ]
   },
   "drift_review": {
-    "specification_commits_reviewed": 3,
+    "specification_commits_reviewed": 1,
     "requirements_before": {
-      "count": 644,
-      "clauses": 928
-    },
-    "requirements_after": {
       "count": 654,
       "clauses": 938
     },
+    "requirements_after": {
+      "count": 662,
+      "clauses": 946
+    },
     "added_requirements": [
       {
-        "id": "GNT-52.0-native-directory-foundation-scope",
+        "id": "GNT-48.2-telemetry-record-kinds-and-explicit-context",
         "clauses": 1,
         "profile_reviews": [
           "analyzer:covered"
         ]
       },
       {
-        "id": "GNT-52.1-native-directory-requirement-and-mapping-policy",
+        "id": "GNT-48.3-telemetry-sink-policy-and-finite-limits",
         "clauses": 1,
         "profile_reviews": [
           "analyzer:covered"
         ]
       },
       {
-        "id": "GNT-52.2-native-directory-path-and-fact-binding",
+        "id": "GNT-48.4-telemetry-atomic-admission-and-cardinality",
         "clauses": 1,
         "profile_reviews": [
           "analyzer:covered"
         ]
       },
       {
-        "id": "GNT-52.3-native-directory-exclusive-issuance-and-ownership",
+        "id": "GNT-48.5-telemetry-protected-labels-identity-and-release",
         "clauses": 1,
         "profile_reviews": [
           "analyzer:covered"
         ]
       },
       {
-        "id": "GNT-52.4-native-directory-revocation-fencing",
+        "id": "GNT-48.6-telemetry-required-acknowledgement-and-best-effort",
         "clauses": 1,
         "profile_reviews": [
           "analyzer:covered"
         ]
       },
       {
-        "id": "GNT-52.5-native-directory-completion-and-late-response",
+        "id": "GNT-48.7-telemetry-backpressure-cancellation-and-shutdown",
         "clauses": 1,
         "profile_reviews": [
           "analyzer:covered"
         ]
       },
       {
-        "id": "GNT-52.6-native-directory-durable-exclusion",
+        "id": "GNT-48.8-telemetry-sink-fault-containment",
         "clauses": 1,
         "profile_reviews": [
           "analyzer:covered"
         ]
       },
       {
-        "id": "GNT-52.7-native-directory-child-projection",
-        "clauses": 1,
-        "profile_reviews": [
-          "analyzer:covered"
-        ]
-      },
-      {
-        "id": "GNT-52.8-native-directory-refusal-vocabulary",
-        "clauses": 1,
-        "profile_reviews": [
-          "analyzer:covered"
-        ]
-      },
-      {
-        "id": "GNT-52.9-native-directory-non-claims",
+        "id": "GNT-48.9-telemetry-evidence-separation-and-non-claims",
         "clauses": 1,
         "profile_reviews": [
           "analyzer:covered"
@@ -122,19 +108,18 @@
       }
     ],
     "changed_requirement_bodies": [
-      "GNT-2.1",
-      "GNT-49.1-environment-modules-and-item-rows"
+      "GNT-48.0-observe-foundation-scope"
     ],
     "removed_requirements": [],
     "profile_applicability": [
       {
         "profile": "analyzer",
-        "before_covered": 585,
+        "before_covered": 595,
         "before_not_applicable": 190,
-        "after_covered": 595,
+        "after_covered": 603,
         "after_not_applicable": 190,
         "after_planned": 0,
-        "outcome": "the ten added clauses declare analyzer applicability only, so analyzer coverage rises by ten and no reviewed clause is planned or unresolved"
+        "outcome": "The added Section 48 clauses are covered at the analyzer profile; no other profile review changed state."
       },
       {
         "profile": "concurrent-evaluator",
@@ -143,7 +128,7 @@
         "after_covered": 330,
         "after_not_applicable": 9,
         "after_planned": 0,
-        "outcome": "unchanged because the added clauses declare analyzer applicability only"
+        "outcome": "No added clause changes this profile's reviewed applicability."
       },
       {
         "profile": "durable-runtime",
@@ -152,7 +137,7 @@
         "after_covered": 363,
         "after_not_applicable": 16,
         "after_planned": 0,
-        "outcome": "unchanged because the added clauses declare analyzer applicability only"
+        "outcome": "No added clause changes this profile's reviewed applicability."
       },
       {
         "profile": "embedding",
@@ -161,7 +146,7 @@
         "after_covered": 307,
         "after_not_applicable": 51,
         "after_planned": 0,
-        "outcome": "unchanged because the added clauses declare analyzer applicability only"
+        "outcome": "No added clause changes this profile's reviewed applicability."
       },
       {
         "profile": "evaluator",
@@ -170,7 +155,7 @@
         "after_covered": 323,
         "after_not_applicable": 16,
         "after_planned": 0,
-        "outcome": "unchanged because the added clauses declare analyzer applicability only"
+        "outcome": "No added clause changes this profile's reviewed applicability."
       },
       {
         "profile": "frontend",
@@ -179,27 +164,20 @@
         "after_covered": 59,
         "after_not_applicable": 16,
         "after_planned": 0,
-        "outcome": "unchanged because the added clauses declare analyzer applicability only"
+        "outcome": "No added clause changes this profile's reviewed applicability."
       }
     ],
     "reviewed_categories": [
-      "native-directory-foundation-scope",
-      "requirement-identity-and-target-mapping-policy",
-      "path-and-subject-fact-binding",
-      "exclusive-issuance-and-ownership",
-      "live-revocation-fencing",
-      "completion-and-late-response",
-      "durable-exclusion",
-      "child-projection",
-      "refusal-vocabulary-and-non-claims",
-      "review-repair-registry-minted-issuance-identity",
-      "review-repair-completion-slot-fact-comparison",
-      "review-repair-refusal-ownership",
-      "conformance-evidence-recut",
-      "generated-protocol-and-publication",
-      "qualification-recut"
+      "Section 48 telemetry record kinds and explicit context",
+      "immutable finite per-sink limits and zero-denial dimensions",
+      "atomic admission, cardinality, retention, and bounded best-effort drop accounting",
+      "protected reference identity and destination-specific release before export queueing",
+      "required acknowledgement versus best-effort queued or dropped outcomes",
+      "bounded backpressure, cancellation, and shutdown drain accounting",
+      "sink-fault poisoning, redacted diagnostics, and non-recursive logging",
+      "telemetry evidence separation from Section 12 semantic evidence"
     ],
-    "outcome": "Section 52 adds ten declaration-layer clauses that publish the application-native directory contract the environment section deferred. Two independent review rounds drove seven normative repairs: a live issuance is identified by a registry-minted issuance identity, not by declaration fields, so a second registry that declares the same issuer identity still cannot adopt another registry handle; declared paths must be the path admitted under the declaring mapping; native path text is explicitly not a GNT-47.2 value and neither relaxes nor extends it; settlement retires the live issuance rather than the handle value, so a refused late presentation leaves the same handle routable and settleable once; the slot independently declares subject facts, and both issuance and completion compare them; and native-dir-requirement-mismatch is owned by the clause that defines it. GNT-2.1 registers the new identifiers, GNT-49.1 cites the section that supplies its deferred contract, and the conformance records that pin the specification revision and artifact digests were recut to the candidate bytes without changing any unrelated verdict."
+    "outcome": "The only specification change in the reviewed window is the bounded Section 48 telemetry policy and admission slice. The eight added clauses are covered by the telemetry_policy conformance lane; GNT-48.0 is rescoped so its non-claim remains true. No requirement was removed, no other body changed, and no profile other than analyzer gains review state."
   },
   "section14_review": {
     "excerpt_count_before": 51,
@@ -208,21 +186,21 @@
       "covered"
     ],
     "every_excerpt_has_evidence": true,
-    "outcome": "Every retained Section 14 excerpt is still covered with executable evidence; the revision adds no excerpt and removes none."
+    "outcome": "Every retained Section 14 excerpt remains covered with executable evidence; the revision adds no excerpt and removes none."
   },
   "qualification": {
-    "scope": "Bounded Section 47 rooted read-only filesystem runtime candidate: one declared-root mount over one pinned descriptor, one unclonable read-only endpoint over the landed bounded-I/O settlement, read-only grant, path, and mapping values, a descriptor-relative no-follow component walk, effect-free O_PATH probing with pinned-vnode reacquisition on the one delivered Linux mapping, an FS-owned affine instance that binds the open receipt before accounting, close through the landed account, Linux-gated acquisition lanes with all-host and macOS-only target-scope refusal lanes, the corrected integration record, and the derived publication and qualification recut. No writes, replacement, receipts, locks, watch, poisoning, revocation, quotas, or adapter fault containment are claimed.",
+    "scope": "Bounded Section 48 telemetry policy and admission candidate: typed log, metric, and trace records, explicit context, immutable finite per-sink limits, atomic admission with no truncation or eviction, protected destination release before export queueing, required acknowledgement versus best-effort queued or dropped outcomes, bounded backpressure and cancellation, shutdown drain accounting, and one-instance sink-fault containment. No sink, adapter, queue implementation, runtime emission, source-global context, durable delivery, or Section 12 evidence use is claimed.",
     "lanes": [
       {
-        "lane": "filesystem_runtime",
+        "lane": "telemetry_policy",
         "result": "pass"
       },
       {
-        "lane": "filesystem_runtime_integration",
+        "lane": "observe_declaration",
         "result": "pass"
       },
       {
-        "lane": "filesystem_target_policy",
+        "lane": "requirements_ledger",
         "result": "pass"
       },
       {
@@ -240,16 +218,20 @@
         "result": "rc 0, no diff"
       },
       {
+        "command": "cargo check --locked --workspace --all-targets --all-features",
+        "result": "rc 0"
+      },
+      {
         "command": "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
         "result": "rc 0"
       },
       {
         "command": "cargo run --locked -p xtask -- generate requirements",
-        "result": "requirement inventory already current at 654 records and 938 clauses"
+        "result": "requirement inventory already current at 662 records and 946 clauses"
       },
       {
         "command": "cargo run --locked -p xtask -- generate protocol",
-        "result": "corpus, manifest, publication artifacts, index, and verification report regenerated to a fixpoint"
+        "result": "publication artifacts, index, and verification report regenerated to a fixpoint"
       },
       {
         "command": "cargo run --locked -p xtask -- check generated",
@@ -264,36 +246,34 @@
         "result": "rc 0, publication lockfile and dependency governance valid"
       },
       {
-        "command": "cargo test --locked -p gantry-runtime fs:: --all-features",
-        "result": "8 of 8 runtime lanes pass, including the Linux process-mapping lane"
+        "command": "cargo test --locked -p gantry-conformance --test telemetry_policy",
+        "result": "15 of 15 telemetry policy lanes pass"
       },
       {
-        "command": "cargo test --locked -p gantry-conformance --test fs_runtime_integration --all-features",
-        "result": "12 of 12 acquisition lanes pass on the delivered mapping"
+        "command": "cargo test --locked -p gantry-conformance --test observe_foundation",
+        "result": "6 of 6 declaration lanes pass"
       },
       {
-        "command": "cargo test --locked -p gantry-conformance --test fs_target_policy --all-features",
-        "result": "2 of 2 all-host target-policy lanes pass on Linux"
+        "command": "cargo test --locked -p gantry-conformance --test publication_set",
+        "result": "2 of 2 publication lanes pass"
       },
       {
-        "command": "cargo test --locked --workspace --all-targets --all-features --no-fail-fast",
-        "result": "every target passes except the inherited general_purpose_preregistration environment read of a gitignored reference note"
+        "command": "python3 governance/audit_spec_revision.py",
+        "result": "mismatch_count 0 after the recut"
       }
     ],
     "publication": {
       "member_count": 7,
-      "identity_at_currency_repair_parent": "239b431fa866bb0a7d8646b4696abbe4991bd5df4ebc4132fb55427984a59b57",
-      "identity_note": "The publication set identity at the currency repair parent is recorded from the base this candidate was rebased onto; this recut changes the conformance bundle, index, and verification report because the candidate source, lane, and documentation bytes changed, and the governed generator recomputed them to a fixpoint before the record was committed.",
+      "identity_at_currency_repair_parent": "b46fea68e06eacf8fcf0e1a8a3cd0ed6c906816b2dc51fccee60c9d4e16f3e98",
+      "identity_note": "The publication identity at the base is recorded from the candidate this slice was based on; this recut changes the conformance bundle, manifest, index, and verification report because the candidate source, clause, and documentation bytes changed, and the governed generator recomputed them to a fixpoint before the record was committed.",
       "verification": "protocol/publication/verification-v1.json verifies the seven-artifact set after regeneration"
     }
   },
   "gaps": [
-    "Rooted read-only open, read, and close are the only delivered std.fs operations: writes, replacement, receipts, locks, watch, short-write prefixes, poisoning, revocation, quotas, and adapter fault containment remain undelivered and unclaimed.",
-    "macOS acquisition is refused at target scope (UnsupportedTarget) before a root, grant, path resolution, or descriptor exists, because no effect-free no-follow acquisition method for it is established; this is an initial runtime availability limit, not macOS support, and no macOS acquisition behavior or native macOS run is claimed.",
-    "Acquisition lanes are gated to the delivered mapping, so a macOS test run exercises only the target-scope refusal lanes and never a mount that must refuse.",
-    "The landed generic host-resource inspection route was removed rather than narrowed, so any future consumer that needs a transport-owned authenticated association API must wait for that contract instead of borrowing the host value.",
-    "The inherited general_purpose_preregistration failure stays outside this slice: it requires the gitignored docs/reference/general-purpose-refactor-issue-plan.md, and no filesystem claim depends on it.",
-    "The specification drift window is the already-reviewed c52dee4..candidate range inherited from the base; this candidate adds no specification or requirement text and asserts no new requirement coverage."
+    "This slice is a pure declaration and admission model: no telemetry sink, adapter, queue implementation, retention store, background task, durable record, or runtime emission is delivered.",
+    "No source-global context, implicit sink discovery, cross-sink ordering, durable or global exactly-once delivery, or Section 12 evidence use is claimed.",
+    "The inherited general_purpose_preregistration lane still requires the gitignored docs/reference/general-purpose-refactor-issue-plan.md fixture; no telemetry claim depends on it.",
+    "Release declarations are modeled for the null telemetry destination only; other Section 15.10 destinations and operational disclosure budgets remain with their owning contracts."
   ],
   "successors": [
     {
