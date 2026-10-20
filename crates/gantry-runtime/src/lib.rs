@@ -11,6 +11,7 @@
 mod admission;
 mod blocking;
 mod configuration;
+mod console;
 mod coordinator;
 #[cfg(feature = "durable")]
 mod durable;
@@ -48,6 +49,10 @@ pub use blocking::{BlockingWorkConfigurationError, BoundedBlockingWorkService};
 pub use configuration::{
     AsyncCapacityLimits, ConfigurationError, ConfigurationErrorKind, InterpreterConfiguration,
     RequiredConfiguration, RetryDefaults,
+};
+pub use console::{
+    ConsoleOutputAccess, ConsoleOutputInstance, ConsoleOutputSettlement, ConsoleOutputSink,
+    ConsoleRedirectedSink, ConsoleRuntimeRefusal, ConsoleWriteCall,
 };
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use coordinator::DurableGraphTransaction;

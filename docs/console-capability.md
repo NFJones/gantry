@@ -5,7 +5,9 @@ identity, its host-domain family, applicability, and categories, the declared op
 recovery classes, the shape a console capability requirement must have, the normative bounds already
 in force, its separation from the common I/O contract and the pure families, and what the surface
 does not claim. It records declarations; it does not add a right spelling, a terminal-control
-capability, an adapter, or a runtime.
+capability, an adapter, or a runtime facility. A separate section records the one runtime arm that
+now consumes these declarations, and that arm claims no adapter, terminal delivery, or
+cross-target behavior.
 
 ## Package identity
 
@@ -151,5 +153,65 @@ no console clause is a release authority, a redaction rule, or an implicit decla
 - It provides no adapter, no deterministic or raw adapter, no cross-target mapping, no launcher or
   protected-rendering arrangement, no terminal handle, and no descriptor, and it claims no runtime
   availability, quota, charge, or cancellation facility.
-- It claims no behavior: the surface is a declaration surface, and the runtime, adapter, and
-  cross-target arms that consume it are not published here.
+- It claims no behavior here: this note records a declaration surface, and the one runtime arm that
+  consumes it is recorded in "Runtime integration" below with its own explicit non-claims.
+
+## Runtime integration: redirected console output
+
+`crates/gantry-runtime/src/console.rs` is the first runtime integration of this surface. It
+delivers `std.console::output::write@1` for the one output target `GNT-46.9` declares first — a
+redirected or otherwise non-controlling sink — over the landed common bounded I/O settlement of
+`crates/gantry-runtime/src/io_settlement.rs` and the landed machine resource carrier of
+`crates/gantry-runtime/src/resource_transport.rs`. It adds no declaration: every refusal it
+presents is decided by the model this note records, so it mints no console diagnostic of its own.
+Its public conformance evidence is `crates/gantry-conformance/tests/console_runtime_integration.rs`
+and its runtime lanes are `crates/gantry-runtime/src/console/tests.rs`.
+
+Delivered:
+
+- **Injected access.** `ConsoleOutputAccess::from_launch` is the only constructor, so access is
+  injected and never reconstructed from an ambient descriptor. A requester route admits one
+  presented identity for the `output-flush` group under the `GNT-46.8` precedence: an ambient
+  descriptor first, then a missing group, then a grant naming another group, then a forged grant.
+  Every refusal precedes the request, the dispatch, the charge, and the settlement.
+- **Authenticated receiver.** `ConsoleRedirectedSink` is the sink declaration itself, and a
+  `ConsoleOutputInstance` binds one such sink to one admitted account: the landed transport
+  authenticates the pending occurrence's operation identity, resource generation, owner generation,
+  and receiver kind when the one call borrows its receiver loan.
+- **One admitted bounded request and exact progress.** A write consumes exactly one request whose
+  declared quantity is the presented octet count, presents only the declared initialized octets,
+  and settles exactly one call. The published accepted prefix is that settlement's own evidence,
+  so a short write stays `short-write` and leaves the remainder with its caller, while a zero-octet
+  write and a write beyond `IO_REQUEST_OCTET_BOUND` are refused before any dispatch.
+- **One completion.** A cancellation observed before admission refuses without a dispatch; a
+  cancellation during dispatch settles once as cancelled with the accepted prefix withheld as
+  protected evidence; a late, foreign, or over-accepted completion is a contained fault that
+  publishes no octet; and a duplicate presentation is refused without a second call. Nothing is
+  retried, replayed, or deduplicated.
+- **Grantor-owned shutdown.** `ConsoleOutputAccess::settle_shutdown` is the only route to a
+  final-flush settlement, and it consumes the access, so no requester route outlives it. It returns
+  the fixed task outcome by value, unchanged, beside a flush-only settlement, so a failed flush
+  never rewrites that outcome.
+
+Deliberately not delivered, and refused rather than simulated:
+
+- **Attached-terminal output.** Control-bearing octets presented to the declared attached terminal
+  are refused under `console-control-bearing-output-refused` with the presented octets published
+  unchanged, and octets that boundary admits are refused as an undelivered runtime availability
+  fact with the same preserved octets. The `0x1b` predicate is a decision over presented octets and
+  is never a terminal-safety qualification, so an injected `control` grant also never delivers
+  here: the refusal is never a silent control grant. Physical attached-terminal delivery needs a
+  separately reviewed terminal-safety contract.
+- **No console host adapter contract.** The slice binds the landed executor-neutral
+  `BoundedIoEndpoint` carrier the requester arranged. It introduces no console-specific adapter,
+  host trait, descriptor access, or package dependency, and `std.console` depends on no adapter.
+- **No carrier flush.** The console retains no octet between calls, so it holds nothing of its own
+  to flush: the carrier flush belongs to the grantor that owns the carrier, and this slice publishes
+  that outcome instead of claiming a flush of its own.
+- **No target qualification.** The slice contains no target-specific work, so it claims no macOS
+  or other target-specific delivery and refuses nothing by target: attached-terminal delivery is
+  undelivered on every host this crate builds for.
+
+Still owed to `GNT-GP-CONSOLE-001`: console input, terminal observation, separately authorized
+terminal control, physical attached-terminal delivery with a genuine terminal-safety
+qualification, encoding, and resize.
