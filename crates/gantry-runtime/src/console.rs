@@ -540,10 +540,10 @@ impl<'a> ConsoleOutputSettlement<'a> {
     /// itself observes - cancellation of the occurrence before dispatch, closed admission, or an
     /// unreadable admission lease - is carried inside the returned [`ConsoleWriteCall::outcome`]
     /// instead, because the call was admitted and only its attempt was refused. A cancellation that
-    /// won an earlier settlement of this occurrence is therefore reported as `cancelled-before-
-    /// admission` inside the call rather than as a duplicate, since the landed precedence reports the
-    /// lease's cancellation before an already-claimed permit. Every one of these refusals precedes
-    /// any dispatch, so no path delivers a second octet.
+    /// won an earlier settlement of this occurrence is therefore reported inside the call as
+    /// `cancelled-before-admission` rather than as a duplicate, since the landed precedence reports
+    /// the lease's cancellation before an already-claimed permit. Every one of these refusals
+    /// precedes any dispatch, so no path delivers a second octet.
     ///
     /// The presented instance must have been issued by this route own granting access: a foreign
     /// instance is refused by identity before any dispatch, whatever grant this route presents.
@@ -554,11 +554,13 @@ impl<'a> ConsoleOutputSettlement<'a> {
     /// [`ConsoleRuntimeRefusal::Authority`] for a declared output-boundary refusal, including the
     /// byte-preserving control-bearing refusal and the unsupported-sink refusal,
     /// [`ConsoleRuntimeRefusal::AttachedTerminalUndelivered`] for the declared attached terminal this
-    /// slice does not deliver, and [`ConsoleRuntimeRefusal::Settlement`] when the landed settlement
-    /// service refuses an attempt before it dispatches or when this occurrence@Qs one settlement is
-    /// already claimed by another account or route, and
-    /// [`ConsoleRuntimeRefusal::ForeignGrantingAccess`] for an instance issued by another access.
-    /// Every one of those refusals precedes any dispatch.
+    /// slice does not deliver, and [`ConsoleRuntimeRefusal::Settlement`] only when
+    /// [`IoSettlementService::new`] refuses to construct the service for this attempt or when that
+    /// attempt reports `duplicate-settlement` because another account or route already owns the one
+    /// settlement of this occurrence, and [`ConsoleRuntimeRefusal::ForeignGrantingAccess`] for an
+    /// instance issued by another access. A cancellation, closed admission, or unreadable admission
+    /// lease observed by an admitted attempt stays inside its returned outcome instead. Every one of
+    /// those refusals precedes any dispatch.
     pub fn write<T: BoundedIoEndpoint>(
         &self,
         sink: ConsoleOutputSink<'_, '_, T>,
