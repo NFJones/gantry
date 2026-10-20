@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "293136ab2847bd3a47776866ed24af40875e3b00449c5ae587425da1d8bdaac8",
-  "byte_length": 1450104,
+  "specification_sha256": "0d1d2fa009913f4d0154dc1e70072505abb23e93b6044db4c7319c17c836c302",
+  "byte_length": 1450547,
   "line_count": 18316,
   "regions": [
     {
@@ -44,7 +44,7 @@
       "kind": "normative",
       "start_line": 9780,
       "end_line": 18316,
-      "sha256": "ef2272d1f94f12f8d0232a045f1f3434207278bac83121da217560f91c59544f",
+      "sha256": "f324c2cdcc81a3b988e289038aa4a502ec1570f6a8e0ff02931b97a9d2b48e1b",
       "rationale": null
     }
   ],
@@ -46413,7 +46413,8 @@
               "evidence": [
                 "crates/gantry-conformance/tests/env_native_directory_contract.rs#declared_mappings_are_the_only_admitted_target_case_combinations",
                 "crates/gantry-conformance/tests/env_native_directory_contract.rs#mapping_admission_and_comparison_are_explicit_and_target_aware",
-                "crates/gantry-conformance/tests/env_native_directory_contract.rs#authority_requires_a_right_and_the_application_mode"
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#authority_requires_a_right_and_the_application_mode",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#a_path_admitted_under_another_mapping_is_refused"
               ],
               "rationale": null
             }
@@ -46425,11 +46426,11 @@
       "id": "GNT-52.2-native-directory-path-and-fact-binding",
       "span_start_line": 18286,
       "span_end_line": 18289,
-      "span_sha256": "2a2e70bf5f00aef438eb4ad42318b86ad68530885e23bb30271fe197de82c215",
+      "span_sha256": "10884cec790e311397fa1151e32fa40ca2567f9ba4041ff7ced19ee6efe32786",
       "anchor_line": 18286,
       "body_start_line": 18287,
       "body_end_line": 18288,
-      "body_sha256": "5e92717dfec302288b1ed540b6434576320b99b4407e133bfa89d031ac5dac24",
+      "body_sha256": "1f0be0f5a167921d62f42b81bbecc6d7e166815fd7e682273d50729b12b029be",
       "profiles": [
         "analyzer"
       ],
@@ -46457,7 +46458,9 @@
                 "crates/gantry-conformance/tests/env_native_directory_contract.rs#every_route_compares_the_exact_requirement_identity",
                 "crates/gantry-conformance/tests/env_native_directory_contract.rs#every_route_compares_exact_facts_including_execution_and_task_provenance",
                 "crates/gantry-conformance/tests/env_native_directory_contract.rs#issuance_binds_the_handle_path_to_the_attached_slot_path",
-                "crates/gantry-conformance/tests/env_native_directory_contract.rs#path_text_is_admitted_data_that_never_grants_authority"
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#path_text_is_admitted_data_that_never_grants_authority",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#a_recreated_registry_with_the_same_issuer_identity_cannot_adopt_another_handle",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#attached_slot_facts_must_be_the_declared_subject_facts"
               ],
               "rationale": null
             }
@@ -46469,11 +46472,11 @@
       "id": "GNT-52.3-native-directory-exclusive-issuance-and-ownership",
       "span_start_line": 18290,
       "span_end_line": 18293,
-      "span_sha256": "3daeb0bdb0917268157555f90eb5e03b532f146efc2df12d02cfdb771db7c8c5",
+      "span_sha256": "55622e3b3929ac2b77f40af4e84a16f7bf6904a9d0982f5af3a31889239ff519",
       "anchor_line": 18290,
       "body_start_line": 18291,
       "body_end_line": 18292,
-      "body_sha256": "014e83e32e7254b144c96c66df173b24f35738550ea631280a99430990cc4a39",
+      "body_sha256": "4947d61fcf6f65a67b4f2261dfa9cc2766a41dd677a9b5d728b40202df538ff6",
       "profiles": [
         "analyzer"
       ],
@@ -46500,7 +46503,8 @@
               "evidence": [
                 "crates/gantry-conformance/tests/env_native_directory_contract.rs#exclusive_issuance_admits_one_live_handle_per_slot",
                 "crates/gantry-conformance/tests/env_native_directory_contract.rs#a_settled_slot_reissues_only_a_succeeding_owner_generation",
-                "crates/gantry-conformance/tests/env_native_directory_contract.rs#the_handle_is_affine_and_settles_exactly_once"
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#the_handle_is_affine_and_settles_exactly_once",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#a_recreated_registry_with_the_same_issuer_identity_cannot_adopt_another_handle"
               ],
               "rationale": null
             }
@@ -46541,7 +46545,8 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
-                "crates/gantry-conformance/tests/env_native_directory_contract.rs#revocation_fences_every_route_of_already_issued_handles"
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#revocation_fences_every_route_of_already_issued_handles",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#a_recreated_registry_with_the_same_issuer_identity_cannot_adopt_another_handle"
               ],
               "rationale": null
             }
@@ -46553,11 +46558,11 @@
       "id": "GNT-52.5-native-directory-completion-and-late-response",
       "span_start_line": 18298,
       "span_end_line": 18301,
-      "span_sha256": "daf20ae52ee5b8d3fed1c4046b879d50146655656950e29c4a948727332d047c",
+      "span_sha256": "d7f15feca6a919d5b5d7c87eff1d98a11b59b407cc1da2d56bb6b01bd88f27de",
       "anchor_line": 18298,
       "body_start_line": 18299,
       "body_end_line": 18300,
-      "body_sha256": "6f999aabeff245571589ae932acf29b17bfc7d8125b9fa25bfbccb0056d79eb1",
+      "body_sha256": "67ab3c49d8c1829bc496ac066a93d65105b2ae4bb35cca79c8662f5cdf46592a",
       "profiles": [
         "analyzer"
       ],
@@ -46583,7 +46588,9 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/env_native_directory_contract.rs#late_and_repeated_completions_are_refused_without_effect",
-                "crates/gantry-conformance/tests/env_native_directory_contract.rs#the_handle_is_affine_and_settles_exactly_once"
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#the_handle_is_affine_and_settles_exactly_once",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#a_refused_late_presentation_leaves_the_handle_usable",
+                "crates/gantry-conformance/tests/env_native_directory_contract.rs#completion_compares_the_attached_slot_facts"
               ],
               "rationale": null
             }
@@ -46678,11 +46685,11 @@
       "id": "GNT-52.8-native-directory-refusal-vocabulary",
       "span_start_line": 18310,
       "span_end_line": 18313,
-      "span_sha256": "752fbf9d10878fee6c81aafc4d6c9dcf8338fc16bbc99f41084a0f0626d7511a",
+      "span_sha256": "742943a0d2c7c0562f057ca7168c41d5445a3d4b32d12fc756aea9958cfc7c16",
       "anchor_line": 18310,
       "body_start_line": 18311,
       "body_end_line": 18312,
-      "body_sha256": "f45a1914eca6307637c9f4ca0cf2a8e75878d6978a45763e51efb705c14a187e",
+      "body_sha256": "6f55373d1fe6ce4ea959ae2a78bbc6117c60db1325124bc4e4d159c5a198a982",
       "profiles": [
         "analyzer"
       ],

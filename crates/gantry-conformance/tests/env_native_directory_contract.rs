@@ -181,6 +181,32 @@ fn section_52_clauses_and_refusals_are_closed_bound_and_published() {
         assert!(code.as_str().starts_with("native-dir-"));
         assert!(clauses.contains(code.clause()));
     }
+    for (code, index) in [
+        (NativeDirectoryDiagnosticCode::Amplification, 7),
+        (NativeDirectoryDiagnosticCode::DuplicateIssuance, 3),
+        (NativeDirectoryDiagnosticCode::EmptyRights, 1),
+        (NativeDirectoryDiagnosticCode::ForeignSubject, 2),
+        (NativeDirectoryDiagnosticCode::InvalidChildPath, 7),
+        (NativeDirectoryDiagnosticCode::InvalidPath, 1),
+        (NativeDirectoryDiagnosticCode::InvalidSlotIdentity, 3),
+        (NativeDirectoryDiagnosticCode::LateCompletion, 5),
+        (NativeDirectoryDiagnosticCode::NeverResurrects, 6),
+        (NativeDirectoryDiagnosticCode::NotLive, 3),
+        (NativeDirectoryDiagnosticCode::PathBindingRefused, 2),
+        (NativeDirectoryDiagnosticCode::PathGrantsNoAuthority, 6),
+        (NativeDirectoryDiagnosticCode::RequirementMismatch, 1),
+        (NativeDirectoryDiagnosticCode::Revoked, 4),
+        (NativeDirectoryDiagnosticCode::StaleGeneration, 3),
+        (NativeDirectoryDiagnosticCode::UndeclaredMapping, 1),
+        (NativeDirectoryDiagnosticCode::UnsupportedMode, 1),
+        (NativeDirectoryDiagnosticCode::UnsupportedRepresentation, 1),
+    ] {
+        assert_eq!(
+            code.clause(),
+            NATIVE_DIRECTORY_CLAUSES[index],
+            "each spelling names exactly one owning clause",
+        );
+    }
 
     let specification = read_text(&workspace_root().join("SPEC.md"));
     let quote = char::from(34);
@@ -197,6 +223,16 @@ fn section_52_clauses_and_refusals_are_closed_bound_and_published() {
             "SPEC.md publishes every native-dir spelling"
         );
     }
+    assert!(
+        specification.contains(
+            "native-dir-empty-rights, native-dir-invalid-path, native-dir-requirement-mismatch"
+        ),
+        "GNT-52.8 assigns requirement-mismatch to the clause that defines it",
+    );
+    assert!(
+        specification.contains("native-dir-foreign-subject and native-dir-path-binding-refused"),
+        "GNT-52.8 keeps the path and fact refusals with GNT-52.2",
+    );
 }
 
 #[test]
@@ -793,6 +829,95 @@ fn a_refused_late_presentation_leaves_the_handle_usable() {
             )
             .is_ok(),
         "the same handle still settles exactly once afterwards",
+    );
+}
+
+#[test]
+fn a_recreated_registry_with_the_same_issuer_identity_cannot_adopt_another_handle() {
+    let facts = subject(1, "run", 4);
+    let held = requirement(NativeDirectoryRequirementKind::Open, "Int");
+    let child = RightsSet::from_rights(&[AuthorityRight::Observe]);
+    let mut first = NativeDirectoryLedger::new(NativeDirectoryIssuer::new(1));
+    let mut second = NativeDirectoryLedger::new(NativeDirectoryIssuer::new(1));
+    let handle = issue(&mut first, "slot-a", "/srv/work", &facts, 2);
+    let foreign = issue(&mut second, "slot-a", "/srv/work", &facts, 2);
+    assert_ne!(
+        handle.issuance(),
+        foreign.issuance(),
+        "two registries that declare one issuer identity still mint distinct identities",
+    );
+
+    assert_eq!(
+        refusal(first.route(&foreign, &held, &facts)),
+        NativeDirectoryDiagnosticCode::ForeignSubject,
+    );
+    assert_eq!(
+        refusal(first.project_child(&foreign, &NativeDirectoryChildGrant::new(child, "reports"))),
+        NativeDirectoryDiagnosticCode::ForeignSubject,
+    );
+    assert_eq!(
+        refusal(first.settle(
+            &foreign,
+            NativeDirectoryCompletion::Completed { settled_at: 4 }
+        )),
+        NativeDirectoryDiagnosticCode::ForeignSubject,
+    );
+    assert!(
+        second.route(&foreign, &held, &facts).is_ok(),
+        "the minting registry routes its own issuance",
+    );
+    match second.settle(
+        &foreign,
+        NativeDirectoryCompletion::Cancelled { settled_at: 5 },
+    ) {
+        Ok(winner) => assert!(winner.is_cancellation()),
+        Err(error) => panic!("the minting registry settles its own issuance: {error}"),
+    }
+    first.revoke(AuthorityGeneration::new(2));
+    assert_eq!(
+        refusal(first.route(&handle, &held, &facts)),
+        NativeDirectoryDiagnosticCode::Revoked,
+    );
+    assert!(
+        first
+            .settle(
+                &handle,
+                NativeDirectoryCompletion::Completed { settled_at: 6 },
+            )
+            .is_ok(),
+        "revocation fences routes and leaves the first registry issuance settleable once",
+    );
+}
+
+#[test]
+fn completion_compares_the_attached_slot_facts() {
+    let facts = subject(1, "run", 4);
+    let other = subject(1, "rerun", 4);
+    let held = requirement(NativeDirectoryRequirementKind::Open, "Int");
+    let mut ledger = NativeDirectoryLedger::new(NativeDirectoryIssuer::new(1));
+    let handle = issue(&mut ledger, "slot-a", "/srv/work", &facts, 2);
+    assert_eq!(
+        refusal(ledger.settle_completion(
+            &slot("slot-a", "/srv/work", &other),
+            &facts,
+            NativeDirectoryCompletion::Completed { settled_at: 4 },
+        )),
+        NativeDirectoryDiagnosticCode::ForeignSubject,
+    );
+    assert!(
+        ledger.settlement("slot-a").is_none(),
+        "a refused completion records no winner",
+    );
+    assert!(ledger.route(&handle, &held, &facts).is_ok());
+    assert!(
+        ledger
+            .settle_completion(
+                &slot("slot-a", "/srv/work", &facts),
+                &facts,
+                NativeDirectoryCompletion::Completed { settled_at: 5 },
+            )
+            .is_ok(),
+        "the authentic completion still settles exactly once",
     );
 }
 

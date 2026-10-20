@@ -98,23 +98,23 @@
     },
     {
       "path": "protocol/catalogs/ir-contracts-v1.json",
-      "sha256": "ec16c35ec0938de1c1256f3860c8e61f1f62ae8b651ea75146deaf8bd2a061f7"
+      "sha256": "f309b6fa11fea84aeb75d478c995a4e904f88b1d9fc7fc054c78c849d77e1571"
     },
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "91f0ee923b791f61d580a50d4ebce1b0e5a79554941c6971339f27c730997db0"
+      "sha256": "34968eeb59392a24ded6d0a0d8cf944bda93cca97341a9961420d85c315dabb7"
     },
     {
       "path": "protocol/conformance/analyzer-validity-v1.json",
-      "sha256": "53800927c07fe4a70e98e1383a66b5872bbd6d109d1ae698b56660d98b4c1932"
+      "sha256": "5a88b33c5ee979b98dbba2e40820ed89b25b2a61f82daf6911b1a601942e4e99"
     },
     {
       "path": "protocol/conformance/generics-traits-frontend-v1.json",
-      "sha256": "d5729fc7f10490999b79dc9bcd6a1e16488685c99b334336493241de7e1333c2"
+      "sha256": "2a462842c2b7998a3d10accbd50f19b88b979a092049a575c9429b7ec79856be"
     },
     {
       "path": "protocol/conformance/generics-traits-ir-v1.json",
-      "sha256": "a878dd11780eed9c1b92b8d0b862ad385f697e8cd6c4258c0ef8c790c6869958"
+      "sha256": "fe1c9ea06db55a350b291e3860ccb85919f0ea40545b92879ded99754a2b0e4c"
     },
     {
       "path": "protocol/goldens/analyzer-validity-model-v1.json",
@@ -122,15 +122,15 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "a1888a3e6042c0fdb82abad3cff8982988810636aae498c22d0f6e2aa3acda1b"
+      "sha256": "61603b41a2ff518c6b0beb93dffd2c49894a79a7b8930c0fe6700e4e27c694f9"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "02166c70eddd6e5240f77bf229d2c280ce27b7b576fe9f768539e5f35398fa27"
+      "sha256": "40909a8dfc87e252ed1bfd13e147652e684052b13f43affba4eb786f354b340c"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
-      "sha256": "3553a3d37476d7fd69c1d1b04d935314f3b7a30f2f6ad58008ff3515cfb5c3e8"
+      "sha256": "815f1f4779ea0ab9df75445fdeea6e6cf912ab20f556d0174b6942c1133ab4d7"
     },
     {
       "path": "protocol/schemas/canonical-ir-v1.schema.json",
@@ -211,7 +211,7 @@
   "section14_excerpt_count": 51,
   "specification": {
     "path": "SPEC.md",
-    "sha256": "293136ab2847bd3a47776866ed24af40875e3b00449c5ae587425da1d8bdaac8"
+    "sha256": "0d1d2fa009913f4d0154dc1e70072505abb23e93b6044db4c7319c17c836c302"
   },
   "status": "verified",
   "validation_commands": [

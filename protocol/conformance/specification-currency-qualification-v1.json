@@ -2,7 +2,7 @@
   "format": "gantry.specification-currency-qualification/v1",
   "issue": "be47045e-93fb-473b-af7a-2d459aae091c",
   "status": "verified",
-  "specification_sha256": "293136ab2847bd3a47776866ed24af40875e3b00449c5ae587425da1d8bdaac8",
+  "specification_sha256": "0d1d2fa009913f4d0154dc1e70072505abb23e93b6044db4c7319c17c836c302",
   "superseded_specification_sha256": "49c3fe100b4109ba227f9d48cd083a6f32753d7ae881afbbb67b3c40273b0cbf",
   "candidate": {
     "base_commit": "c52dee4df0cb31b707efee842bd0d9e96d793c99",
@@ -15,19 +15,19 @@
     "inputs": [
       {
         "path": "SPEC.md",
-        "sha256": "293136ab2847bd3a47776866ed24af40875e3b00449c5ae587425da1d8bdaac8"
+        "sha256": "0d1d2fa009913f4d0154dc1e70072505abb23e93b6044db4c7319c17c836c302"
       },
       {
         "path": "protocol/requirements/reviewed-v1.json",
-        "sha256": "02166c70eddd6e5240f77bf229d2c280ce27b7b576fe9f768539e5f35398fa27"
+        "sha256": "40909a8dfc87e252ed1bfd13e147652e684052b13f43affba4eb786f354b340c"
       },
       {
         "path": "protocol/requirements/section14-v1.json",
-        "sha256": "3553a3d37476d7fd69c1d1b04d935314f3b7a30f2f6ad58008ff3515cfb5c3e8"
+        "sha256": "815f1f4779ea0ab9df75445fdeea6e6cf912ab20f556d0174b6942c1133ab4d7"
       },
       {
         "path": "protocol/requirements/generated/requirements-v1.json",
-        "sha256": "a1888a3e6042c0fdb82abad3cff8982988810636aae498c22d0f6e2aa3acda1b"
+        "sha256": "61603b41a2ff518c6b0beb93dffd2c49894a79a7b8930c0fe6700e4e27c694f9"
       },
       {
         "path": "Cargo.lock",
@@ -332,7 +332,7 @@
   "successors": [
     {
       "path": "protocol/conformance/manifest-v1.json",
-      "sha256": ""
+      "sha256": "61ac775ce2682d0bde75f6022a691bac1a43de2d454132bab759c23af0fc06ae"
     },
     {
       "path": "protocol/conformance/specification-currency-qualification-v1.json",
@@ -340,15 +340,15 @@
     },
     {
       "path": "protocol/publication/index-v1.json",
-      "sha256": ""
+      "sha256": "dae8f3736e9b55bd4a45692ad157edb4e7c53c33767834e3ee19db0932622b55"
     },
     {
       "path": "protocol/publication/v1/gantry.conformance.json",
-      "sha256": ""
+      "sha256": "85b9d2504bd54d35e16824440008a178632bd9fb92b4a2e0641c5746c0e11b2f"
     },
     {
       "path": "protocol/publication/verification-v1.json",
-      "sha256": ""
+      "sha256": "1117e62fa3e4741095e1f2f9bde88ca5b695a6adceab71060d197d1b7b33dd4a"
     }
   ]
 }

@@ -136,12 +136,11 @@ impl NativeDirectoryDiagnosticCode {
         match self {
             Self::EmptyRights
             | Self::InvalidPath
+            | Self::RequirementMismatch
             | Self::UndeclaredMapping
             | Self::UnsupportedMode
             | Self::UnsupportedRepresentation => NATIVE_DIRECTORY_CLAUSES[1],
-            Self::ForeignSubject | Self::PathBindingRefused | Self::RequirementMismatch => {
-                NATIVE_DIRECTORY_CLAUSES[2]
-            }
+            Self::ForeignSubject | Self::PathBindingRefused => NATIVE_DIRECTORY_CLAUSES[2],
             Self::DuplicateIssuance
             | Self::InvalidSlotIdentity
             | Self::NotLive
@@ -647,29 +646,43 @@ impl NativeDirectoryIssuer {
 }
 
 /// The exact identity of one live native directory issuance.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+///
+/// The identity is the declared issuer identity together with one mint that only the issuing
+/// registry creates. Equality is exact minted-instance identity, never declaration equality, so
+/// two registries that declare the same issuer identity still mint distinct issuances and never
+/// accept each other handles.
+#[derive(Clone, Debug)]
 pub struct NativeDirectoryIssuanceId {
     issuer: NativeDirectoryIssuer,
-    sequence: u64,
+    minted: Arc<NativeDirectoryIssuanceMint>,
 }
+
+/// The private mint of one issuance identity.
+#[derive(Debug)]
+struct NativeDirectoryIssuanceMint;
 
 impl NativeDirectoryIssuanceId {
-    const fn new(issuer: NativeDirectoryIssuer, sequence: u64) -> Self {
-        Self { issuer, sequence }
+    fn mint(issuer: NativeDirectoryIssuer) -> Self {
+        Self {
+            issuer,
+            minted: Arc::new(NativeDirectoryIssuanceMint),
+        }
     }
 
-    /// Returns the issuer identity that performed this issuance.
+    /// Returns the issuer identity that minted this issuance.
     #[must_use]
-    pub const fn issuer(self) -> NativeDirectoryIssuer {
+    pub const fn issuer(&self) -> NativeDirectoryIssuer {
         self.issuer
     }
+}
 
-    /// Returns the issuance sequence within that issuer.
-    #[must_use]
-    pub const fn sequence(self) -> u64 {
-        self.sequence
+impl PartialEq for NativeDirectoryIssuanceId {
+    fn eq(&self, other: &Self) -> bool {
+        self.issuer == other.issuer && Arc::ptr_eq(&self.minted, &other.minted)
     }
 }
+
+impl Eq for NativeDirectoryIssuanceId {}
 
 /// Exact declared authority for one native directory handle.
 ///
@@ -808,8 +821,8 @@ impl NativeDirectoryHandle {
 
     /// Returns the exact issuer-scoped identity of this issuance.
     #[must_use]
-    pub const fn issuance(&self) -> NativeDirectoryIssuanceId {
-        self.issuance
+    pub const fn issuance(&self) -> &NativeDirectoryIssuanceId {
+        &self.issuance
     }
 }
 
@@ -876,7 +889,6 @@ impl NativeDirectorySettlementWinner {
 #[derive(Debug)]
 pub struct NativeDirectoryLedger {
     issuer: NativeDirectoryIssuer,
-    next_sequence: u64,
     fences: BTreeMap<AuthorityGeneration, AuthorityFence>,
     live: BTreeMap<Arc<str>, NativeDirectoryLiveIssuance>,
     settled: BTreeMap<Arc<str>, NativeDirectorySettlementWinner>,
@@ -890,8 +902,8 @@ struct NativeDirectoryLiveIssuance {
 }
 
 impl NativeDirectoryLiveIssuance {
-    fn issuance(&self) -> NativeDirectoryIssuanceId {
-        self.issuance
+    fn issuance(&self) -> &NativeDirectoryIssuanceId {
+        &self.issuance
     }
 
     fn rights(&self) -> RightsSet {
@@ -925,7 +937,6 @@ impl NativeDirectoryLedger {
     pub const fn new(issuer: NativeDirectoryIssuer) -> Self {
         Self {
             issuer,
-            next_sequence: 0,
             fences: BTreeMap::new(),
             live: BTreeMap::new(),
             settled: BTreeMap::new(),
@@ -984,13 +995,12 @@ impl NativeDirectoryLedger {
                 "a reissued slot names an owner generation that does not succeed the settled one",
             ));
         }
-        let issuance = NativeDirectoryIssuanceId::new(self.issuer, self.next_sequence);
-        self.next_sequence = self.next_sequence.saturating_add(1);
+        let issuance = NativeDirectoryIssuanceId::mint(self.issuer);
         self.live.insert(
             Arc::from(slot.identity()),
             NativeDirectoryLiveIssuance {
                 authority: authority.clone(),
-                issuance,
+                issuance: issuance.clone(),
             },
         );
         Ok(NativeDirectoryHandle {
@@ -1016,6 +1026,52 @@ impl NativeDirectoryLedger {
     #[must_use]
     pub fn fence_state(&self, generation: AuthorityGeneration) -> Option<FenceState> {
         self.fences.get(&generation).map(|fence| fence.state())
+    }
+
+    /// Authenticates one handle as the exact live issuance of its slot.
+    ///
+    /// The identity is the minted issuance identity together with the exact declared authority, so
+    /// a handle from any other registry, including one that declares the same issuer identity,
+    /// never authenticates here. This check does not consult the fence, because settlement must
+    /// stay admissible after revocation.
+    fn authenticate_issuance(
+        &self,
+        handle: &NativeDirectoryHandle,
+    ) -> Result<&NativeDirectoryLiveIssuance, NativeDirectoryRefusal> {
+        let live = self.live.get(handle.slot.identity()).ok_or_else(|| {
+            NativeDirectoryRefusal::new(
+                NativeDirectoryDiagnosticCode::NotLive,
+                "no live native directory issuance exists for the presented slot",
+            )
+        })?;
+        if live.issuance() != handle.issuance() {
+            return Err(NativeDirectoryRefusal::new(
+                NativeDirectoryDiagnosticCode::ForeignSubject,
+                "the presented handle is not the live issuance of this slot",
+            ));
+        }
+        if live.authority != *handle.authority() {
+            return Err(NativeDirectoryRefusal::new(
+                NativeDirectoryDiagnosticCode::ForeignSubject,
+                "the presented handle facts differ from the live issuance",
+            ));
+        }
+        Ok(live)
+    }
+
+    /// Authenticates one handle for a new route, which a fenced generation refuses.
+    fn authenticate_open(
+        &self,
+        handle: &NativeDirectoryHandle,
+    ) -> Result<&NativeDirectoryLiveIssuance, NativeDirectoryRefusal> {
+        let live = self.authenticate_issuance(handle)?;
+        if self.is_fenced(live.fence_generation()) {
+            return Err(NativeDirectoryRefusal::new(
+                NativeDirectoryDiagnosticCode::Revoked,
+                "the authority generation is fenced by revocation",
+            ));
+        }
+        Ok(live)
     }
 
     fn is_fenced(&self, generation: AuthorityGeneration) -> bool {
@@ -1044,24 +1100,7 @@ impl NativeDirectoryLedger {
         requirement: &NativeDirectoryRequirement,
         facts: &NativeDirectorySubjectFacts,
     ) -> Result<(), NativeDirectoryRefusal> {
-        let live = self.live.get(handle.slot.identity()).ok_or_else(|| {
-            NativeDirectoryRefusal::new(
-                NativeDirectoryDiagnosticCode::NotLive,
-                "no live native directory issuance exists for the presented slot",
-            )
-        })?;
-        if self.is_fenced(live.fence_generation()) {
-            return Err(NativeDirectoryRefusal::new(
-                NativeDirectoryDiagnosticCode::Revoked,
-                "the authority generation is fenced by revocation",
-            ));
-        }
-        if live.issuance() != handle.issuance() {
-            return Err(NativeDirectoryRefusal::new(
-                NativeDirectoryDiagnosticCode::ForeignSubject,
-                "the presented handle is not the live issuance of this slot",
-            ));
-        }
+        let live = self.authenticate_open(handle)?;
         if requirement != live.requirement() {
             return Err(NativeDirectoryRefusal::new(
                 NativeDirectoryDiagnosticCode::RequirementMismatch,
@@ -1094,29 +1133,20 @@ impl NativeDirectoryLedger {
     ) -> Result<NativeDirectorySettlementWinner, NativeDirectoryRefusal> {
         let (cancelled, settled_at) = admit_completion(completion)?;
         let identity: Arc<str> = Arc::from(handle.slot.identity());
-        let owner = match self.live.get(&identity) {
-            Some(live) => {
-                if live.issuance() != handle.issuance() {
-                    return Err(NativeDirectoryRefusal::new(
-                        NativeDirectoryDiagnosticCode::ForeignSubject,
-                        "the settled handle is not the live issuance of this slot",
-                    ));
-                }
-                live.facts().owner()
-            }
-            None if self.settled.contains_key(&identity) => {
-                return Err(NativeDirectoryRefusal::new(
+        if !self.live.contains_key(&identity) {
+            return Err(if self.settled.contains_key(&identity) {
+                NativeDirectoryRefusal::new(
                     NativeDirectoryDiagnosticCode::LateCompletion,
                     "this slot already settled, so a later completion is refused without effect",
-                ));
-            }
-            None => {
-                return Err(NativeDirectoryRefusal::new(
+                )
+            } else {
+                NativeDirectoryRefusal::new(
                     NativeDirectoryDiagnosticCode::NotLive,
                     "no live native directory issuance exists for the presented slot",
-                ));
-            }
-        };
+                )
+            });
+        }
+        let owner = self.authenticate_issuance(handle)?.facts().owner();
         Ok(self.record_settlement(identity, owner, cancelled, settled_at))
     }
 
@@ -1145,6 +1175,12 @@ impl NativeDirectoryLedger {
                     return Err(NativeDirectoryRefusal::new(
                         NativeDirectoryDiagnosticCode::PathBindingRefused,
                         "the presented slot path is not the declared path of this issuance",
+                    ));
+                }
+                if slot.facts() != live.facts() {
+                    return Err(NativeDirectoryRefusal::new(
+                        NativeDirectoryDiagnosticCode::ForeignSubject,
+                        "the attached slot facts are not the live subject facts",
                     ));
                 }
                 if live.facts() != facts {
@@ -1202,24 +1238,7 @@ impl NativeDirectoryLedger {
         handle: &NativeDirectoryHandle,
         grant: &NativeDirectoryChildGrant,
     ) -> Result<NativeDirectoryChildProjection, NativeDirectoryRefusal> {
-        let live = self.live.get(handle.slot.identity()).ok_or_else(|| {
-            NativeDirectoryRefusal::new(
-                NativeDirectoryDiagnosticCode::NotLive,
-                "no live native directory issuance exists for the presented slot",
-            )
-        })?;
-        if self.is_fenced(live.fence_generation()) {
-            return Err(NativeDirectoryRefusal::new(
-                NativeDirectoryDiagnosticCode::Revoked,
-                "the authority generation is fenced by revocation",
-            ));
-        }
-        if live.issuance() != handle.issuance() {
-            return Err(NativeDirectoryRefusal::new(
-                NativeDirectoryDiagnosticCode::ForeignSubject,
-                "the presented handle is not the live issuance of this slot",
-            ));
-        }
+        let live = self.authenticate_open(handle)?;
         if !grant.rights().is_subset_of(live.rights()) {
             return Err(NativeDirectoryRefusal::new(
                 NativeDirectoryDiagnosticCode::Amplification,
