@@ -1042,10 +1042,11 @@ impl<T: FsOpenInstance + BoundedIoEndpoint> FsReadOnlyInstance<T> {
 
     /// Returns the bound transport owner for the crate own settlement lanes.
     ///
-    /// This accessor is crate-visible only: it lets this module own tests drive the landed common
-    /// settlement service directly, and it is absent from every external build, so no external
-    /// caller gains a route to the host value through it.
-    #[cfg(test)]
+    /// This accessor is crate-visible and compiled only for the delivered mapping test build: it
+    /// lets this module own acquisition tests drive the landed common settlement service directly,
+    /// and it is absent from every external build and from a target whose acquisition this slice
+    /// refuses, so no caller gains a route to the host value through it.
+    #[cfg(all(test, target_os = "linux"))]
     pub(crate) fn resource_mut(&mut self) -> &mut OwnedHostResource<T> {
         &mut self.resource
     }
