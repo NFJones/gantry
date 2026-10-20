@@ -4,9 +4,9 @@
 //! admission lease directly, which no external test can reach. They cover one settled write and its
 //! exact accepted prefix, a short write that stays short progress, the zero-dispatch refusals of the
 //! request, authority, output-boundary, and attached-terminal decisions, cancellation before and
-//! during dispatch, a stale completion of an earlier call, an over-accepting carrier, the atomic
-//! occurrence reservation and its release, one finishing end of access, and the grantor shutdown
-//! that returns the fixed task outcome on every path.
+//! during dispatch, a stale completion of an earlier call, an over-accepting carrier, the shared
+//! per-occurrence settlement permit and its release, one finishing end of access, and the grantor
+//! shutdown that returns the fixed task outcome on every path.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -653,15 +653,15 @@ fn cancellation_during_dispatch_settles_once_and_withholds_the_prefix() {
     );
     assert_eq!(call.accepted_prefix(), None);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let second = route
+        .write(ConsoleOutputSink::Redirected(&mut instance), b"abcde")
+        .unwrap_or_else(|error| panic!("fixture second write: {error}"));
     assert_eq!(
-        route
-            .write(ConsoleOutputSink::Redirected(&mut instance), b"abcde")
-            .err(),
-        Some(ConsoleRuntimeRefusal::Settlement(
-            IoRefusal::DuplicateSettlement
-        )),
-        "a settled occurrence must be refused before any second dispatch"
+        second.outcome(),
+        &IoCallOutcome::Refused(IoRefusal::CancelledBeforeAdmission),
+        "a cancelled occurrence is refused before any second dispatch: the landed settlement          precedence reports the lease's cancellation before the permit this occurrence already          claimed"
     );
+    assert_eq!(second.accepted_prefix(), None);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
@@ -797,6 +797,69 @@ fn two_independently_admitted_instances_cannot_settle_one_occurrence() {
         "a second account of the same occurrence must be refused before dispatch"
     );
     assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+/// One pending occurrence settles once across two independent grants and two separate accounts.
+///
+/// The machine holds exactly one live pending occurrence, and two independently constructed
+/// granting accesses each bind one of two separately admitted accounts. Both routes present a
+/// matching `output-flush` grant, so the only fact that can refuse the second attempt is the machine
+/// occurrence's own settlement permit of `GNT-20.5`: one resource generation has exactly one
+/// settlement. The first attempt dispatches and settles, the second is refused as a duplicate before
+/// its endpoint is called, and the refused account's own durable record is unchanged.
+#[test]
+fn two_independent_grants_and_accounts_settle_one_occurrence_once() {
+    let fixture = Fixture::new();
+    let first_calls = Arc::new(AtomicU64::new(0));
+    let second_calls = Arc::new(AtomicU64::new(0));
+    let first_access = access(vec![output_grant()]);
+    let second_access = access(vec![output_grant()]);
+    let mut first = fixture.bind(
+        &first_access,
+        ConsoleRedirectedSink::new(DeclaredCarrier {
+            accepted: 2,
+            calls: Arc::clone(&first_calls),
+        }),
+    );
+    let mut second = fixture.bind(
+        &second_access,
+        ConsoleRedirectedSink::new(DeclaredCarrier {
+            accepted: 2,
+            calls: Arc::clone(&second_calls),
+        }),
+    );
+    let second_record = second.account().durable_record();
+    let first_route = fixture.route(&first_access, output_grant());
+    let second_route = fixture.route(&second_access, output_grant());
+
+    let settled = first_route
+        .write(ConsoleOutputSink::Redirected(&mut first), b"ab")
+        .unwrap_or_else(|error| panic!("fixture write: {error}"));
+    assert!(
+        matches!(settled.outcome(), IoCallOutcome::Settled(_)),
+        "the first granting access must settle the one pending occurrence, observed {:?}",
+        settled.outcome()
+    );
+    assert_eq!(
+        second_route
+            .write(ConsoleOutputSink::Redirected(&mut second), b"ab")
+            .err(),
+        Some(ConsoleRuntimeRefusal::Settlement(
+            IoRefusal::DuplicateSettlement
+        )),
+        "a second granting access must not settle the occurrence the machine already settled"
+    );
+    assert_eq!(first_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        second_calls.load(Ordering::SeqCst),
+        0,
+        "the duplicate attempt must be refused before its endpoint is called"
+    );
+    assert_eq!(
+        second.account().durable_record(),
+        second_record,
+        "the refused account's own durable accounting must be unchanged"
+    );
 }
 
 /// A refusal that dispatched nothing releases the occurrence reservation.

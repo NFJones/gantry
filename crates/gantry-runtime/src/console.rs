@@ -31,24 +31,19 @@
 //! zero-octet write and a request beyond `IO_REQUEST_OCTET_BOUND` are refused by the request
 //! contract before any dispatch.
 //!
-//! # One settlement per occurrence inside one grant
+//! # One settlement per occurrence across every grant
 //!
-//! A console write consumes one machine-issued occurrence, and `GNT-20` allows one resource
-//! generation exactly one settlement. The grantor-owned access takes the occurrence atomically
-//! **before** dispatch and keeps it as a winner once the attempt dispatched anything, so two
-//! attempts admitted under one grant - including two separately admitted accounts, two attempts that
-//! overlap, and an interleaved attempt for another occurrence - cannot both settle it: a second
-//! attempt on a kept winner is refused under the landed `duplicate-settlement` refusal. A winner is
-//! never evicted by a different occurrence, and only an attempt that dispatched nothing releases its
-//! own outstanding reservation. The record is occurrence identities and no octet, it holds no
-//! output, and it is dropped with the access.
-//!
-//! One launch injects one grant per requirement group of `GNT-46.8`, so one run admits one
-//! `ConsoleOutputAccess`. Exclusivity across two independently constructed grant values is not a
-//! console decision and is not claimed here: the landed machine occurrence and the landed registry
-//! carrier issuance own that fact, and this slice consumes them without restating or duplicating
-//! them. This module therefore makes a narrower promise than a second ownership domain would, and
-//! says so rather than implying a fence it does not hold.
+//! A console write consumes one machine-issued occurrence, and
+//! `GNT-20.5-interruption-cancellation-and-late-completion` allows one resource generation exactly
+//! one settlement. This module keeps no settlement record of its own: the attempt the landed
+//! settlement service performs claims the machine occurrence's one-settlement permit on the
+//! shared admission lease **before** dispatch. Two separately admitted accounts, two independently
+//! constructed [`ConsoleOutputAccess`] values, and two independent routes presenting matching grants
+//! for the same pending occurrence therefore share exactly one winner, so the second attempt is
+//! refused under the landed `duplicate-settlement` refusal with no endpoint dispatch and no change
+//! to that account's own durable accounting. The permit is occurrence state of the machine rather
+//! than a console field, so this slice consumes it and keeps neither a per-access winner set nor a
+//! process-global fence.
 //!
 //! # Undelivered targets
 //!
@@ -103,7 +98,6 @@
 //! qualification, encoding, resize, and a console host-adapter contract.
 
 use std::fmt;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use gantry_ir::{
@@ -116,18 +110,7 @@ use gantry_ir::{
 use crate::{
     AdmittedResource, BoundedIoEndpoint, HostResourceError, IoCallBinding, IoCallOutcome,
     IoEvidence, IoHostResponse, IoRefusal, IoSettlementService, Machine, OwnedHostResource,
-    ResourceSubjectBinding,
 };
-
-/// The outcome of one attempt to reserve a machine occurrence for one grantor.
-enum Reservation {
-    /// This attempt owns the occurrence until it settles or releases it.
-    Reserved,
-    /// Another attempt under this grant is outstanding.
-    Busy,
-    /// This grantor already settled the occurrence.
-    AlreadySettled,
-}
 
 /// The grantor-owned console output access of one launch.
 ///
@@ -136,13 +119,12 @@ enum Reservation {
 /// consuming it through [`Self::settle_shutdown`] is the only route to a final-flush settlement, so
 /// a requester route can neither settle shutdown nor outlive the shutdown its grantor settled.
 ///
-/// The access records the one machine occurrence it reserved and counts the output instances it
-/// issued. Those records are occurrence identities and counts and no octet, so the access holds no
-/// buffered output.
+/// The access counts the output instances it issued so shutdown can refuse an unfinished one. It
+/// holds no octet and no settlement record: the one settlement of a machine occurrence is claimed on
+/// that occurrence's own admission lease by the landed settlement service, so this value never
+/// duplicates the fact `GNT-20.5` already owns.
 pub struct ConsoleOutputAccess {
     injection: ConsoleAccessInjection,
-    winners: Mutex<Vec<ResourceSubjectBinding>>,
-    inflight: Mutex<Option<ResourceSubjectBinding>>,
     open: AtomicUsize,
 }
 
@@ -156,8 +138,6 @@ impl ConsoleOutputAccess {
     pub fn from_launch(grantor: &'static str, grants: Vec<ConsoleGrant>) -> Self {
         Self {
             injection: ConsoleAccessInjection::from_launch(grantor, grants),
-            winners: Mutex::new(Vec::new()),
-            inflight: Mutex::new(None),
             open: AtomicUsize::new(0),
         }
     }
@@ -231,53 +211,6 @@ impl ConsoleOutputAccess {
                 ConsoleFlushOutcome::Flushed,
             )),
         )
-    }
-
-    /// Reserves the presented occurrence atomically for this grantor.
-    ///
-    /// A kept winner refuses immediately, and one outstanding attempt at a time is admitted, so two
-    /// attempts under this grant cannot both reach dispatch. An unreadable record refuses
-    /// conservatively.
-    fn reserve(&self, subject: &ResourceSubjectBinding) -> Reservation {
-        let winners = match self.winners.lock() {
-            Ok(winners) => winners,
-            Err(_) => return Reservation::Busy,
-        };
-        if winners.iter().any(|winner| winner == subject) {
-            return Reservation::AlreadySettled;
-        }
-        let mut inflight = match self.inflight.lock() {
-            Ok(inflight) => inflight,
-            Err(_) => return Reservation::Busy,
-        };
-        if inflight.is_some() {
-            return Reservation::Busy;
-        }
-        *inflight = Some(subject.clone());
-        drop(inflight);
-        drop(winners);
-        Reservation::Reserved
-    }
-
-    /// Keeps the presented occurrence as a winner and clears its outstanding reservation.
-    fn record_settled(&self, subject: &ResourceSubjectBinding) {
-        if let Ok(mut winners) = self.winners.lock()
-            && !winners.iter().any(|winner| winner == subject)
-        {
-            winners.push(subject.clone());
-        }
-        self.clear_inflight(subject);
-    }
-
-    /// Releases one outstanding reservation whose attempt dispatched nothing.
-    ///
-    /// A kept winner is never released here, so an interleaved occurrence can never evict one.
-    fn clear_inflight(&self, subject: &ResourceSubjectBinding) {
-        if let Ok(mut inflight) = self.inflight.lock()
-            && inflight.as_ref() == Some(subject)
-        {
-            *inflight = None;
-        }
     }
 
     /// Releases a finished instance and refuses an impossible overcount.
@@ -592,10 +525,12 @@ impl<'a> ConsoleOutputSettlement<'a> {
     /// redirected, non-controlling sink reaches the landed settlement service, which performs
     /// exactly one call and publishes exactly one settlement.
     ///
-    /// The occurrence is reserved atomically before dispatch, so a second attempt under this one
-    /// grant - through another account, or overlapping - is refused under the landed
-    /// `duplicate-settlement` refusal. A reservation is released when the attempt dispatched
-    /// nothing, so an unattempted occurrence stays available.
+    /// The landed settlement service claims the machine occurrence's one-settlement permit before
+    /// dispatch, so a second attempt for the same pending occurrence - through another admitted
+    /// account, another granting access, or an overlapping route - is refused under the landed
+    /// `duplicate-settlement` refusal with no endpoint dispatch. The permit is released when the
+    /// attempt dispatched nothing, so an unattempted occurrence stays available, and it is kept once
+    /// the attempt dispatched anything, so no later route can settle it again.
     ///
     /// The presented instance must have been issued by this route own granting access: a foreign
     /// instance is refused by identity before any dispatch, whatever grant this route presents.
@@ -636,39 +571,25 @@ impl<'a> ConsoleOutputSettlement<'a> {
         if !std::ptr::eq(instance.access, self.access) {
             return Err(ConsoleRuntimeRefusal::ForeignGrantingAccess);
         }
-        let subject =
-            self.machine
-                .pending_resource_subject()
-                .ok_or(ConsoleRuntimeRefusal::Settlement(
-                    IoRefusal::NoPendingOccurrence,
-                ))?;
-        match self.access.reserve(&subject) {
-            Reservation::Reserved => {}
-            Reservation::Busy | Reservation::AlreadySettled => {
-                return Err(ConsoleRuntimeRefusal::Settlement(
-                    IoRefusal::DuplicateSettlement,
-                ));
-            }
-        }
-        let mut service = match IoSettlementService::new(
+        let mut service = IoSettlementService::new(
             self.machine,
             self.owner,
             IoOperation::Write,
             self.allowance,
             self.charges.clone(),
             self.settled_at_us,
-        ) {
-            Ok(service) => service,
-            Err(refusal) => {
-                self.access.clear_inflight(&subject);
-                return Err(ConsoleRuntimeRefusal::Settlement(refusal));
-            }
-        };
+        )
+        .map_err(ConsoleRuntimeRefusal::Settlement)?;
         let outcome = service.attempt(&mut instance.resource, request, octets);
-        if matches!(&outcome, IoCallOutcome::Refused(_)) {
-            self.access.clear_inflight(&subject);
-        } else {
-            self.access.record_settled(&subject);
+        if matches!(
+            &outcome,
+            IoCallOutcome::Refused(IoRefusal::DuplicateSettlement)
+        ) {
+            // Another account or route already owns this occurrence one settlement, so this attempt
+            // dispatched nothing and publishes no call.
+            return Err(ConsoleRuntimeRefusal::Settlement(
+                IoRefusal::DuplicateSettlement,
+            ));
         }
         Ok(ConsoleWriteCall { admission, outcome })
     }

@@ -189,14 +189,14 @@ Delivered:
 - **One completion.** A cancellation observed before admission refuses without a dispatch; a
   cancellation during dispatch settles once as cancelled with the accepted prefix withheld as
   protected evidence; a late, foreign, or over-accepted completion is a contained fault that
-  publishes no octet; and a second attempt on the occurrence a grant already reserved is refused
-  before any dispatch under the landed duplicate-settlement refusal, even through a separately
-  admitted account or across an interleaved attempt for another occurrence. The reservation is taken
-  atomically before dispatch, kept as a winner once the attempt dispatched anything, and released
-  only when the attempt dispatched nothing, so a winner is never evicted. Nothing is retried,
-  replayed, or deduplicated. Exclusivity across two independently constructed grant values is not
-  claimed: one launch injects one grant per group, and the landed machine occurrence and registry
-  carrier issuance own the cross-grant fact.
+  publishes no octet; and a second attempt on an occurrence that already settled is refused before
+  any dispatch under the landed duplicate-settlement refusal, even through a separately admitted
+  account, an interleaved attempt for another occurrence, or a second independently constructed
+  granting access. That exclusivity is the machine occurrence's one-settlement permit of
+  `GNT-20.5-interruption-cancellation-and-late-completion`, which the landed settlement attempt
+  claims on the shared admission lease before dispatch and releases only when it dispatched nothing:
+  one resource generation has exactly one settlement. This slice keeps no per-access winner set and
+  no process-global fence, and claims neither. Nothing is retried, replayed, or deduplicated.
 - **Grantor-owned shutdown.** `ConsoleOutputInstance::finish` is the one end-of-access route for one
   bound account, and it finalizes through the landed account finalization: the account leaves the
   active lifetime, its carrier value is disposed once, and it admits no later call.

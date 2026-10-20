@@ -4,8 +4,9 @@
 //! and machine resource carrier: one launch-injected `output-flush` grant, one authenticated
 //! receiver, one admitted bounded request, one settlement with its exact accepted prefix, the
 //! zero-dispatch denials of the declaration model, the byte-preserving attached-terminal refusal,
-//! the unsupported-sink refusal, cancellation before admission, the atomic occurrence reservation,
-//! a contained carrier fault, one finishing end of access, and the grantor-owned shutdown that
+//! the unsupported-sink refusal, cancellation before admission, the shared per-occurrence settlement
+//! permit, a contained carrier fault, one finishing end of access, and the grantor-owned shutdown
+//! that
 //! returns the fixed task outcome on every path.
 
 use std::sync::Arc;
@@ -588,6 +589,79 @@ fn two_independently_admitted_accounts_cannot_settle_one_occurrence() {
         "a second account of the same occurrence must be refused before dispatch"
     );
     assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+/// One pending occurrence settles once across two independent grants and two separate accounts.
+///
+/// The machine holds exactly one live pending occurrence, and two independently constructed
+/// granting accesses each bind one of two separately admitted accounts. Both routes present a
+/// matching `output-flush` grant, so the only fact that can refuse the second attempt is the machine
+/// occurrence's own settlement permit of `GNT-20.5`: one resource generation has exactly one
+/// settlement. The first attempt dispatches and settles, the second is refused as a duplicate before
+/// its endpoint is called, and the refused account's own durable record is unchanged.
+#[test]
+fn two_independent_grants_and_accounts_settle_one_occurrence_once() {
+    let fixture = Fixture::new();
+    let first_calls = Arc::new(AtomicU64::new(0));
+    let second_calls = Arc::new(AtomicU64::new(0));
+    let first_access = access(vec![output_grant()]);
+    let second_access = access(vec![output_grant()]);
+    let mut first = fixture.bind(
+        &first_access,
+        ConsoleRedirectedSink::new(CountingCarrier {
+            accepted: 2,
+            calls: Arc::clone(&first_calls),
+        }),
+    );
+    let mut second = fixture.bind(
+        &second_access,
+        ConsoleRedirectedSink::new(CountingCarrier {
+            accepted: 2,
+            calls: Arc::clone(&second_calls),
+        }),
+    );
+    let second_record = second.account().durable_record();
+    let first_route = fixture
+        .route(
+            &first_access,
+            ConsoleAccessIdentity::Injected(output_grant()),
+        )
+        .unwrap_or_else(|error| panic!("fixture route: {error}"));
+    let second_route = fixture
+        .route(
+            &second_access,
+            ConsoleAccessIdentity::Injected(output_grant()),
+        )
+        .unwrap_or_else(|error| panic!("fixture route: {error}"));
+
+    let settled = first_route
+        .write(ConsoleOutputSink::Redirected(&mut first), b"ab")
+        .unwrap_or_else(|error| panic!("fixture write: {error}"));
+    assert!(
+        matches!(settled.outcome(), IoCallOutcome::Settled(_)),
+        "the first granting access must settle the one pending occurrence, observed {:?}",
+        settled.outcome()
+    );
+    assert_eq!(
+        second_route
+            .write(ConsoleOutputSink::Redirected(&mut second), b"ab")
+            .err(),
+        Some(ConsoleRuntimeRefusal::Settlement(
+            IoRefusal::DuplicateSettlement
+        )),
+        "a second granting access must not settle the occurrence the machine already settled"
+    );
+    assert_eq!(first_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        second_calls.load(Ordering::SeqCst),
+        0,
+        "the duplicate attempt must be refused before its endpoint is called"
+    );
+    assert_eq!(
+        second.account().durable_record(),
+        second_record,
+        "the refused account's own durable accounting must be unchanged"
+    );
 }
 
 /// An over-accepting carrier is a contained fault that publishes no accepted prefix.

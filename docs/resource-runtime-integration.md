@@ -821,6 +821,10 @@ retained records nor snapshot size; whole-execution resource integration remains
   claimant retains the permit after any dispatch - accepted, blocked, failed, or panic-contained -
   and releases it only when the attempt provably dispatched nothing. The discriminating lane is
   `io_settlement::tests::one_occurrence_settles_once_across_two_separately_admitted_accounts`.
+  The redirected console output route recorded in `docs/console-capability.md` consumes this same
+  permit, so a second independently constructed granting access is refused on the same fact; its
+  discriminating lane is
+  `console::tests::two_independent_grants_and_accounts_settle_one_occurrence_once`.
 - That permit is occurrence-scoped, not a global mutable fence, and it is not copied ownership: the
   claim lives on the shared lease while each account keeps its own ledger and host value. It does
   not make per-registry uniqueness or a per-access winner set authoritative, and the runtime does
