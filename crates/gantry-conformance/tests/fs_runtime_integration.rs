@@ -587,6 +587,7 @@ fn a_foreign_grant_or_receipt_cannot_close_the_instance() {
     drop(second_endpoint);
     let fixture = Fixture::new();
     let mut resource = fixture.bind(notes_endpoint);
+    let record = resource.account().durable_record();
 
     // A grant that does not cover the presented receipt is refused before accounting moves.
     assert_eq!(
@@ -602,6 +603,11 @@ fn a_foreign_grant_or_receipt_cannot_close_the_instance() {
     assert_eq!(
         resource.account().ledger().lifetime(),
         ResourceLifetimeState::Active
+    );
+    assert_eq!(
+        resource.account().durable_record(),
+        record,
+        "a refused close must leave the durable record byte identical"
     );
 
     // The read route applies the same grant, receipt, and bound-endpoint preflight.
@@ -628,6 +634,11 @@ fn a_foreign_grant_or_receipt_cannot_close_the_instance() {
     assert_eq!(
         resource.account().ledger().lifetime(),
         ResourceLifetimeState::Active
+    );
+    assert_eq!(
+        resource.account().durable_record(),
+        record,
+        "a refused read must leave the durable record byte identical"
     );
 
     let lifetime = close_read_only(&mut resource, &notes_grant, &receipt, fixture.owner, 12)
