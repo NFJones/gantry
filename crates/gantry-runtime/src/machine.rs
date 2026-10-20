@@ -1104,6 +1104,13 @@ pub(crate) struct ResourceOperationLease {
     pub(crate) pending: bool,
     /// Cancellation prevents new admission without settling accepted work.
     pub(crate) cancellation_requested: bool,
+    /// The one settlement of this occurrence has been claimed before dispatch.
+    ///
+    /// This is the authoritative one-settlement fact `GNT-20.5` requires across every account and
+    /// settlement route that shares this machine-issued lease. It is occurrence-scoped and never a
+    /// process-global fence: independently reconstructed accounts cloned from the same pending
+    /// subject observe the same claim, while a different pending occurrence has its own lease.
+    settlement_claimed: bool,
 }
 
 impl ResourceOperationLease {
@@ -1112,7 +1119,32 @@ impl ResourceOperationLease {
         Self {
             pending: true,
             cancellation_requested: false,
+            settlement_claimed: false,
         }
+    }
+
+    /// Claims the one settlement of this occurrence.
+    ///
+    /// Returns `false` when another route already claimed it. The claim is released only by the
+    /// claimant and only when the attempt performed no dispatch, so a dispatched call can never be
+    /// settled a second time through a separately admitted account.
+    pub(crate) fn claim_settlement(&mut self) -> bool {
+        if self.settlement_claimed() {
+            false
+        } else {
+            self.settlement_claimed = true;
+            true
+        }
+    }
+
+    /// Releases a claim whose attempt provably dispatched nothing.
+    pub(crate) fn release_settlement(&mut self) {
+        self.settlement_claimed = false;
+    }
+
+    /// Returns whether the one settlement of this occurrence was claimed.
+    pub(crate) const fn settlement_claimed(&self) -> bool {
+        self.settlement_claimed
     }
 }
 
@@ -2780,6 +2812,7 @@ impl Machine {
                 pending.resource_admission_open = Arc::new(Mutex::new(ResourceOperationLease {
                     pending: true,
                     cancellation_requested: checkpoint.cancellation.is_some(),
+                    settlement_claimed: false,
                 }));
                 pending
             }),

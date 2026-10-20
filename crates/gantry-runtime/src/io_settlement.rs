@@ -45,6 +45,13 @@
 //! * A late, duplicate, wrong-owner, or wrong-generation completion can neither publish nor
 //!   refund twice: one attempt publishes at most once, and a second attempt is refused before it
 //!   can charge, observe, or settle again.
+//! * One resource generation has one settlement across every account and settlement route that
+//!   shares the machine-issued occurrence, not merely within one service or one registry. The
+//!   attempt claims the machine occurrence's one-settlement permit before dispatch and keeps it
+//!   after any dispatch; a separately reconstructed account for the same pending occurrence is
+//!   refused with `duplicate-settlement` before its endpoint is called. The permit lives on the
+//!   per-occurrence admission lease, so it is neither a process-global fence nor copied ownership.
+//!   Per-registry uniqueness and per-service winner state are not claimed to enforce this fact.
 //! * Dropping the settlement service, or any outcome it produced, does not fabricate a settlement.
 //!   The accepted in-memory octets stay in the endpoint the caller bound and the machine-issued
 //!   admission lease stays shared with the account, so losing every observer of the attempt keeps
@@ -976,15 +983,18 @@ impl<'a> IoSettlementService<'a> {
             return IoCallOutcome::Refused(refusal);
         }
         let lease = resource.account().subject().admission_lease();
-        match admission_state(&lease) {
-            AdmissionState::Open => {}
-            AdmissionState::Cancelled => {
+        match claim_one_settlement(&lease) {
+            SettlementClaim::Claimed => {}
+            SettlementClaim::Cancelled => {
                 return IoCallOutcome::Refused(IoRefusal::CancelledBeforeAdmission);
             }
-            AdmissionState::Closed => {
+            SettlementClaim::Closed => {
                 return IoCallOutcome::Refused(IoRefusal::NoPendingOccurrence);
             }
-            AdmissionState::Unreadable => {
+            SettlementClaim::Duplicate => {
+                return IoCallOutcome::Refused(IoRefusal::DuplicateSettlement);
+            }
+            SettlementClaim::Unreadable => {
                 return IoCallOutcome::Refused(IoRefusal::AdmissionLeaseUnreadable);
             }
         }
@@ -995,17 +1005,25 @@ impl<'a> IoSettlementService<'a> {
             &self.charges,
         ) {
             Ok(loan) => loan,
-            Err(error) => return IoCallOutcome::Refused(transport_refusal(error)),
+            Err(error) => {
+                release_one_settlement(&lease);
+                return IoCallOutcome::Refused(transport_refusal(error));
+            }
         };
         self.settled = true;
-        settle_attempt(
+        let outcome = settle_attempt(
             loan,
             self.kind,
             request,
             provided,
             self.settled_at_us,
             &lease,
-        )
+        );
+        if matches!(&outcome, IoCallOutcome::Refused(_)) {
+            // A refusal here precedes dispatch, so the occurrence remains unsettled and available.
+            release_one_settlement(&lease);
+        }
+        outcome
     }
 }
 
@@ -1029,6 +1047,54 @@ fn admission_state(lease: &Mutex<crate::machine::ResourceOperationLease>) -> Adm
         Ok(admission) if !admission.pending => AdmissionState::Closed,
         Ok(_) => AdmissionState::Open,
         Err(_) => AdmissionState::Unreadable,
+    }
+}
+
+/// The outcome of claiming the one settlement of one machine occurrence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SettlementClaim {
+    /// This attempt exclusively owns the occurrence's one settlement permit.
+    Claimed,
+    /// Cancellation was requested before this attempt claimed the occurrence.
+    Cancelled,
+    /// Accepted work already closed admission for this occurrence.
+    Closed,
+    /// Another account or route already claimed the one settlement of this occurrence.
+    Duplicate,
+    /// The admission lease is poisoned, so no claim can be established.
+    Unreadable,
+}
+
+/// Claims the machine occurrence's authoritative one-settlement permit before dispatch.
+///
+/// The permit lives on the machine-issued admission lease shared by every subject and account
+/// cloned for that pending occurrence. Claiming under the lease mutex gives one linearization
+/// point across independent settlement routes; a second route observes the claim and refuses with
+/// [`IoRefusal::DuplicateSettlement`] before borrowing a receiver or dispatching a call. No global
+/// fence is introduced, and no account owns a copy of the permit: the claim is occurrence state,
+/// while each account keeps its own reconstructed accounting.
+fn claim_one_settlement(lease: &Mutex<crate::machine::ResourceOperationLease>) -> SettlementClaim {
+    let mut admission = match lease.lock() {
+        Ok(admission) => admission,
+        Err(_) => return SettlementClaim::Unreadable,
+    };
+    if admission.cancellation_requested {
+        SettlementClaim::Cancelled
+    } else if !admission.pending {
+        SettlementClaim::Closed
+    } else if admission.claim_settlement() {
+        SettlementClaim::Claimed
+    } else {
+        SettlementClaim::Duplicate
+    }
+}
+
+/// Releases a settlement permit whose attempt performed no dispatch.
+///
+/// Only the claimant can hold the permit, so this cannot revoke another route's dispatched call.
+fn release_one_settlement(lease: &Mutex<crate::machine::ResourceOperationLease>) {
+    if let Ok(mut admission) = lease.lock() {
+        admission.release_settlement();
     }
 }
 
@@ -3046,6 +3112,76 @@ mod tests {
                 .map(gantry_ir::Quota::used),
             Some(4)
         );
+    }
+
+    /// One pending occurrence settles once across two separately admitted accounts.
+    ///
+    /// Two accounts and host bindings are reconstructed under the same machine-issued occurrence,
+    /// and two independent settlement routes attempt the same call. That resource generation must
+    /// admit exactly one settlement: the first attempt dispatches and settles, while the second is
+    /// refused before dispatch and leaves its own durable accounting unchanged.
+    #[test]
+    fn one_occurrence_settles_once_across_two_separately_admitted_accounts() {
+        let fixture = Fixture::new();
+        let first_endpoint = ScriptedEndpoint::new(IoHostCompletion::Write { accepted: 2 });
+        let second_endpoint = ScriptedEndpoint::new(IoHostCompletion::Write { accepted: 2 });
+        let first_calls = first_endpoint.counter();
+        let second_calls = second_endpoint.counter();
+        let mut first = fixture.bind(first_endpoint);
+        let mut second = fixture.bind(second_endpoint);
+        let mut first_route = fixture.service(IoOperation::Write);
+        let mut second_route = fixture.service(IoOperation::Write);
+        let request = IoRequest::write(2).unwrap_or_else(|error| panic!("request: {error:?}"));
+
+        let settled = first_route.attempt(&mut first, request.clone(), b"AB");
+        assert!(
+            matches!(settled, IoCallOutcome::Settled(_)),
+            "the first route must settle the occurrence, observed {settled:?}"
+        );
+        let second_record = second.account().durable_record();
+        let duplicate = second_route.attempt(&mut second, request, b"AB");
+        assert_eq!(
+            duplicate,
+            IoCallOutcome::Refused(IoRefusal::DuplicateSettlement)
+        );
+        assert_eq!(first_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(second_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(second.account().durable_record(), second_record);
+    }
+
+    /// An effect-free pre-dispatch refusal releases the occurrence's one-settlement permit.
+    ///
+    /// A stale-owner route claims the permit and then fails loan admission without dispatching.
+    /// Releasing only that effect-free claim keeps the still-pending occurrence available to the
+    /// authoritative owner, so the guard cannot turn a refused attempt into a lost settlement.
+    #[test]
+    fn an_effect_free_pre_dispatch_refusal_releases_the_one_settlement_permit() {
+        let fixture = Fixture::new();
+        let endpoint = ScriptedEndpoint::new(IoHostCompletion::Write { accepted: 2 });
+        let calls = endpoint.counter();
+        let mut resource = fixture.bind(endpoint);
+        let mut stale_route = IoSettlementService::new(
+            &fixture.machine,
+            OwnerGeneration::new(9),
+            IoOperation::Write,
+            allowance(8),
+            Vec::new(),
+            7,
+        )
+        .unwrap_or_else(|error| panic!("fixture service: {error:?}"));
+        let request = IoRequest::write(2).unwrap_or_else(|error| panic!("request: {error:?}"));
+
+        assert!(matches!(
+            stale_route.attempt(&mut resource, request.clone(), b"AB"),
+            IoCallOutcome::Refused(_)
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        let mut authoritative = fixture.service(IoOperation::Write);
+        assert!(matches!(
+            authoritative.attempt(&mut resource, request, b"AB"),
+            IoCallOutcome::Settled(_)
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
     /// Dropping the attempt retains the accepted octets and the admission lease.

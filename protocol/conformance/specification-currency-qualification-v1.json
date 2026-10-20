@@ -274,6 +274,18 @@
   ],
   "successors": [
     {
+      "path": "crates/gantry-runtime/src/io_settlement.rs",
+      "sha256": "acfacccf11dbfc00d30cef49d221ad66aba55864f10efdb7f854a9d643936174"
+    },
+    {
+      "path": "crates/gantry-runtime/src/machine.rs",
+      "sha256": "0ebcb8eba4d52ca472ab5da5f5ed102c8909b3ae47e18cb14bc281f9f0762eb9"
+    },
+    {
+      "path": "docs/resource-runtime-integration.md",
+      "sha256": "38bd1c2dd5eb52e2f5827718f672bc3223c1b18e57089d54869a0e0090e2db08"
+    },
+    {
       "path": "protocol/conformance/manifest-v1.json",
       "sha256": ""
     },
