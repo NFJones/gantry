@@ -192,7 +192,11 @@ Delivered:
   publishes no octet; and a second attempt on an occurrence that already settled is refused before
   any dispatch under the landed duplicate-settlement refusal, even through a separately admitted
   account, an interleaved attempt for another occurrence, or a second independently constructed
-  granting access. That exclusivity is the machine occurrence's one-settlement permit of
+  granting access. A presentation that meets a settlement already won by a cancellation is refused
+  as a cancelled-before-admission outcome inside its call rather than as a duplicate, because the
+  landed settlement precedence reports the leased occurrence's cancellation before an already
+  claimed permit; the settlement won once either way, and no path dispatches a second octet. That
+  exclusivity is the machine occurrence's one-settlement permit of
   `GNT-20.5-interruption-cancellation-and-late-completion`, which the landed settlement attempt
   claims on the shared admission lease before dispatch and releases only when it dispatched nothing:
   one resource generation has exactly one settlement. This slice keeps no per-access winner set and

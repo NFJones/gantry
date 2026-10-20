@@ -530,7 +530,20 @@ impl<'a> ConsoleOutputSettlement<'a> {
     /// account, another granting access, or an overlapping route - is refused under the landed
     /// `duplicate-settlement` refusal with no endpoint dispatch. The permit is released when the
     /// attempt dispatched nothing, so an unattempted occurrence stays available, and it is kept once
-    /// the attempt dispatched anything, so no later route can settle it again.
+    /// the attempt dispatched anything, so no later route can settle it again. A permit the
+    /// occurrence keeps refuses every later presentation, whatever that presentation would otherwise
+    /// have done, so the occurrence cannot be settled twice.
+    ///
+    /// Where the refusal is reported follows the landed settlement precedence. A claim another
+    /// account or route already owns is a refusal of this call and is returned as
+    /// [`ConsoleRuntimeRefusal::Settlement`] carrying `duplicate-settlement`. A refusal the attempt
+    /// itself observes - cancellation of the occurrence before dispatch, closed admission, or an
+    /// unreadable admission lease - is carried inside the returned [`ConsoleWriteCall::outcome`]
+    /// instead, because the call was admitted and only its attempt was refused. A cancellation that
+    /// won an earlier settlement of this occurrence is therefore reported as `cancelled-before-
+    /// admission` inside the call rather than as a duplicate, since the landed precedence reports the
+    /// lease's cancellation before an already-claimed permit. Every one of these refusals precedes
+    /// any dispatch, so no path delivers a second octet.
     ///
     /// The presented instance must have been issued by this route own granting access: a foreign
     /// instance is refused by identity before any dispatch, whatever grant this route presents.
@@ -541,8 +554,9 @@ impl<'a> ConsoleOutputSettlement<'a> {
     /// [`ConsoleRuntimeRefusal::Authority`] for a declared output-boundary refusal, including the
     /// byte-preserving control-bearing refusal and the unsupported-sink refusal,
     /// [`ConsoleRuntimeRefusal::AttachedTerminalUndelivered`] for the declared attached terminal this
-    /// slice does not deliver, and [`ConsoleRuntimeRefusal::Settlement`] when the landed service
-    /// refuses admission or this occurrence already settled, and
+    /// slice does not deliver, and [`ConsoleRuntimeRefusal::Settlement`] when the landed settlement
+    /// service refuses an attempt before it dispatches or when this occurrence@Qs one settlement is
+    /// already claimed by another account or route, and
     /// [`ConsoleRuntimeRefusal::ForeignGrantingAccess`] for an instance issued by another access.
     /// Every one of those refusals precedes any dispatch.
     pub fn write<T: BoundedIoEndpoint>(
