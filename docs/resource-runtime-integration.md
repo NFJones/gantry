@@ -811,6 +811,25 @@ retained records nor snapshot size; whole-execution resource integration remains
 
 - Account uniqueness is per registry: the runtime publishes no global uniqueness claim for one
   subject, and `GNT-28.10-resource-accounting-non-claims` is not widened here.
+- `IoSettlementService::attempt` consumes the machine-issued per-occurrence one-settlement permit
+  before any dispatch, under `GNT-20.5-interruption-cancellation-and-late-completion`. The permit
+  is a claim on the pending operation's admission lease, so independently admitted accounts and
+  host bindings cloned from that same pending subject share exactly one winner even when they were
+  admitted by different registries and driven by independent access-like routes. A second route
+  refuses with `duplicate-settlement` before borrowing a receiver, charging, observing, or calling
+  its endpoint, and the refused account's reconstructed durable accounting is unchanged. The
+  claimant retains the permit after any dispatch - accepted, blocked, failed, or panic-contained -
+  and releases it only when the attempt provably dispatched nothing. The discriminating lane is
+  `io_settlement::tests::one_occurrence_settles_once_across_two_separately_admitted_accounts`.
+- That permit is occurrence-scoped, not a global mutable fence, and it is not copied ownership: the
+  claim lives on the shared lease while each account keeps its own ledger and host value. It does
+  not make per-registry uniqueness or a per-access winner set authoritative, and the runtime does
+  not claim that either enforces one settlement on its own. It also does not fence durable
+  reconstructions that build a fresh pending lease for the same historical operation, does not
+  grant the registry ownership of `OwnedHostResource`, does not move or clone physical ownership,
+  and does not widen Section 20 allowance, cancellation, lease, charge, or panic-containment rules;
+  those checks retain their existing precedence around the claim. Existing account/admission
+  behavior is unchanged, and `GNT-20.5` already owns the obligation, so no `SPEC.md` change is made.
 - The containment settlement is runtime state of one account value under
   `GNT-23.4-operation-ownership-and-single-settlement`, so one contained operation settles once for
   the lifetime of that value. A subject rebuilt from ordinary accounting-only declared capture,
