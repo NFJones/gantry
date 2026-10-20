@@ -7,9 +7,9 @@
   "candidate": {
     "base_commit": "677776c73b1abbffbc05195be814fb422c4a6868",
     "currency_repair_parent_commit": "677776c73b1abbffbc05195be814fb422c4a6868",
-    "reviewed_through_commit": "07f463d99d673285342d74ee89096490ed15e289",
+    "reviewed_through_commit": "ee219bf15c0a46129d2b995d4ef1b83c479a17b0",
     "since_commit": "c52dee4df0cb31b707efee842bd0d9e96d793c99",
-    "tree_sha": "1bff8a9248f4a1404f391bc7a0c47cf5d23872ce",
+    "tree_sha": "146692723a078fad202116ffe85a72e92852717e",
     "identity_note": "Content identity is the candidate input digest set plus the candidate tree hash. The record names the reviewed-through filesystem runtime candidate committed before it, so the tree hash and every input digest are recomputed from the exact bytes that candidate carries; the record commit is not part of its own identity.",
     "toolchain": "1.97.1 minimal with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
     "inputs": [
@@ -211,7 +211,7 @@
     "outcome": "Every retained Section 14 excerpt is still covered with executable evidence; the revision adds no excerpt and removes none."
   },
   "qualification": {
-    "scope": "Bounded Section 47 rooted read-only filesystem runtime candidate: one declared-root mount over one pinned descriptor, one unclonable read-only endpoint over the landed bounded-I/O settlement, read-only grant, path, and mapping values, a descriptor-relative no-follow component walk, effect-free O_PATH probing with pinned-vnode reacquisition on the delivered Linux mapping, an FS-owned affine instance that binds the open receipt before accounting, close through the landed account, the repair of the rebased qualification validator discriminations, and the derived publication and qualification recut. No writes, replacement, receipts, locks, watch, poisoning, revocation, quotas, or adapter fault containment are claimed.",
+    "scope": "Bounded Section 47 rooted read-only filesystem runtime candidate: one declared-root mount over one pinned descriptor, one unclonable read-only endpoint over the landed bounded-I/O settlement, read-only grant, path, and mapping values, a descriptor-relative no-follow component walk, effect-free O_PATH probing with pinned-vnode reacquisition on the one delivered Linux mapping, an FS-owned affine instance that binds the open receipt before accounting, close through the landed account, Linux-gated acquisition lanes with all-host and macOS-only target-scope refusal lanes, the corrected integration record, and the derived publication and qualification recut. No writes, replacement, receipts, locks, watch, poisoning, revocation, quotas, or adapter fault containment are claimed.",
     "lanes": [
       {
         "lane": "filesystem_runtime",
@@ -219,6 +219,10 @@
       },
       {
         "lane": "filesystem_runtime_integration",
+        "result": "pass"
+      },
+      {
+        "lane": "filesystem_target_policy",
         "result": "pass"
       },
       {
@@ -261,11 +265,15 @@
       },
       {
         "command": "cargo test --locked -p gantry-runtime fs:: --all-features",
-        "result": "7 of 7 runtime filesystem lanes pass"
+        "result": "8 of 8 runtime lanes pass, including the Linux process-mapping lane"
       },
       {
         "command": "cargo test --locked -p gantry-conformance --test fs_runtime_integration --all-features",
-        "result": "13 of 13 filesystem runtime integration lanes pass"
+        "result": "12 of 12 acquisition lanes pass on the delivered mapping"
+      },
+      {
+        "command": "cargo test --locked -p gantry-conformance --test fs_target_policy --all-features",
+        "result": "2 of 2 all-host target-policy lanes pass on Linux"
       },
       {
         "command": "cargo test --locked --workspace --all-targets --all-features --no-fail-fast",
@@ -275,13 +283,14 @@
     "publication": {
       "member_count": 7,
       "identity_at_currency_repair_parent": "239b431fa866bb0a7d8646b4696abbe4991bd5df4ebc4132fb55427984a59b57",
-      "identity_note": "The publication set identity at the currency repair parent is recorded from the base this candidate was rebased onto; this recut changes the conformance bundle, index, and verification report because the candidate source and lane bytes changed, and the governed generator recomputed them to a fixpoint before the record was committed.",
+      "identity_note": "The publication set identity at the currency repair parent is recorded from the base this candidate was rebased onto; this recut changes the conformance bundle, index, and verification report because the candidate source, lane, and documentation bytes changed, and the governed generator recomputed them to a fixpoint before the record was committed.",
       "verification": "protocol/publication/verification-v1.json verifies the seven-artifact set after regeneration"
     }
   },
   "gaps": [
     "Rooted read-only open, read, and close are the only delivered std.fs operations: writes, replacement, receipts, locks, watch, short-write prefixes, poisoning, revocation, quotas, and adapter fault containment remain undelivered and unclaimed.",
-    "macOS acquisition is refused at target scope (UnsupportedTarget) before a root, grant, path resolution, or descriptor exists, because no effect-free no-follow acquisition method for it is established; this is an initial runtime availability limit, not macOS support, and no macOS equivalent is tested or claimed.",
+    "macOS acquisition is refused at target scope (UnsupportedTarget) before a root, grant, path resolution, or descriptor exists, because no effect-free no-follow acquisition method for it is established; this is an initial runtime availability limit, not macOS support, and no macOS acquisition behavior or native macOS run is claimed.",
+    "Acquisition lanes are gated to the delivered mapping, so a macOS test run exercises only the target-scope refusal lanes and never a mount that must refuse.",
     "The landed generic host-resource inspection route was removed rather than narrowed, so any future consumer that needs a transport-owned authenticated association API must wait for that contract instead of borrowing the host value.",
     "The inherited general_purpose_preregistration failure stays outside this slice: it requires the gitignored docs/reference/general-purpose-refactor-issue-plan.md, and no filesystem claim depends on it.",
     "The specification drift window is the already-reviewed c52dee4..candidate range inherited from the base; this candidate adds no specification or requirement text and asserts no new requirement coverage."
