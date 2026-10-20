@@ -2,7 +2,7 @@
   "format": "gantry.specification-currency-qualification/v1",
   "issue": "be47045e-93fb-473b-af7a-2d459aae091c",
   "status": "verified",
-  "specification_sha256": "0d1d2fa009913f4d0154dc1e70072505abb23e93b6044db4c7319c17c836c302",
+  "specification_sha256": "cc428bbcf15f9f2f4d5142bf6f28c4fe020de169bd49f22b039b509a923b9071",
   "superseded_specification_sha256": "49c3fe100b4109ba227f9d48cd083a6f32753d7ae881afbbb67b3c40273b0cbf",
   "candidate": {
     "base_commit": "677776c73b1abbffbc05195be814fb422c4a6868",
@@ -15,19 +15,19 @@
     "inputs": [
       {
         "path": "SPEC.md",
-        "sha256": "0d1d2fa009913f4d0154dc1e70072505abb23e93b6044db4c7319c17c836c302"
+        "sha256": "cc428bbcf15f9f2f4d5142bf6f28c4fe020de169bd49f22b039b509a923b9071"
       },
       {
         "path": "protocol/requirements/reviewed-v1.json",
-        "sha256": "40909a8dfc87e252ed1bfd13e147652e684052b13f43affba4eb786f354b340c"
+        "sha256": "8abb147d607f3f3461c55f2979fe85890b8786b0b51c06ed11361f8bf1065899"
       },
       {
         "path": "protocol/requirements/section14-v1.json",
-        "sha256": "815f1f4779ea0ab9df75445fdeea6e6cf912ab20f556d0174b6942c1133ab4d7"
+        "sha256": "9f4c1a9f92c9be5627595750c19670cc3e31404f7b6eff276372d60d077f91d9"
       },
       {
         "path": "protocol/requirements/generated/requirements-v1.json",
-        "sha256": "61603b41a2ff518c6b0beb93dffd2c49894a79a7b8930c0fe6700e4e27c694f9"
+        "sha256": "8ca55289a70029924d3f41eb55fb802da6975789dce48eb6e0dfe13ead05e777"
       },
       {
         "path": "Cargo.lock",
