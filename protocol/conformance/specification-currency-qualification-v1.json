@@ -19,7 +19,7 @@
       },
       {
         "path": "protocol/requirements/reviewed-v1.json",
-        "sha256": "fe93545fa488042885abf26fdd3a5192d8e6923ad58760a779a34fc04bafeb4c"
+        "sha256": "9af0de694395e34ff5dc215c8118e12b19870df00b734486f5b2530a8d93d6e9"
       },
       {
         "path": "protocol/requirements/section14-v1.json",
@@ -27,7 +27,7 @@
       },
       {
         "path": "protocol/requirements/generated/requirements-v1.json",
-        "sha256": "57d645cbeb724b2e04f332adf9f14d446bce6e179163b40d70407b761395a589"
+        "sha256": "c1e6103c22b8c02fece3b7251098933568d44c74cd376bf1593caa6e61044d68"
       },
       {
         "path": "Cargo.lock",

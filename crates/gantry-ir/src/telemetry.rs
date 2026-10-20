@@ -19,6 +19,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::sync::Arc;
 
 use crate::protected::{
     ProtectedDataClass, ProtectedValue, ProtectedValueId, ReleaseDestination, ReleaseProjection,
@@ -205,6 +206,30 @@ impl TelemetrySinkInstanceId {
         self.0.as_str()
     }
 }
+
+/// One unforgeable issuing-state authority.
+///
+/// The token has no public constructor and no public accessor for its inner allocation. A state
+/// creates exactly one authority; an emit receives a shared reference to it. Equality is pointer
+/// equality, so two independently constructed states never share authority even when they declare
+/// the same ordinary instance name. The state type is not `Clone`, so a live accounting state
+/// cannot be duplicated with the same authority.
+#[derive(Clone, Debug)]
+struct SinkAuthority(Arc<()>);
+
+impl SinkAuthority {
+    fn new() -> Self {
+        Self(Arc::new(()))
+    }
+}
+
+impl PartialEq for SinkAuthority {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for SinkAuthority {}
 
 /// One declared ordinary field of a telemetry record.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -1305,6 +1330,7 @@ pub struct TelemetryEmit {
     sequence: u64,
     sink: TelemetrySinkId,
     instance: TelemetrySinkInstanceId,
+    authority: SinkAuthority,
     delivery: TelemetryDeliveryClass,
 }
 
@@ -1395,11 +1421,11 @@ impl TelemetryEmit {
         state: &mut TelemetrySinkState,
         kind: SettlementKind,
     ) -> Result<TelemetrySettlement, TelemetrySettleError> {
-        if self.instance != *state.instance() {
+        if self.authority != state.authority {
             return Err(TelemetrySettleError::new(
                 TelemetryError::new(
                     TelemetryDiagnosticCode::InvalidSettlement,
-                    "the emit belongs to another sink instance",
+                    "the emit belongs to another issuing sink state",
                 ),
                 self,
             ));
@@ -1775,8 +1801,34 @@ impl TelemetryShutdownSettlement {
 ///
 /// This is accounting state, not a queue implementation and not a sink. It stores counts, active
 /// series keys, and one redacted poison report; it stores no record, no payload, and no context.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct TelemetrySinkState {
+    instance: TelemetrySinkInstanceId,
+    authority: SinkAuthority,
+    sink: Option<TelemetrySinkId>,
+    policy: Option<TelemetrySinkPolicy>,
+    queued: u64,
+    pending_emits: u64,
+    retained: u64,
+    active_series: BTreeSet<TelemetrySeriesKey>,
+    dropped: u64,
+    acknowledged: u64,
+    cancelled: u64,
+    ambiguous: u64,
+    failed: u64,
+    abandoned: u64,
+    poisoned: Option<TelemetrySinkFault>,
+    shutdown: Option<TelemetryShutdownPlan>,
+    shutdown_drained: u64,
+    shutdown_complete: bool,
+}
+
+/// One immutable comparison snapshot of a sink accounting state.
+///
+/// The snapshot carries declared accounting facts only. It carries no issuing authority and cannot
+/// settle an emit, so two snapshots can be compared without duplicating a live obligation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TelemetrySinkSnapshot {
     instance: TelemetrySinkInstanceId,
     sink: Option<TelemetrySinkId>,
     policy: Option<TelemetrySinkPolicy>,
@@ -1802,6 +1854,7 @@ impl TelemetrySinkState {
     pub fn new(instance: TelemetrySinkInstanceId) -> Self {
         Self {
             instance,
+            authority: SinkAuthority::new(),
             sink: None,
             policy: None,
             queued: 0,
@@ -1828,6 +1881,30 @@ impl TelemetrySinkState {
         state.sink = Some(policy.sink().clone());
         state.policy = Some(policy);
         state
+    }
+
+    /// Returns one immutable comparison snapshot of this state.
+    #[must_use]
+    pub fn snapshot(&self) -> TelemetrySinkSnapshot {
+        TelemetrySinkSnapshot {
+            instance: self.instance.clone(),
+            sink: self.sink.clone(),
+            policy: self.policy.clone(),
+            queued: self.queued,
+            pending_emits: self.pending_emits,
+            retained: self.retained,
+            active_series: self.active_series.clone(),
+            dropped: self.dropped,
+            acknowledged: self.acknowledged,
+            cancelled: self.cancelled,
+            ambiguous: self.ambiguous,
+            failed: self.failed,
+            abandoned: self.abandoned,
+            poisoned: self.poisoned.clone(),
+            shutdown: self.shutdown,
+            shutdown_drained: self.shutdown_drained,
+            shutdown_complete: self.shutdown_complete,
+        }
     }
 
     /// Returns the exact sink instance identity.
@@ -2129,6 +2206,7 @@ impl TelemetrySinkState {
                     sequence: record.sequence(),
                     sink: policy.sink().clone(),
                     instance: self.instance.clone(),
+                    authority: self.authority.clone(),
                     delivery: TelemetryDeliveryClass::Required,
                 }))
             }
@@ -2153,6 +2231,7 @@ impl TelemetrySinkState {
                     sequence: record.sequence(),
                     sink: policy.sink().clone(),
                     instance: self.instance.clone(),
+                    authority: self.authority.clone(),
                     delivery: TelemetryDeliveryClass::BestEffort,
                 }))
             }

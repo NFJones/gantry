@@ -45980,7 +45980,8 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
-                "crates/gantry-conformance/tests/telemetry_policy.rs#typed_records_and_explicit_context_are_bounded_and_canonical"
+                "crates/gantry-conformance/tests/telemetry_policy.rs#typed_records_and_explicit_context_are_bounded_and_canonical",
+                "crates/gantry-conformance/tests/telemetry_policy.rs#unicode_control_characters_are_refused"
               ],
               "rationale": null
             }
@@ -46023,7 +46024,8 @@
               "evidence": [
                 "crates/gantry-conformance/tests/telemetry_policy.rs#complete_finite_limits_are_required_and_zero_denies_a_dimension",
                 "crates/gantry-conformance/tests/telemetry_policy.rs#sink_policies_are_immutable_and_need_a_positive_bounded_wait",
-                "crates/gantry-conformance/tests/telemetry_policy.rs#missing_policy_and_withheld_grant_refuse_without_mutation"
+                "crates/gantry-conformance/tests/telemetry_policy.rs#missing_policy_and_withheld_grant_refuse_without_mutation",
+                "crates/gantry-conformance/tests/telemetry_policy.rs#sink_state_refuses_policy_replacement_and_foreign_faults"
               ],
               "rationale": null
             }
@@ -46107,7 +46109,8 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
-                "crates/gantry-conformance/tests/telemetry_policy.rs#protected_values_are_not_labels_or_series_and_need_destination_release"
+                "crates/gantry-conformance/tests/telemetry_policy.rs#protected_values_are_not_labels_or_series_and_need_destination_release",
+                "crates/gantry-conformance/tests/telemetry_policy.rs#release_projection_must_match_its_declared_class"
               ],
               "rationale": null
             }
@@ -46149,7 +46152,9 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/telemetry_policy.rs#required_delivery_completes_only_at_acknowledgement",
-                "crates/gantry-conformance/tests/telemetry_policy.rs#best_effort_reports_queued_or_dropped_and_never_delivers_on_enqueue"
+                "crates/gantry-conformance/tests/telemetry_policy.rs#best_effort_reports_queued_or_dropped_and_never_delivers_on_enqueue",
+                "crates/gantry-conformance/tests/telemetry_policy.rs#settlements_are_bound_to_the_issuing_state_authority",
+                "crates/gantry-conformance/tests/telemetry_policy.rs#aggregate_shutdown_retires_live_emits"
               ],
               "rationale": null
             }
@@ -46191,7 +46196,9 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/telemetry_policy.rs#required_backpressure_is_bounded_and_settlements_are_terminal",
-                "crates/gantry-conformance/tests/telemetry_policy.rs#shutdown_is_bounded_and_reports_drained_and_abandoned_emits"
+                "crates/gantry-conformance/tests/telemetry_policy.rs#shutdown_is_bounded_and_reports_drained_and_abandoned_emits",
+                "crates/gantry-conformance/tests/telemetry_policy.rs#shutdown_drain_budget_is_enforced_for_aggregate_and_live_settlements",
+                "crates/gantry-conformance/tests/telemetry_policy.rs#aggregate_shutdown_retires_live_emits"
               ],
               "rationale": null
             }
@@ -46232,7 +46239,8 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
-                "crates/gantry-conformance/tests/telemetry_policy.rs#sink_faults_poison_one_instance_and_redact_the_report"
+                "crates/gantry-conformance/tests/telemetry_policy.rs#sink_faults_poison_one_instance_and_redact_the_report",
+                "crates/gantry-conformance/tests/telemetry_policy.rs#sink_state_refuses_policy_replacement_and_foreign_faults"
               ],
               "rationale": null
             }

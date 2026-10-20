@@ -34,7 +34,8 @@ value, one optional destination release, and one finite positive wait bound. It 
 configuration fallback, and no implicit default. Absent policy refuses `telemetry-policy-absent`.
 One `TelemetrySinkState` binds one sink identity and one policy; a later policy that differs in
 sink, delivery class, limits, release, or wait bound refuses `telemetry-policy-mismatch` without
-mutating the state.
+mutating the state. Each state creates a fresh unforgeable issuing authority; the declared instance
+name is diagnostic metadata, not settlement authority.
 
 `TelemetryLimitSet` requires all thirteen declarations. `TelemetryLimits` accepts only finite
 values; an `Unlimited` declaration refuses `telemetry-unlimited-policy`. A finite zero is a
@@ -92,10 +93,12 @@ Required delivery completes only at one declared sink acknowledgement. Admission
 pending, not delivery. Best-effort admission reports `queued` or `dropped`; queued is not delivered.
 `acknowledged`, `cancelled`, `ambiguous`, and `failed` are distinct terminal settlements.
 `TelemetryEmit` is affine and is consumed by exactly one settlement, so no emit is settled twice.
-An emit is bound to the exact sink instance that issued it; a foreign instance refuses
-`telemetry-invalid-settlement` and returns the unsettled emit, and an emit presented after aggregate
-shutdown settlement refuses `telemetry-shutdown-already-settled`. An ambiguous write is terminal
-and is never silently retried. No settlement carries a business,
+An emit is bound to the issuing state's unforgeable authority, not a declared name. An independently
+constructed state with the same declared instance name, a recreated state, or any other foreign
+state refuses `telemetry-invalid-settlement` and returns the unsettled emit. A live accounting state
+is not cloneable; `snapshot()` returns an immutable comparison view with no settlement authority. An
+emit presented after aggregate shutdown settlement refuses `telemetry-shutdown-already-settled`. An
+ambiguous write is terminal and is never silently retried. No settlement carries a business,
 task, execution, or Section 12 outcome, and a delivery failure never rewrites a fixed outcome.
 
 ## Backpressure, cancellation, and shutdown

@@ -43,6 +43,7 @@ macro_rules! assert_not_impl_any {
 }
 
 assert_not_impl_any!(gantry::ir::TelemetryEmit: Clone);
+assert_not_impl_any!(gantry::ir::TelemetrySinkState: Clone);
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -137,13 +138,17 @@ fn assert_atomic_refusal(
     record: &TelemetryRecord,
     expected: TelemetryDiagnosticCode,
 ) {
-    let before = state.clone();
+    let before = state.snapshot();
     let error = refused(
         state.admit(Some(policy), Some(&TelemetryEmitGrant::granted()), record),
         "a bounded admission refusal",
     );
     assert_eq!(error.code(), expected);
-    assert_eq!(*state, before, "a refusal never mutates sink accounting");
+    assert_eq!(
+        state.snapshot(),
+        before,
+        "a refusal never mutates sink accounting"
+    );
 }
 
 fn protected_value(class: ProtectedDataClass) -> ProtectedValue {
@@ -493,16 +498,16 @@ fn missing_policy_and_withheld_grant_refuse_without_mutation() {
     let record = log_record(1, "log");
     let policy = required_policy(TelemetryLimits::declared());
     let mut absent = TelemetrySinkState::new(instance("state-a"));
-    let before = absent.clone();
+    let before = absent.snapshot();
     let error = refused(
         absent.admit(None, Some(&TelemetryEmitGrant::granted()), &record),
         "an absent policy",
     );
     assert_eq!(error.code(), TelemetryDiagnosticCode::PolicyAbsent);
-    assert_eq!(absent, before);
+    assert_eq!(absent.snapshot(), before);
 
     let mut withheld = TelemetrySinkState::new(instance("state-a"));
-    let before = withheld.clone();
+    let before = withheld.snapshot();
     let error = refused(
         withheld.admit(
             Some(&policy),
@@ -512,13 +517,13 @@ fn missing_policy_and_withheld_grant_refuse_without_mutation() {
         "a withheld grant",
     );
     assert_eq!(error.code(), TelemetryDiagnosticCode::EmitNotGranted);
-    assert_eq!(withheld, before);
+    assert_eq!(withheld.snapshot(), before);
     let error = refused(
         withheld.admit(Some(&policy), None, &record),
         "a missing grant",
     );
     assert_eq!(error.code(), TelemetryDiagnosticCode::EmitNotGranted);
-    assert_eq!(withheld, before);
+    assert_eq!(withheld.snapshot(), before);
 }
 
 #[test]
@@ -635,10 +640,10 @@ fn cardinality_and_retention_refuse_instead_of_evicting() {
     }));
     let mut retained = TelemetrySinkState::new(instance("state-a"));
     assert!(retained.retain(Some(&retention), &first).is_ok());
-    let before = retained.clone();
+    let before = retained.snapshot();
     let error = refused(retained.retain(Some(&retention), &second), "full retention");
     assert_eq!(error.code(), TelemetryDiagnosticCode::RetentionBound);
-    assert_eq!(retained, before);
+    assert_eq!(retained.snapshot(), before);
     assert_eq!(retained.retained(), 1);
 
     let zero_series = required_policy(limits_with(|set| {
@@ -790,7 +795,7 @@ fn protected_values_are_not_labels_or_series_and_need_destination_release() {
 
     let no_release = required_policy(TelemetryLimits::declared());
     let mut state = TelemetrySinkState::new(instance("state-a"));
-    let before = state.clone();
+    let before = state.snapshot();
     let error = refused(
         state.admit(
             Some(&no_release),
@@ -800,7 +805,7 @@ fn protected_values_are_not_labels_or_series_and_need_destination_release() {
         "a protected reference without release",
     );
     assert_eq!(error.code(), TelemetryDiagnosticCode::ReleaseRequired);
-    assert_eq!(state, before);
+    assert_eq!(state.snapshot(), before);
 
     let release = telemetry_release(&sink("sink-a"), ProtectedDataClass::SourceText);
     let wrong_class = policy(
@@ -809,7 +814,7 @@ fn protected_values_are_not_labels_or_series_and_need_destination_release() {
         TelemetryLimits::declared(),
         Some(release),
     );
-    let before = state.clone();
+    let before = state.snapshot();
     let error = refused(
         state.admit(
             Some(&wrong_class),
@@ -822,7 +827,7 @@ fn protected_values_are_not_labels_or_series_and_need_destination_release() {
         error.code(),
         TelemetryDiagnosticCode::ReleaseClassNotDeclared
     );
-    assert_eq!(state, before);
+    assert_eq!(state.snapshot(), before);
 
     let release = telemetry_release(&sink("sink-a"), ProtectedDataClass::RenderedPrompt);
     let admitted_policy = policy(
@@ -878,7 +883,7 @@ fn required_backpressure_is_bounded_and_settlements_are_terminal() {
         TelemetryAdmission::Pending(emit) => emit,
         _ => panic!("a required admission is pending"),
     };
-    let before = state.clone();
+    let before = state.snapshot();
     let error = refused(
         state.admit(
             Some(&policy),
@@ -889,7 +894,7 @@ fn required_backpressure_is_bounded_and_settlements_are_terminal() {
     );
     assert_eq!(error.code(), TelemetryDiagnosticCode::BackpressureBound);
     assert!(error.detail().contains('7'));
-    assert_eq!(state, before);
+    assert_eq!(state.snapshot(), before);
 
     let cancelled = first
         .cancel(&mut state)
@@ -947,7 +952,7 @@ fn shutdown_is_bounded_and_reports_drained_and_abandoned_emits() {
     assert_eq!(plan.drain_bound(), 1);
     assert_eq!(plan.timeout_us(), 5_000);
     assert!(!plan.within_bound());
-    let before = state.clone();
+    let before = state.snapshot();
     let error = refused(
         state.admit(
             Some(&policy),
@@ -957,7 +962,7 @@ fn shutdown_is_bounded_and_reports_drained_and_abandoned_emits() {
         "an admission after shutdown begin",
     );
     assert_eq!(error.code(), TelemetryDiagnosticCode::SinkShutdown);
-    assert_eq!(state, before);
+    assert_eq!(state.snapshot(), before);
     assert_eq!(
         refused(
             state.retain(Some(&policy), &log_record(3, "log")),
@@ -995,12 +1000,12 @@ fn shutdown_is_bounded_and_reports_drained_and_abandoned_emits() {
         .unwrap_or_else(|error| panic!("the emit is admitted: {error}"));
     assert!(admission.is_pending());
     assert!(impossible.begin_shutdown(Some(&policy)).is_ok());
-    let before = impossible.clone();
+    let before = impossible.snapshot();
     assert_eq!(
         refused(impossible.settle_shutdown(2), "an impossible drained count").code(),
         TelemetryDiagnosticCode::InvalidSettlement
     );
-    assert_eq!(impossible, before);
+    assert_eq!(impossible.snapshot(), before);
 
     let zero_drain = required_policy(limits_with(|set| {
         set.max_shutdown_drain = TelemetryLimit::Finite(0);
@@ -1048,7 +1053,7 @@ fn sink_faults_poison_one_instance_and_redact_the_report() {
         TelemetryLimits::declared(),
         None,
     );
-    let before = poisoned.clone();
+    let before = poisoned.snapshot();
     let error = refused(
         poisoned.admit(
             Some(&poisoned_policy),
@@ -1058,7 +1063,7 @@ fn sink_faults_poison_one_instance_and_redact_the_report() {
         "a poisoned sink",
     );
     assert_eq!(error.code(), TelemetryDiagnosticCode::SinkPoisoned);
-    assert_eq!(poisoned, before);
+    assert_eq!(poisoned.snapshot(), before);
     assert_eq!(
         refused(
             poisoned.retain(Some(&poisoned_policy), &log_record(1, "log")),
@@ -1134,12 +1139,12 @@ fn zero_dimensions_deny_their_dimension_without_mutation() {
     let retention = required_policy(limits_with(|set| {
         set.max_retention = TelemetryLimit::Finite(0);
     }));
-    let before = state.clone();
+    let before = state.snapshot();
     assert_eq!(
         refused(state.retain(Some(&retention), &record), "zero retention").code(),
         TelemetryDiagnosticCode::RetentionBound
     );
-    assert_eq!(state, before);
+    assert_eq!(state.snapshot(), before);
 }
 
 #[test]
@@ -1158,13 +1163,24 @@ fn release_projection_must_match_its_declared_class() {
 }
 
 #[test]
-fn settlements_are_bound_to_the_issuing_instance() {
+fn settlements_are_bound_to_the_issuing_state_authority() {
     let policy = required_policy(limits_with(|set| {
-        set.max_pending_emits = TelemetryLimit::Finite(2);
+        set.max_pending_emits = TelemetryLimit::Finite(4);
     }));
-    let mut first = TelemetrySinkState::new(instance("state-a"));
-    let mut second = TelemetrySinkState::new(instance("state-b"));
-    let emit = match first
+    let mut first = TelemetrySinkState::new(instance("same"));
+    let mut second = TelemetrySinkState::new(instance("same"));
+    let _second_emit = match second
+        .admit(
+            Some(&policy),
+            Some(&TelemetryEmitGrant::granted()),
+            &log_record(9, "log"),
+        )
+        .unwrap_or_else(|error| panic!("the foreign emit is admitted: {error}"))
+    {
+        TelemetryAdmission::Pending(emit) => emit,
+        _ => panic!("a required admission is pending"),
+    };
+    let mut emit = match first
         .admit(
             Some(&policy),
             Some(&TelemetryEmitGrant::granted()),
@@ -1175,23 +1191,73 @@ fn settlements_are_bound_to_the_issuing_instance() {
         TelemetryAdmission::Pending(emit) => emit,
         _ => panic!("a required admission is pending"),
     };
-    let before_second = second.clone();
+    let before_second = second.snapshot();
+
     let rejected = match emit.acknowledge(&mut second) {
-        Ok(_) => panic!("a foreign instance must refuse the settlement"),
+        Ok(_) => panic!("a foreign state must refuse acknowledgement"),
         Err(rejected) => rejected,
     };
     assert_eq!(
         rejected.error().code(),
         TelemetryDiagnosticCode::InvalidSettlement
     );
-    assert_eq!(second, before_second);
+    assert_eq!(second.snapshot(), before_second);
+    emit = rejected.into_emit();
+
+    let rejected = match emit.cancel(&mut second) {
+        Ok(_) => panic!("a foreign state must refuse cancellation"),
+        Err(rejected) => rejected,
+    };
+    assert_eq!(
+        rejected.error().code(),
+        TelemetryDiagnosticCode::InvalidSettlement
+    );
+    assert_eq!(second.snapshot(), before_second);
+    emit = rejected.into_emit();
+
+    let rejected = match emit.ambiguous(&mut second) {
+        Ok(_) => panic!("a foreign state must refuse an ambiguous settlement"),
+        Err(rejected) => rejected,
+    };
+    assert_eq!(
+        rejected.error().code(),
+        TelemetryDiagnosticCode::InvalidSettlement
+    );
+    assert_eq!(second.snapshot(), before_second);
+    emit = rejected.into_emit();
+
+    let rejected = match emit.failed(&mut second) {
+        Ok(_) => panic!("a foreign state must refuse a failed settlement"),
+        Err(rejected) => rejected,
+    };
+    assert_eq!(
+        rejected.error().code(),
+        TelemetryDiagnosticCode::InvalidSettlement
+    );
+    assert_eq!(second.snapshot(), before_second);
+    emit = rejected.into_emit();
+
+    let mut recreated = TelemetrySinkState::new(instance("same"));
+    let before_recreated = recreated.snapshot();
+    let rejected = match emit.acknowledge(&mut recreated) {
+        Ok(_) => panic!("a recreated state must not accept a stale emit"),
+        Err(rejected) => rejected,
+    };
+    assert_eq!(
+        rejected.error().code(),
+        TelemetryDiagnosticCode::InvalidSettlement
+    );
+    assert_eq!(recreated.snapshot(), before_recreated);
     let emit = rejected.into_emit();
+
     let settlement = emit
         .acknowledge(&mut first)
         .unwrap_or_else(|error| panic!("the issuing instance accepts the emit: {error}"));
     assert!(settlement.is_delivered());
     assert_eq!(first.acknowledged(), 1);
     assert_eq!(second.acknowledged(), 0);
+    assert_eq!(second.pending_emits(), 1);
+    assert_eq!(recreated.acknowledged(), 0);
 }
 
 #[test]
@@ -1217,7 +1283,7 @@ fn aggregate_shutdown_retires_live_emits() {
         .settle_shutdown(0)
         .unwrap_or_else(|error| panic!("shutdown settles: {error}"));
     assert_eq!(settlement.abandoned(), 1);
-    let before = state.clone();
+    let before = state.snapshot();
     let rejected = match emit.acknowledge(&mut state) {
         Ok(_) => panic!("a retired emit must not settle after shutdown"),
         Err(rejected) => rejected,
@@ -1226,7 +1292,7 @@ fn aggregate_shutdown_retires_live_emits() {
         rejected.error().code(),
         TelemetryDiagnosticCode::ShutdownAlreadySettled
     );
-    assert_eq!(state, before);
+    assert_eq!(state.snapshot(), before);
 }
 
 #[test]
@@ -1246,7 +1312,7 @@ fn sink_state_refuses_policy_replacement_and_foreign_faults() {
         )
         .unwrap_or_else(|error| panic!("the first policy binds: {error}"));
     assert!(admission.is_pending());
-    let before = state.clone();
+    let before = state.snapshot();
     let error = refused(
         state.admit(
             Some(&replacement),
@@ -1256,13 +1322,13 @@ fn sink_state_refuses_policy_replacement_and_foreign_faults() {
         "a replacement policy",
     );
     assert_eq!(error.code(), TelemetryDiagnosticCode::PolicyMismatch);
-    assert_eq!(state, before);
+    assert_eq!(state.snapshot(), before);
 
     let fault = TelemetrySinkFault::new(sink("sink-b"), TelemetryFaultClass::Panic);
-    let before = state.clone();
+    let before = state.snapshot();
     let error = refused(state.poison(fault), "a foreign fault");
     assert_eq!(error.code(), TelemetryDiagnosticCode::SinkMismatch);
-    assert_eq!(state, before);
+    assert_eq!(state.snapshot(), before);
 }
 
 #[test]
@@ -1283,13 +1349,13 @@ fn shutdown_drain_budget_is_enforced_for_aggregate_and_live_settlements() {
         assert!(admission.is_pending());
     }
     assert!(aggregate.begin_shutdown(Some(&policy)).is_ok());
-    let before = aggregate.clone();
+    let before = aggregate.snapshot();
     let error = refused(
         aggregate.settle_shutdown(2),
         "an over-budget aggregate drain",
     );
     assert_eq!(error.code(), TelemetryDiagnosticCode::InvalidSettlement);
-    assert_eq!(aggregate, before);
+    assert_eq!(aggregate.snapshot(), before);
     let settlement = aggregate
         .settle_shutdown(1)
         .unwrap_or_else(|error| panic!("the bounded drain settles: {error}"));
@@ -1320,7 +1386,7 @@ fn shutdown_drain_budget_is_enforced_for_aggregate_and_live_settlements() {
             .unwrap_or_else(|error| panic!("the first drain settles: {error}"))
             .is_delivered()
     );
-    let before = live.clone();
+    let before = live.snapshot();
     let rejected = match second.acknowledge(&mut live) {
         Ok(_) => panic!("the drain budget must refuse a second settlement"),
         Err(rejected) => rejected,
@@ -1329,7 +1395,7 @@ fn shutdown_drain_budget_is_enforced_for_aggregate_and_live_settlements() {
         rejected.error().code(),
         TelemetryDiagnosticCode::BackpressureBound
     );
-    assert_eq!(live, before);
+    assert_eq!(live.snapshot(), before);
     assert_eq!(live.shutdown_drained(), 1);
     let settlement = live
         .settle_shutdown(0)
