@@ -6,10 +6,10 @@
   "superseded_specification_sha256": "0d1d2fa009913f4d0154dc1e70072505abb23e93b6044db4c7319c17c836c302",
   "candidate": {
     "base_commit": "754fa86700255696542d059f3bfd97b9d963b319",
-    "currency_repair_parent_commit": "e717ecf833502045b2c68e06ae52b99a6a5ad0b1",
-    "reviewed_through_commit": "e717ecf833502045b2c68e06ae52b99a6a5ad0b1",
+    "currency_repair_parent_commit": "c455ae902779a06db38c3a1cad965a2bb2ebefae",
+    "reviewed_through_commit": "c455ae902779a06db38c3a1cad965a2bb2ebefae",
     "since_commit": "754fa86700255696542d059f3bfd97b9d963b319",
-    "tree_sha": "0c8dd12d64319d1bcc636f530afe4ffbfe780809",
+    "tree_sha": "17f6de66c4e2913c3c4954b483649e2b70357086",
     "identity_note": "Content identity is the reviewed candidate tree plus the exact input digests. The record commit is not part of its own identity; it changes only the self-referential conformance publication, manifest, index, verification report, and this record, and the governed generator recomputes those bytes to a fixpoint before the record is committed.",
     "toolchain": "rustc 1.97.1 (8bab26f4f 2026-07-14) with clippy and rustfmt; product and fuzz lockfiles are pinned by the input list",
     "inputs": [
@@ -189,7 +189,7 @@
     "outcome": "Every retained Section 14 excerpt remains covered with executable evidence; the revision adds no excerpt and removes none."
   },
   "qualification": {
-    "scope": "Repaired bounded Section 48 telemetry policy and admission candidate: typed log, metric, and trace records, explicit context, immutable per-sink identity and policy binding, finite limits with zero denial, atomic admission without truncation or eviction, projection-class and destination release before export queueing, required acknowledgement versus best-effort queued or dropped outcomes, instance-bound settlement with post-shutdown retirement, bounded backpressure and drain budgets, Unicode-control refusal, and one-instance sink-fault containment. No sink, adapter, queue implementation, runtime emission, source-global context, durable delivery, or Section 12 evidence use is claimed.",
+    "scope": "Repaired bounded Section 48 telemetry policy and admission candidate: typed log, metric, and trace records, explicit context, immutable per-sink identity and policy binding, unforgeable issuing-state settlement authority, finite limits with zero denial, atomic admission without truncation or eviction, projection-class and destination release before export queueing, required acknowledgement versus best-effort queued or dropped outcomes, post-shutdown retirement, bounded backpressure and drain budgets, Unicode-control refusal, and one-instance sink-fault containment. No sink, adapter, queue implementation, runtime emission, source-global context, durable delivery, or Section 12 evidence use is claimed.",
     "lanes": [
       {
         "lane": "telemetry_policy",
@@ -247,7 +247,7 @@
       },
       {
         "command": "cargo test --locked -p gantry-conformance --test telemetry_policy",
-        "result": "21 of 21 telemetry lanes pass, including all seven repair regressions"
+        "result": "21 of 21 telemetry lanes pass, including unforgeable-authority, all-settlement, foreign-pending, and recreated-state regressions"
       },
       {
         "command": "cargo test --locked -p gantry-conformance --test publication_set",
@@ -260,7 +260,7 @@
     ],
     "publication": {
       "member_count": 7,
-      "identity_at_currency_repair_parent": "fdb2c8c4bd52c22a90393bad3448533c6baea3ed1c75e3da62d714348f9a9dc8",
+      "identity_at_currency_repair_parent": "ede2dd7585f714e0357f64f88964fbd5ed0e62d1aeae0e8791b4e740bf279ddb",
       "identity_note": "The publication identity is recomputed from the named repair parent commit, not from the older base. The record commit changes only the self-referential conformance manifest, this record, the publication index, the conformance bundle, and the verification report, and the governed generator recomputes them to a fixpoint.",
       "verification": "protocol/publication/verification-v1.json verifies the seven-artifact set after regeneration"
     }
@@ -270,7 +270,7 @@
     "No source-global context, implicit sink discovery, cross-sink ordering, durable or global exactly-once delivery, or Section 12 evidence use is claimed.",
     "The inherited general_purpose_preregistration lane still requires the gitignored docs/reference/general-purpose-refactor-issue-plan.md fixture; no telemetry claim depends on it.",
     "Release declarations are modeled for the null telemetry destination only; other Section 15.10 destinations and operational disclosure budgets remain with their owning contracts.",
-    "The repair lanes cover cross-instance settlement ownership, policy replacement, projection-class mismatch, stale handles after aggregate shutdown, over-budget drain, and Unicode controls; they do not claim a runtime sink or adapter."
+    "The authority regression covers independently constructed states with identical declared instance names, a foreign state holding its own pending emit, all four settlement methods, and recreated same-name states. No live sink accounting state is cloneable; snapshots carry no settlement authority."
   ],
   "successors": [
     {
