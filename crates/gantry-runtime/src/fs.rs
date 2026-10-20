@@ -66,10 +66,15 @@
 //! [`FsHostTarget::MacOs`] exactly as it refuses a target it does not name, and no descriptor is
 //! opened on that target.
 //!
-//! The declaration contract is unaffected: `SPEC.md` Section 47 publishes no runtime availability
-//! for any target, so refusing one target acquisition here neither narrows nor widens a declared
-//! clause. Delivering macOS acquisition requires a reviewed effect-free no-follow acquisition
-//! contract first; until then, refusing is the only consistent behavior.
+//! This is an initial **runtime availability limit**, not macOS support and not completion of
+//! `GNT-GP-FS-001`. `GNT-17.13-runtime-availability-separation` makes runtime capability
+//! availability a separate deployment fact whose absence is handled as a typed preflight outcome,
+//! and `GNT-29.5-filesystem-and-environment-contracts` together with
+//! `GNT-47.0-filesystem-foundation-scope` publish application-target declarations only: Section 47
+//! publishes no runtime availability for any target. Refusing one target acquisition here therefore
+//! neither narrows nor widens a declared clause and grants no authority. Delivering macOS
+//! acquisition requires a reviewed effect-free no-follow acquisition contract first; until one
+//! exists, a typed pre-execution refusal is the only behavior this runtime can state honestly.
 //!
 //! Still owed to `GNT-GP-FS-001`: writes, replacement, receipts, locks, watch, short-write
 //! prefixes, poisoning, revocation, quotas, adapter fault containment, and durable rejection of a
@@ -168,7 +173,8 @@ pub enum FsHostTarget {
     /// The Linux mapping, which this slice delivers.
     Linux,
     /// The macOS target, which this slice refuses at target scope until an effect-free no-follow
-    /// acquisition method for it is established and reviewed.
+    /// acquisition method for it is established and reviewed. The refusal is an initial runtime
+    /// availability limit of this slice, not macOS support.
     MacOs,
     /// A target with no delivered mapping; every operation is refused before execution.
     Unsupported,

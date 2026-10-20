@@ -865,7 +865,8 @@ fn accounting_records_carry_no_live_handle_or_path_spelling() {
 ///
 /// macOS is refused because no effect-free no-follow acquisition method for it is established: an
 /// `O_EVTONLY` probe still reaches FIFO reader wait and device `d_open`, so claiming delivery would
-/// claim an equivalence this slice cannot test.
+/// claim an equivalence this slice cannot test. The refusal is an initial runtime availability
+/// limit of this slice, recorded as a typed preflight outcome before any descriptor exists.
 #[test]
 fn only_the_linux_mapping_is_delivered_and_other_targets_refuse() {
     let linux = FsHostTarget::Linux
