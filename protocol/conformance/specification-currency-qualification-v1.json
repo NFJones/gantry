@@ -279,7 +279,7 @@
     },
     {
       "path": "crates/gantry-runtime/src/console.rs",
-      "sha256": "269509521127d5e1831a5b9f073b1592e07382dc4673dac15b34f6e5af0a2e73"
+      "sha256": "14e0861a90123dcedd3a3ea2638f5c0ab48d16ca99c97a762f8b4f0603d861f5"
     },
     {
       "path": "crates/gantry-runtime/src/console/tests.rs",
@@ -299,7 +299,7 @@
     },
     {
       "path": "docs/console-capability.md",
-      "sha256": "c7ca277dfc3537a1ef09c5c058d0a1a4fad9d81701379de0a20b3c9ed5ef2c13"
+      "sha256": "388913b663369c9f56d24e294c6332af2077e8f4531a7361be1d83e76f5e7b46"
     },
     {
       "path": "docs/resource-runtime-integration.md",
