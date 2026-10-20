@@ -274,16 +274,36 @@
   ],
   "successors": [
     {
+      "path": "crates/gantry-conformance/tests/console_runtime_integration.rs",
+      "sha256": "39a2d2d162bf9468d0a9d00ff7fd067b37c959b6739c4650ae4526e1dd5191ef"
+    },
+    {
+      "path": "crates/gantry-runtime/src/console.rs",
+      "sha256": "269509521127d5e1831a5b9f073b1592e07382dc4673dac15b34f6e5af0a2e73"
+    },
+    {
+      "path": "crates/gantry-runtime/src/console/tests.rs",
+      "sha256": "bf962205ae47e09e6de8904f34d1dffaad2fc4168bc050079989de172f4d42a5"
+    },
+    {
       "path": "crates/gantry-runtime/src/io_settlement.rs",
       "sha256": "acfacccf11dbfc00d30cef49d221ad66aba55864f10efdb7f854a9d643936174"
+    },
+    {
+      "path": "crates/gantry-runtime/src/lib.rs",
+      "sha256": "1501648c60d905e30c818674ecfe86202a4da5995afe70c13db6064513d8253b"
     },
     {
       "path": "crates/gantry-runtime/src/machine.rs",
       "sha256": "0ebcb8eba4d52ca472ab5da5f5ed102c8909b3ae47e18cb14bc281f9f0762eb9"
     },
     {
+      "path": "docs/console-capability.md",
+      "sha256": "c7ca277dfc3537a1ef09c5c058d0a1a4fad9d81701379de0a20b3c9ed5ef2c13"
+    },
+    {
       "path": "docs/resource-runtime-integration.md",
-      "sha256": "38bd1c2dd5eb52e2f5827718f672bc3223c1b18e57089d54869a0e0090e2db08"
+      "sha256": "5d55c8da730300b3d5f5ecbd3e80b739df7eb9f97a9b4446323ecfb3ebcdd462"
     },
     {
       "path": "protocol/conformance/manifest-v1.json",
