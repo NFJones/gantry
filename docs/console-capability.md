@@ -174,10 +174,11 @@ Delivered:
   presented identity for the `output-flush` group under the `GNT-46.8` precedence: an ambient
   descriptor first, then a missing group, then a grant naming another group, then a forged grant.
   Every refusal precedes the request, the dispatch, the charge, and the settlement.
-- **Authenticated receiver.** `ConsoleRedirectedSink` is the sink declaration itself, and a
-  `ConsoleOutputInstance` binds one such sink to one admitted account: the landed transport
-  authenticates the pending occurrence's operation identity, resource generation, owner generation,
-  and receiver kind when the one call borrows its receiver loan.
+- **Authenticated receiver.** `ConsoleRedirectedSink` is the sink declaration itself, and
+  `ConsoleOutputAccess::bind` binds one such sink to one admitted account. The returned instance
+  borrows its granting access, so no other access can write, finish, or shut it down, and the landed
+  transport authenticates the pending occurrence's operation identity, resource generation, owner
+  generation, and receiver kind when the one call borrows its receiver loan.
 - **One admitted bounded request and exact progress.** A write consumes exactly one request whose
   declared quantity is the presented octet count, presents only the declared initialized octets,
   and settles exactly one call. The published accepted prefix is that settlement's own evidence,
@@ -186,17 +187,21 @@ Delivered:
 - **One completion.** A cancellation observed before admission refuses without a dispatch; a
   cancellation during dispatch settles once as cancelled with the accepted prefix withheld as
   protected evidence; a late, foreign, or over-accepted completion is a contained fault that
-  publishes no octet; and a second presentation of the one pending occurrence the grantor already
-  settled is refused before any dispatch under the landed duplicate-settlement refusal, even
-  through a separately admitted account. Nothing is retried, replayed, or deduplicated.
-- **Grantor-owned shutdown.** `ConsoleOutputAccess::settle_shutdown` is the only route to a
-  final-flush settlement, and it consumes the access together with every bound output account, so
-  nothing outlives it. Each account is finalized once through the landed account finalization: it
-  leaves the active lifetime, its carrier value is disposed once, and it admits no later call. A
-  refused finalization refuses the shutdown and withholds the flush settlement. The fixed task
-  outcome is returned by value, unchanged, beside a flush-only settlement, and the console holds no
-  octet, so the flush it publishes is the completion of empty console-owned state with no
-  caller-supplied verdict.
+  publishes no octet; and a second attempt on the occurrence a grant already reserved is refused
+  before any dispatch under the landed duplicate-settlement refusal, even through a separately
+  admitted account. The reservation is taken atomically before dispatch and released only when the
+  attempt dispatched nothing. Nothing is retried, replayed, or deduplicated. Exclusivity across two
+  independently constructed grant values is not claimed: one launch injects one grant per group, and
+  the landed machine occurrence and registry carrier issuance own the cross-grant fact.
+- **Grantor-owned shutdown.** `ConsoleOutputInstance::finish` is the one end-of-access route for one
+  bound account, and it finalizes through the landed account finalization: the account leaves the
+  active lifetime, its carrier value is disposed once, and it admits no later call.
+  `ConsoleOutputAccess::settle_shutdown` is the only route to a final-flush settlement, it consumes
+  the access, and it refuses rather than claims a flush while any instance the access issued was not
+  finished, so an omitted, dropped, or failed instance is refused instead of abandoned. The fixed
+  task outcome is returned by value on success and refusal alike, so a shutdown outcome can never
+  consume, rewrite, or substitute for it, and the console holds no octet: the flush it publishes is
+  the completion of empty console-owned state with no caller-supplied verdict.
 
 Deliberately not delivered, and refused rather than simulated:
 

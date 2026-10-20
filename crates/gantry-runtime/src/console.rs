@@ -31,16 +31,22 @@
 //! zero-octet write and a request beyond `IO_REQUEST_OCTET_BOUND` are refused by the request
 //! contract before any dispatch.
 //!
-//! # One settlement per occurrence
+//! # One settlement per occurrence inside one grant
 //!
 //! A console write consumes one machine-issued occurrence, and `GNT-20` allows one resource
-//! generation exactly one settlement. The grantor-owned access records the one occurrence it
-//! settled, so a second presentation of that same pending occurrence is refused under the landed
-//! `duplicate-settlement` refusal **before any dispatch**, even when it is presented through a
-//! separately admitted account or instance. The record is one occurrence identity and no octet: it
-//! holds no output, survives no call of its own, and is dropped with the access. A later occurrence
-//! is a different identity and is admitted normally, and once the machine advances past a pending
-//! occurrence the landed transport refuses a stale account as a foreign subject.
+//! generation exactly one settlement. The grantor-owned access reserves the occurrence atomically
+//! **before** dispatch and releases the reservation only when nothing was dispatched, so two
+//! attempts admitted under one grant - including two separately admitted accounts and two attempts
+//! that overlap - cannot both settle it: the second is refused under the landed
+//! `duplicate-settlement` refusal. The record is one occurrence identity and no octet, it holds no
+//! output, and it is dropped with the access.
+//!
+//! One launch injects one grant per requirement group of `GNT-46.8`, so one run admits one
+//! `ConsoleOutputAccess`. Exclusivity across two independently constructed grant values is not a
+//! console decision and is not claimed here: the landed machine occurrence and the landed registry
+//! carrier issuance own that fact, and this slice consumes them without restating or duplicating
+//! them. This module therefore makes a narrower promise than a second ownership domain would, and
+//! says so rather than implying a fence it does not hold.
 //!
 //! # Undelivered targets
 //!
@@ -58,20 +64,24 @@
 //!
 //! # Flush, shutdown, and end of access
 //!
+//! Every output instance is borrowed from the access that issued it, so no output instance can
+//! outlive its granting access, and no other access can finish, write, or shut down an instance it
+//! did not issue. [`ConsoleOutputInstance::finish`] is the one end-of-access route for one bound
+//! account: it finalizes through the landed account finalization, so the account leaves the active
+//! lifetime once, its carrier value is disposed once, and it admits no later call.
+//!
 //! The owner that granted the access owns the final flush and the shutdown. Consuming
 //! [`ConsoleOutputAccess`] through [`ConsoleOutputAccess::settle_shutdown`] is the only route that
-//! publishes a final-flush settlement, and it finalizes every bound output account it is handed
-//! through the landed account finalization before it publishes anything: the account leaves the
-//! active lifetime once, its carrier value is disposed once, and no call is admitted afterwards.
-//! A refused finalization refuses the whole shutdown and withholds the flush settlement, so a
-//! shutdown failure is never reported as a completed flush.
+//! publishes a final-flush settlement, and it refuses rather than claims a flush while any bound
+//! instance was not finished: omitted, dropped, and failed instances are refused, not ignored. The
+//! fixed task outcome is returned by value on every path, success and refusal alike, so a shutdown
+//! outcome can never consume, rewrite, represent, or substitute for it.
 //!
 //! This console retains no octet between calls, so it holds nothing of its own to flush: the flush
-//! settlement publishes the completion of console-owned state, which is empty, and carries no octet
-//! count. A flush of the carrier belongs to the grantor that owns the carrier: this slice performs
-//! no carrier flush, accepts no caller-supplied flush verdict, and claims neither a carrier flush
-//! nor a carrier flush failure. The caller's fixed task outcome is returned by value, unchanged,
-//! beside the settlement, so a flush can neither rewrite that outcome nor substitute for it.
+//! settlement publishes the completion of empty console-owned state, with no octet count and no
+//! caller-supplied verdict. A flush of the carrier belongs to the grantor that owns the carrier:
+//! this slice performs no carrier flush and claims neither a carrier flush nor a carrier flush
+//! failure.
 //!
 //! # Non-claims
 //!
@@ -91,6 +101,7 @@
 
 use std::fmt;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use gantry_ir::{
     Charge, ConsoleAccessIdentity, ConsoleAccessInjection, ConsoleCallError, ConsoleFlushOutcome,
@@ -112,11 +123,13 @@ use crate::{
 /// consuming it through [`Self::settle_shutdown`] is the only route to a final-flush settlement, so
 /// a requester route can neither settle shutdown nor outlive the shutdown its grantor settled.
 ///
-/// The access also records the one machine occurrence it settled. That record is an occurrence
-/// identity and no octet, so the access holds no buffered output.
+/// The access records the one machine occurrence it reserved and counts the output instances it
+/// issued. Those records are occurrence identities and counts and no octet, so the access holds no
+/// buffered output.
 pub struct ConsoleOutputAccess {
     injection: ConsoleAccessInjection,
-    settled: Mutex<Option<ResourceSubjectBinding>>,
+    reserved: Mutex<Option<ResourceSubjectBinding>>,
+    open: AtomicUsize,
 }
 
 impl ConsoleOutputAccess {
@@ -129,7 +142,8 @@ impl ConsoleOutputAccess {
     pub fn from_launch(grantor: &'static str, grants: Vec<ConsoleGrant>) -> Self {
         Self {
             injection: ConsoleAccessInjection::from_launch(grantor, grants),
-            settled: Mutex::new(None),
+            reserved: Mutex::new(None),
+            open: AtomicUsize::new(0),
         }
     }
 
@@ -139,57 +153,104 @@ impl ConsoleOutputAccess {
         &self.injection
     }
 
-    /// Settles the grantor-owned final flush after finalizing every bound output account.
+    /// Binds one redirected sink to one admitted account under this grantor.
     ///
-    /// Each presented instance is finalized through the landed account finalization in the order it
-    /// is presented: the account leaves the active lifetime once, its carrier value is disposed
-    /// once, and it admits no later call. A refused finalization refuses this shutdown and withholds
-    /// the flush settlement; instances already finalized stay finalized, and every later instance is
-    /// left unchanged.
+    /// The returned instance borrows this access, so it cannot outlive the grantor and no other
+    /// access can write, finish, or shut it down. The landed transport linearizes acquisition against
+    /// cancellation and refuses an account that is not active and open. A refused bind returns both
+    /// owned inputs unchanged and leaves no accounting fact.
+    ///
+    /// # Errors
+    ///
+    /// Returns the landed transport refusal with both owned inputs in the returned tuple.
+    #[allow(clippy::type_complexity)]
+    pub fn bind<T: BoundedIoEndpoint>(
+        &self,
+        account: AdmittedResource,
+        sink: ConsoleRedirectedSink<T>,
+    ) -> Result<
+        ConsoleOutputInstance<'_, T>,
+        Box<(
+            HostResourceError,
+            AdmittedResource,
+            ConsoleRedirectedSink<T>,
+        )>,
+    > {
+        let owner = account.ledger().owner();
+        let resource = OwnedHostResource::bind(account, sink)?;
+        self.open.fetch_add(1, Ordering::SeqCst);
+        Ok(ConsoleOutputInstance {
+            resource,
+            owner,
+            access: self,
+            finished: false,
+        })
+    }
+
+    /// Settles the grantor-owned final flush and returns the fixed task outcome unchanged.
+    ///
+    /// The fixed task outcome is returned by value on every path, so no flush outcome can consume,
+    /// rewrite, represent, or substitute for it. Shutdown settles only when every output instance
+    /// this access issued was finished: an omitted, dropped, or failed instance refuses the
+    /// settlement instead of being silently abandoned.
     ///
     /// This console retains no octet between calls, so the flush it publishes is the completion of
     /// empty console-owned state, with no octet count and no caller-supplied verdict. The carrier
     /// flush belongs to the grantor that owns the carrier and is neither performed nor claimed here.
-    /// The fixed task outcome is returned by value and is never rewritten, represented, or
-    /// substituted by the settlement. Consuming this access ends every requester route of this
-    /// grantor.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ConsoleRuntimeRefusal::Transport`] when a presented account cannot be finalized.
-    pub fn settle_shutdown<K, T: BoundedIoEndpoint>(
+    /// Consuming this access ends every requester route of this grantor.
+    #[allow(clippy::type_complexity)]
+    pub fn settle_shutdown<K>(
         self,
-        mut instances: Vec<ConsoleOutputInstance<T>>,
         task_outcome: K,
-        settled_at_us: u64,
-    ) -> Result<(K, ConsoleShutdownSettlement), ConsoleRuntimeRefusal> {
-        for instance in &mut instances {
-            instance
-                .finalize(settled_at_us)
-                .map_err(ConsoleRuntimeRefusal::Transport)?;
+    ) -> (K, Result<ConsoleShutdownSettlement, ConsoleRuntimeRefusal>) {
+        let open = self.open.load(Ordering::SeqCst);
+        if open != 0 {
+            return (
+                task_outcome,
+                Err(ConsoleRuntimeRefusal::UnfinishedOutput { count: open }),
+            );
         }
-        Ok((
+        (
             task_outcome,
-            ConsoleShutdownSettlement::settle(ConsoleFlushOutcome::Flushed),
-        ))
+            Ok(ConsoleShutdownSettlement::settle(
+                ConsoleFlushOutcome::Flushed,
+            )),
+        )
     }
 
-    /// Returns whether this grantor already settled the presented occurrence.
+    /// Reserves the presented occurrence atomically for this grantor.
     ///
-    /// An unreadable record conservatively reports a settlement, so a poisoned record can never
-    /// admit a second settlement of one occurrence.
-    fn settled(&self, subject: &ResourceSubjectBinding) -> bool {
-        match self.settled.lock() {
-            Ok(settled) => settled.as_ref() == Some(subject),
-            Err(_) => true,
+    /// Returns `false` when this grantor already reserved that exact occurrence, so a second attempt
+    /// cannot reach dispatch. An unreadable record refuses conservatively.
+    fn reserve(&self, subject: &ResourceSubjectBinding) -> bool {
+        match self.reserved.lock() {
+            Ok(mut reserved) => {
+                if reserved.as_ref() == Some(subject) {
+                    return false;
+                }
+                *reserved = Some(subject.clone());
+                true
+            }
+            Err(_) => false,
         }
     }
 
-    /// Records the one occurrence this grantor settled.
-    fn record_settled(&self, subject: ResourceSubjectBinding) {
-        if let Ok(mut settled) = self.settled.lock() {
-            *settled = Some(subject);
+    /// Releases a reservation whose attempt dispatched nothing.
+    fn release(&self, subject: &ResourceSubjectBinding) {
+        if let Ok(mut reserved) = self.reserved.lock()
+            && reserved.as_ref() == Some(subject)
+        {
+            *reserved = None;
         }
+    }
+
+    /// Releases a finished instance and refuses an impossible overcount.
+    fn close_instance(&self) {
+        let _ = self
+            .open
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |open| {
+                open.checked_sub(1)
+            });
     }
 }
 
@@ -230,45 +291,21 @@ impl<T: BoundedIoEndpoint> BoundedIoEndpoint for ConsoleRedirectedSink<T> {
     }
 }
 
-/// One redirected console sink bound to one admitted account.
+/// One redirected console sink bound to one admitted account and one granting access.
 ///
-/// The pair is what makes the sink, the account, and the machine-issued occurrence checkable: the
-/// landed transport authenticates the pending occurrence's operation identity, resource generation,
-/// owner generation, and receiver kind when this instance's one call borrows its receiver loan, and
-/// the sink type fixes the declared output target. The fields are private and no route replaces the
-/// bound resource, so the association survives every route of this module.
-pub struct ConsoleOutputInstance<T> {
+/// The instance borrows its granting [`ConsoleOutputAccess`], so the two cannot be separated: no
+/// other access can write, finish, or shut down this output, and no instance outlives the grantor.
+/// The landed transport authenticates the pending occurrence's operation identity, resource
+/// generation, owner generation, and receiver kind when the one call borrows its receiver loan, and
+/// the sink type fixes the declared output target.
+pub struct ConsoleOutputInstance<'a, T> {
     resource: OwnedHostResource<ConsoleRedirectedSink<T>>,
     owner: OwnerGeneration,
+    access: &'a ConsoleOutputAccess,
+    finished: bool,
 }
 
-impl<T: BoundedIoEndpoint> ConsoleOutputInstance<T> {
-    /// Binds one redirected sink to one admitted account.
-    ///
-    /// The landed transport linearizes acquisition against cancellation and refuses an account
-    /// that is not active and open. Refusal returns both owned inputs unchanged.
-    ///
-    /// # Errors
-    ///
-    /// Returns the landed transport refusal with both owned inputs in the returned tuple.
-    pub fn bind(
-        account: AdmittedResource,
-        sink: ConsoleRedirectedSink<T>,
-    ) -> Result<
-        Self,
-        Box<(
-            HostResourceError,
-            AdmittedResource,
-            ConsoleRedirectedSink<T>,
-        )>,
-    > {
-        let owner = account.ledger().owner();
-        Ok(Self {
-            resource: OwnedHostResource::bind(account, sink)?,
-            owner,
-        })
-    }
-
+impl<T: BoundedIoEndpoint> ConsoleOutputInstance<'_, T> {
     /// Returns immutable accounting facts only, never the bound carrier.
     #[must_use]
     pub const fn account(&self) -> &AdmittedResource {
@@ -283,25 +320,44 @@ impl<T: BoundedIoEndpoint> ConsoleOutputInstance<T> {
 
     /// Finalizes this account once through the landed account finalization.
     ///
-    /// The carrier value is handed to the finalizer and disposed; this console performs no carrier
-    /// flush, so the finalizer is the empty completion of console-owned state.
-    fn finalize(&mut self, settled_at_us: u64) -> Result<ResourceLifetimeState, HostResourceError> {
-        self.resource
+    /// The account leaves the active lifetime once, its carrier value is handed to the finalizer and
+    /// disposed once, and no later call is admitted. This console performs no carrier flush, so the
+    /// finalizer is the empty completion of console-owned state. A refused finalization keeps this
+    /// instance, so its cleanup ownership stays with the caller and shutdown refuses until it is
+    /// resolved.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConsoleRuntimeRefusal::AlreadyFinished`] for a second finish and
+    /// [`ConsoleRuntimeRefusal::Transport`] when the landed finalization refuses or fails.
+    pub fn finish(
+        &mut self,
+        settled_at_us: u64,
+    ) -> Result<ResourceLifetimeState, ConsoleRuntimeRefusal> {
+        if self.finished {
+            return Err(ConsoleRuntimeRefusal::AlreadyFinished);
+        }
+        let state = self
+            .resource
             .finish(self.owner, settled_at_us, |_sink| Ok(()))
+            .map_err(ConsoleRuntimeRefusal::Transport)?;
+        self.finished = true;
+        self.access.close_instance();
+        Ok(state)
     }
 }
 
 /// One presented console output sink of a `std.console::output::write@1` call.
-pub enum ConsoleOutputSink<'a, T> {
+pub enum ConsoleOutputSink<'s, 'a, T> {
     /// A redirected, non-controlling sink bound to one admitted account: the delivered target.
-    Redirected(&'a mut ConsoleOutputInstance<T>),
+    Redirected(&'s mut ConsoleOutputInstance<'a, T>),
     /// The declared attached terminal, which this slice does not deliver.
     AttachedTerminal,
     /// A sink kind `GNT-46.9-console-control-and-output-boundary` does not declare.
     Unsupported(&'static str),
 }
 
-impl<T> ConsoleOutputSink<'_, T> {
+impl<T> ConsoleOutputSink<'_, '_, T> {
     /// Returns the declared output target this presentation names.
     #[must_use]
     pub const fn target(&self) -> ConsoleOutputTarget {
@@ -359,10 +415,10 @@ impl ConsoleWriteCall {
 
 /// One refusal of this runtime boundary.
 ///
-/// The first three kinds are the declared refusals this boundary presents; the fourth is the runtime
-/// availability fact this slice states honestly rather than a declaration diagnostic, so no console
-/// diagnostic spelling is minted for it and no clause is restated. The fifth is the landed transport
-/// refusal or failure of binding and finalization.
+/// The first three kinds are the declared refusals this boundary presents, and the fourth is the
+/// runtime availability fact this slice states honestly rather than a declaration diagnostic, so no
+/// console diagnostic spelling is minted for it and no clause is restated. The remaining kinds are
+/// landed transport, end-of-access, and duplicate-attempt facts of this module.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ConsoleRuntimeRefusal {
     /// A declaration-owned refusal of the `std.console::output::write@1` call itself.
@@ -383,6 +439,13 @@ pub enum ConsoleRuntimeRefusal {
     },
     /// A landed transport refusal or failure, before dispatch or during finalization.
     Transport(HostResourceError),
+    /// A bound output instance was not finished before its grantor settled shutdown.
+    UnfinishedOutput {
+        /// The count of instances this access issued that were never finished.
+        count: usize,
+    },
+    /// This output instance already finished.
+    AlreadyFinished,
 }
 
 impl fmt::Display for ConsoleRuntimeRefusal {
@@ -405,6 +468,13 @@ impl fmt::Display for ConsoleRuntimeRefusal {
             ),
             Self::Transport(error) => {
                 write!(formatter, "the landed transport refused: {error:?}")
+            }
+            Self::UnfinishedOutput { count } => write!(
+                formatter,
+                "{count} bound output instance(s) were not finished before shutdown"
+            ),
+            Self::AlreadyFinished => {
+                write!(formatter, "this output instance already finished")
             }
         }
     }
@@ -480,9 +550,10 @@ impl<'a> ConsoleOutputSettlement<'a> {
     /// redirected, non-controlling sink reaches the landed settlement service, which performs
     /// exactly one call and publishes exactly one settlement.
     ///
-    /// A second presentation of the one pending occurrence this grantor already settled is refused
-    /// under the landed `duplicate-settlement` refusal before any dispatch, whatever account or
-    /// instance it is presented through.
+    /// The occurrence is reserved atomically before dispatch, so a second attempt under this one
+    /// grant - through another account, or overlapping - is refused under the landed
+    /// `duplicate-settlement` refusal. A reservation is released when the attempt dispatched
+    /// nothing, so an unattempted occurrence stays available.
     ///
     /// # Errors
     ///
@@ -495,7 +566,7 @@ impl<'a> ConsoleOutputSettlement<'a> {
     /// dispatch.
     pub fn write<T: BoundedIoEndpoint>(
         &self,
-        sink: ConsoleOutputSink<'_, T>,
+        sink: ConsoleOutputSink<'_, '_, T>,
         octets: &[u8],
     ) -> Result<ConsoleWriteCall, ConsoleRuntimeRefusal> {
         let quantity = u64::try_from(octets.len()).unwrap_or(u64::MAX);
@@ -522,23 +593,28 @@ impl<'a> ConsoleOutputSettlement<'a> {
                 .ok_or(ConsoleRuntimeRefusal::Settlement(
                     IoRefusal::NoPendingOccurrence,
                 ))?;
-        if self.access.settled(&subject) {
+        if !self.access.reserve(&subject) {
             return Err(ConsoleRuntimeRefusal::Settlement(
                 IoRefusal::DuplicateSettlement,
             ));
         }
-        let mut service = IoSettlementService::new(
+        let mut service = match IoSettlementService::new(
             self.machine,
             self.owner,
             IoOperation::Write,
             self.allowance,
             self.charges.clone(),
             self.settled_at_us,
-        )
-        .map_err(ConsoleRuntimeRefusal::Settlement)?;
+        ) {
+            Ok(service) => service,
+            Err(refusal) => {
+                self.access.release(&subject);
+                return Err(ConsoleRuntimeRefusal::Settlement(refusal));
+            }
+        };
         let outcome = service.attempt(&mut instance.resource, request, octets);
-        if !matches!(&outcome, IoCallOutcome::Refused(_)) {
-            self.access.record_settled(subject);
+        if matches!(&outcome, IoCallOutcome::Refused(_)) {
+            self.access.release(&subject);
         }
         Ok(ConsoleWriteCall { admission, outcome })
     }

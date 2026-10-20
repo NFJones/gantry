@@ -4,8 +4,9 @@
 //! and machine resource carrier: one launch-injected `output-flush` grant, one authenticated
 //! receiver, one admitted bounded request, one settlement with its exact accepted prefix, the
 //! zero-dispatch denials of the declaration model, the byte-preserving attached-terminal refusal,
-//! the unsupported-sink refusal, cancellation before admission, a duplicate presentation, a
-//! contained carrier fault, and the grantor-owned final-flush settlement.
+//! the unsupported-sink refusal, cancellation before admission, the atomic occurrence reservation,
+//! a contained carrier fault, one finishing end of access, and the grantor-owned shutdown that
+//! returns the fixed task outcome on every path.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -172,22 +173,28 @@ impl Fixture {
         }
     }
 
-    /// Admits one fresh account and binds one redirected sink to it.
-    fn bind<T: BoundedIoEndpoint>(
-        &self,
-        sink: ConsoleRedirectedSink<T>,
-    ) -> ConsoleOutputInstance<T> {
-        let account = AdmittedResource::admit(
+    /// Admits one fresh account of this fixture's occurrence.
+    fn account(&self) -> AdmittedResource {
+        AdmittedResource::admit(
             ResourceCarrier::ReconstructionRecord,
             self.record.clone(),
             self.subject.clone(),
         )
-        .unwrap_or_else(|error| panic!("fixture account: {error:?}"));
-        ConsoleOutputInstance::bind(account, sink)
+        .unwrap_or_else(|error| panic!("fixture account: {error:?}"))
+    }
+
+    /// Binds one redirected sink under the presented granting access.
+    fn bind<'a, T: BoundedIoEndpoint>(
+        &self,
+        access: &'a ConsoleOutputAccess,
+        sink: ConsoleRedirectedSink<T>,
+    ) -> ConsoleOutputInstance<'a, T> {
+        access
+            .bind(self.account(), sink)
             .unwrap_or_else(|_| panic!("fixture physical binding"))
     }
 
-    /// Admits one requester route over the presented access, grant, and identity.
+    /// Admits one requester route over the presented access and identity.
     fn route<'a>(
         &'a self,
         access: &'a ConsoleOutputAccess,
@@ -230,12 +237,12 @@ fn redirected_write_settles_the_accepted_prefix_once() {
     let transport = InMemoryIoTransport::bounded(Vec::new(), 8)
         .unwrap_or_else(|error| panic!("fixture transport: {error:?}"));
     let handle = transport.handle();
-    let mut instance = fixture.bind(ConsoleRedirectedSink::new(transport));
+    let access = access(vec![output_grant()]);
+    let mut instance = fixture.bind(&access, ConsoleRedirectedSink::new(transport));
     assert_eq!(
         instance.target(),
         ConsoleOutputTarget::RedirectedNonControlling
     );
-    let access = access(vec![output_grant()]);
     let route = fixture
         .route(&access, ConsoleAccessIdentity::Injected(output_grant()))
         .unwrap_or_else(|error| panic!("fixture route: {error}"));
@@ -278,8 +285,8 @@ fn redirected_write_publishes_control_octets_unchanged() {
     let transport = InMemoryIoTransport::bounded(Vec::new(), 16)
         .unwrap_or_else(|error| panic!("fixture transport: {error:?}"));
     let handle = transport.handle();
-    let mut instance = fixture.bind(ConsoleRedirectedSink::new(transport));
     let access = access(vec![output_grant()]);
+    let mut instance = fixture.bind(&access, ConsoleRedirectedSink::new(transport));
     let route = fixture
         .route(&access, ConsoleAccessIdentity::Injected(output_grant()))
         .unwrap_or_else(|error| panic!("fixture route: {error}"));
@@ -299,8 +306,8 @@ fn short_write_reports_short_progress_of_exactly_the_accepted_prefix() {
     let transport = InMemoryIoTransport::bounded(Vec::new(), 2)
         .unwrap_or_else(|error| panic!("fixture transport: {error:?}"));
     let handle = transport.handle();
-    let mut instance = fixture.bind(ConsoleRedirectedSink::new(transport));
     let access = access(vec![output_grant()]);
+    let mut instance = fixture.bind(&access, ConsoleRedirectedSink::new(transport));
     let route = fixture
         .route(&access, ConsoleAccessIdentity::Injected(output_grant()))
         .unwrap_or_else(|error| panic!("fixture route: {error}"));
@@ -333,13 +340,14 @@ fn short_write_reports_short_progress_of_exactly_the_accepted_prefix() {
 fn missing_ambient_wrong_group_and_forged_access_refuse_before_dispatch() {
     let fixture = Fixture::new();
     let calls = Arc::new(AtomicU64::new(0));
-    let instance = fixture.bind(ConsoleRedirectedSink::new(CountingCarrier {
-        accepted: 4,
-        calls: Arc::clone(&calls),
-    }));
-    let record = instance.account().durable_record();
-
     let ambient = access(vec![output_grant()]);
+    let instance = fixture.bind(
+        &ambient,
+        ConsoleRedirectedSink::new(CountingCarrier {
+            accepted: 4,
+            calls: Arc::clone(&calls),
+        }),
+    );
     assert_eq!(
         fixture
             .route(&ambient, ConsoleAccessIdentity::AmbientDescriptor(1))
@@ -348,7 +356,6 @@ fn missing_ambient_wrong_group_and_forged_access_refuse_before_dispatch() {
             ConsoleAuthorityError::AmbientDescriptor { descriptor: 1 }
         ))
     );
-
     let missing = access(Vec::new());
     assert_eq!(
         fixture
@@ -358,7 +365,6 @@ fn missing_ambient_wrong_group_and_forged_access_refuse_before_dispatch() {
             group: ConsoleRequirementGroup::OutputFlush,
         }))
     );
-
     let inconsistent = access(vec![
         output_grant(),
         ConsoleGrant::new(ConsoleRequirementGroup::Input, REQUESTER, GRANTOR),
@@ -381,7 +387,6 @@ fn missing_ambient_wrong_group_and_forged_access_refuse_before_dispatch() {
             }
         ))
     );
-
     let forged = ConsoleGrant::new(
         ConsoleRequirementGroup::OutputFlush,
         REQUESTER,
@@ -397,13 +402,8 @@ fn missing_ambient_wrong_group_and_forged_access_refuse_before_dispatch() {
         error.console_code(),
         Some(ConsoleAuthorityDiagnosticCode::AuthorityForged)
     );
-
     assert_eq!(calls.load(Ordering::SeqCst), 0);
-    assert_eq!(instance.account().durable_record(), record);
-    assert_eq!(
-        instance.account().ledger().lifetime(),
-        ResourceLifetimeState::Active
-    );
+    drop(instance);
 }
 
 /// Control-bearing octets on an attached terminal are refused byte-preservingly.
@@ -472,11 +472,14 @@ fn an_undeclared_sink_is_refused_without_a_control_octet() {
 fn zero_octet_write_is_refused_before_any_dispatch() {
     let fixture = Fixture::new();
     let calls = Arc::new(AtomicU64::new(0));
-    let mut instance = fixture.bind(ConsoleRedirectedSink::new(CountingCarrier {
-        accepted: 0,
-        calls: Arc::clone(&calls),
-    }));
     let access = access(vec![output_grant()]);
+    let mut instance = fixture.bind(
+        &access,
+        ConsoleRedirectedSink::new(CountingCarrier {
+            accepted: 0,
+            calls: Arc::clone(&calls),
+        }),
+    );
     let route = fixture
         .route(&access, ConsoleAccessIdentity::Injected(output_grant()))
         .unwrap_or_else(|error| panic!("fixture route: {error}"));
@@ -496,12 +499,15 @@ fn zero_octet_write_is_refused_before_any_dispatch() {
 fn cancellation_before_admission_refuses_without_a_dispatch() {
     let mut fixture = Fixture::new();
     let calls = Arc::new(AtomicU64::new(0));
-    let mut instance = fixture.bind(ConsoleRedirectedSink::new(CountingCarrier {
-        accepted: 4,
-        calls: Arc::clone(&calls),
-    }));
-    let _ = fixture.machine.cancel("fixture cancellation");
     let access = access(vec![output_grant()]);
+    let mut instance = fixture.bind(
+        &access,
+        ConsoleRedirectedSink::new(CountingCarrier {
+            accepted: 4,
+            calls: Arc::clone(&calls),
+        }),
+    );
+    let _ = fixture.machine.cancel("fixture cancellation");
     let route = fixture
         .route(&access, ConsoleAccessIdentity::Injected(output_grant()))
         .unwrap_or_else(|error| panic!("fixture route: {error}"));
@@ -523,8 +529,8 @@ fn duplicate_presentation_is_refused_without_a_second_dispatch() {
     let transport = InMemoryIoTransport::bounded(Vec::new(), 8)
         .unwrap_or_else(|error| panic!("fixture transport: {error:?}"));
     let handle = transport.handle();
-    let mut instance = fixture.bind(ConsoleRedirectedSink::new(transport));
     let access = access(vec![output_grant()]);
+    let mut instance = fixture.bind(&access, ConsoleRedirectedSink::new(transport));
     let route = fixture
         .route(&access, ConsoleAccessIdentity::Injected(output_grant()))
         .unwrap_or_else(|error| panic!("fixture route: {error}"));
@@ -545,16 +551,58 @@ fn duplicate_presentation_is_refused_without_a_second_dispatch() {
     assert_eq!(handle.retained(), b"ab".to_vec());
 }
 
+/// Two independently admitted accounts cannot settle one occurrence under one grant.
+#[test]
+fn two_independently_admitted_accounts_cannot_settle_one_occurrence() {
+    let fixture = Fixture::new();
+    let calls = Arc::new(AtomicU64::new(0));
+    let access = access(vec![output_grant()]);
+    let mut first = fixture.bind(
+        &access,
+        ConsoleRedirectedSink::new(CountingCarrier {
+            accepted: 2,
+            calls: Arc::clone(&calls),
+        }),
+    );
+    let mut second = fixture.bind(
+        &access,
+        ConsoleRedirectedSink::new(CountingCarrier {
+            accepted: 2,
+            calls: Arc::clone(&calls),
+        }),
+    );
+    let route = fixture
+        .route(&access, ConsoleAccessIdentity::Injected(output_grant()))
+        .unwrap_or_else(|error| panic!("fixture route: {error}"));
+    let one = route
+        .write(ConsoleOutputSink::Redirected(&mut first), b"ab")
+        .unwrap_or_else(|error| panic!("fixture write: {error}"));
+    assert!(matches!(one.outcome(), IoCallOutcome::Settled(_)));
+    assert_eq!(
+        route
+            .write(ConsoleOutputSink::Redirected(&mut second), b"ab")
+            .err(),
+        Some(ConsoleRuntimeRefusal::Settlement(
+            IoRefusal::DuplicateSettlement
+        )),
+        "a second account of the same occurrence must be refused before dispatch"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
 /// An over-accepting carrier is a contained fault that publishes no accepted prefix.
 #[test]
 fn an_over_accepting_carrier_is_a_contained_fault() {
     let fixture = Fixture::new();
     let calls = Arc::new(AtomicU64::new(0));
-    let mut instance = fixture.bind(ConsoleRedirectedSink::new(CountingCarrier {
-        accepted: 9,
-        calls: Arc::clone(&calls),
-    }));
     let access = access(vec![output_grant()]);
+    let mut instance = fixture.bind(
+        &access,
+        ConsoleRedirectedSink::new(CountingCarrier {
+            accepted: 9,
+            calls: Arc::clone(&calls),
+        }),
+    );
     let route = fixture
         .route(&access, ConsoleAccessIdentity::Injected(output_grant()))
         .unwrap_or_else(|error| panic!("fixture route: {error}"));
@@ -578,56 +626,46 @@ fn an_over_accepting_carrier_is_a_contained_fault() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
-/// The grantor-owned shutdown finalizes the bound account and returns the task outcome unchanged.
+/// Shutdown refuses while a bound instance was not finished, and keeps the task outcome.
 #[test]
-fn grantor_shutdown_finalizes_the_account_and_keeps_the_task_outcome() {
+fn shutdown_refuses_an_unfinished_output_instance() {
     let fixture = Fixture::new();
     let calls = Arc::new(AtomicU64::new(0));
-    let instance = fixture.bind(ConsoleRedirectedSink::new(CountingCarrier {
-        accepted: 0,
-        calls,
-    }));
-    let boundary = access(vec![output_grant()]);
-    let (task_outcome, settlement) = boundary
-        .settle_shutdown(vec![instance], "task:ok", 11)
-        .unwrap_or_else(|error| panic!("fixture shutdown: {error}"));
+    let access = access(vec![output_grant()]);
+    let instance = fixture.bind(
+        &access,
+        ConsoleRedirectedSink::new(CountingCarrier { accepted: 0, calls }),
+    );
+    drop(instance);
+    let (task_outcome, settlement) = access.settle_shutdown("task:ok");
     assert_eq!(task_outcome, "task:ok");
+    assert_eq!(
+        settlement.err(),
+        Some(ConsoleRuntimeRefusal::UnfinishedOutput { count: 1 })
+    );
+}
+
+/// One finishing end of access publishes the flush and keeps the task outcome unchanged.
+#[test]
+fn grantor_shutdown_publishes_the_empty_flush_and_keeps_the_task_outcome() {
+    let fixture = Fixture::new();
+    let calls = Arc::new(AtomicU64::new(0));
+    let access = access(vec![output_grant()]);
+    let mut instance = fixture.bind(
+        &access,
+        ConsoleRedirectedSink::new(CountingCarrier { accepted: 0, calls }),
+    );
+    let state = instance
+        .finish(11)
+        .unwrap_or_else(|error| panic!("fixture finish: {error}"));
+    assert_eq!(state, ResourceLifetimeState::Finished);
+    drop(instance);
+    let (task_outcome, settlement) = access.settle_shutdown("task:ok");
+    assert_eq!(task_outcome, "task:ok");
+    let settlement = settlement.unwrap_or_else(|error| panic!("fixture shutdown: {error}"));
     assert!(!settlement.flush_failed());
     assert!(!settlement.task_outcome_rewritten());
     assert_eq!(settlement.flush(), ConsoleFlushOutcome::Flushed);
-}
-
-/// Two independently admitted accounts cannot settle one machine occurrence.
-#[test]
-fn two_independently_admitted_accounts_cannot_settle_one_occurrence() {
-    let fixture = Fixture::new();
-    let calls = Arc::new(AtomicU64::new(0));
-    let mut first = fixture.bind(ConsoleRedirectedSink::new(CountingCarrier {
-        accepted: 2,
-        calls: Arc::clone(&calls),
-    }));
-    let mut second = fixture.bind(ConsoleRedirectedSink::new(CountingCarrier {
-        accepted: 2,
-        calls: Arc::clone(&calls),
-    }));
-    let boundary = access(vec![output_grant()]);
-    let route = fixture
-        .route(&boundary, ConsoleAccessIdentity::Injected(output_grant()))
-        .unwrap_or_else(|error| panic!("fixture route: {error}"));
-    let one = route
-        .write(ConsoleOutputSink::Redirected(&mut first), b"ab")
-        .unwrap_or_else(|error| panic!("fixture write: {error}"));
-    assert!(matches!(one.outcome(), IoCallOutcome::Settled(_)));
-    assert_eq!(
-        route
-            .write(ConsoleOutputSink::Redirected(&mut second), b"ab")
-            .err(),
-        Some(ConsoleRuntimeRefusal::Settlement(
-            IoRefusal::DuplicateSettlement
-        )),
-        "a second account of the same occurrence must be refused before dispatch"
-    );
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
 /// The published specification still declares the boundary this slice consumes.
